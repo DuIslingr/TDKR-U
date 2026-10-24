@@ -25,7 +25,7 @@ else()
 endif()
 
 # Engine core: file system, asset decoders and the game-shader compiler (no rendering).
-file(GLOB CORE_SOURCES CONFIGURE_DEPENDS src/core/*.cpp src/assets/*.cpp src/shader/*.cpp src/script/*.cpp)
+file(GLOB CORE_SOURCES CONFIGURE_DEPENDS src/core/*.cpp src/assets/*.cpp src/shader/*.cpp src/script/*.cpp src/swf/*.cpp)
 add_library(tdkrcore STATIC ${CORE_SOURCES})
 target_include_directories(tdkrcore PUBLIC src)
 target_link_libraries(tdkrcore PUBLIC tdkr::zlib tdkr::shaderc tdkr::lua tdkr::glm)
@@ -72,7 +72,7 @@ add_custom_command(TARGET tdkr POST_BUILD
     VERBATIM)
 
 # Command-line checks of the decoders against the Python reference tools.
-add_executable(tdkr-check tools/check.cpp)
+add_executable(tdkr-check tools/check.cpp tools/swf_check.cpp)
 target_link_libraries(tdkr-check PRIVATE tdkrcore)
 if(TDKR_SHADERCROSS)
     target_link_libraries(tdkr-check PRIVATE tdkr::shadercross tdkr::sdl3)

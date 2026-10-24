@@ -64,6 +64,8 @@ struct Options {
     std::string save_file;      // the save file to write (also headless), instead of the preferences folder's
     std::string continue_file;  // headless: resume from this save file after the level loads
     int loading_screen = -1;
+    std::string swf;                       // a Flash movie over the game (menus), with
+    std::vector<std::string> swf_steps;    // scripted steps to reach a screen (swf/steps.h)
     float death_screen = -1;    // headless: draw the death screen this long after it opened
     float end_screen = -1;      // headless: draw the end-of-level screen this long after it opened    // headless: draw the level's loading screen, 0 loading, 1 loaded
     bool god = false;           // the player takes no damage

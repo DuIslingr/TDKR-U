@@ -144,6 +144,21 @@ void Game::title_music(const char* state) {
 
 void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_QUIT) running = false;
+    if (swf_view && swf_view->player()) {   // --swf: the movie takes the pointer; Escape quits
+        SDL_SetWindowRelativeMouseMode(window, false);
+        swf::Player& p = *swf_view->player();
+        if (e.type == SDL_EVENT_MOUSE_MOTION) {
+            const glm::vec2 at = to_pixels(e.motion.x, e.motion.y, false);
+            p.pointer_move(at.x, at.y);
+        } else if ((e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) && e.button.button == SDL_BUTTON_LEFT) {
+            const glm::vec2 at = to_pixels(e.button.x, e.button.y, false);
+            if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) p.pointer_down(at.x, at.y);
+            else p.pointer_up(at.x, at.y);
+        } else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) {
+            running = false;
+        }
+        return;
+    }
     if (loading.active) {   // the loading screen takes every input; a press dismisses it
         const bool pressed = (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                              e.type == SDL_EVENT_FINGER_DOWN;

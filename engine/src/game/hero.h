@@ -38,12 +38,16 @@ public:
     // within grapple_range and grapple_cone degrees of the aim, above the feet. Returns whether
     // one was found (then the player flies to it).
     bool try_grapple(Player& player, const glm::vec3& eye, const glm::vec3& forward) const;
+    // The edge point the grapnel would take now (for the HUD's target icon), and where it lands.
+    bool grapple_target(const Player& player, const glm::vec3& eye, const glm::vec3& forward, glm::vec3& point,
+                        glm::vec3& landing) const;
     float grapple_range = 50.0f, grapple_cone = 25.0f, grapple_inset = 0.7f;
     size_t grapple_edges() const { return edges_.size(); }
 
     bool active() const { return object_ != kNone; }
     size_t object() const { return object_; }
     const std::string& clip() const { return clip_; }
+    float facing() const { return facing_; }   // body yaw, degrees
 
 private:
     static constexpr size_t kNone = size_t(-1);

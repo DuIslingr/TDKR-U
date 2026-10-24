@@ -188,6 +188,9 @@ public:
     // Fog from the level properties (CComponentLevelProperties).
     glm::vec4 fog_color{0, 0, 0, 1};
     float fog_start = 0, fog_end = 0, fog_density = 0;
+    // The HUD minimap (level properties 39-41): <level>_minimap.swf, pixels per metre, zoom.
+    std::string minimap;
+    float minimap_scale = 1, minimap_zoom = 1;
 
     // Where the player starts: the level's start spawn point (floor level).
     glm::vec3 start_position{0, 0, 0};

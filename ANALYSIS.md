@@ -114,10 +114,50 @@ lightmaps yet, so no baked night lighting.
 | `GothamCity[_Island2][_low_inorm].zip` | 4 | **Gotham's city geometry, streamed** (`CLevelStreaming`). Decoded by `tools/streaming.py` (format in its docstring): 307 batches of 197-byte records (material index + glitch vertex stream header: f32 position, s16 texcoords with per-batch scale/offset, s8 normal), 1,526 LOD groups, 3,706 segments packed in `lod_data.bin`. All four parse. The 42 `*_BEAST` city-block objects name `gc_footprint_XX.bdae` files that don't exist; their meshes come from here. |
 | `.nm` / `.edge` / `.index` | 10 each | Per-level navmesh (`<Level>_<id>_navdata.nm`, opened by `CNavMeshNova::Create`), edges and streaming index. |
 | `.wav` | 3110 | RIFF, **MS-ADPCM** (format 2), mono 32 kHz. SDL can load these directly. `sounds.xml` + `BATMAN_TDKR.vxa` describe the vox sound events. |
-| `.swf` | 104 | **gameswf Flash UI** (SWF v10, uncompressed `FWS`): HUD, menus, shop, minimap. N.O.V.A. 3 has nothing for this (it uses bsprite), so it is the biggest new subsystem. |
-| `strings/*.bin` | 198 | Per-level localized strings in 11 languages. |
+| `.swf` | 104 (51 distinct) | **gameswf Flash UI**: Flash 8–10, uncompressed `FWS`, **ActionScript 2 only**. HUD, menus, shop, minimaps. The engine plays them (see "Flash UI" below). |
+| `strings/*.bin` | 198 | Localized strings (MAIN plus one table per level) in 11 languages. Unlike N.O.V.A. 3: **UTF-16LE** text with u32 id lengths and end offsets (`_map.bin`: u16 count, then u32 byte length + UTF-16 id). |
 | `game_config/*.bin` | — | Missions, Rewards, Upgrades, achievements, locations. |
 | `options/*.xml` | 23 | Quality presets (GPU/CPU/MEM tiers): useful as the PC "ultra" defaults. |
+
+## Flash UI (gameswf)
+
+The UI is 51 distinct movies, in three resolution archives (`gameswf_hires`, `_normalres`, `_lowres`;
+`CMenuManager::Init` mounts hires only when the GPU takes 4096² textures). Findings:
+
+- **Bitmaps live in atlases beside the movie**: `<movie>_atlas<id>.tga` (PVR). The SWF keeps an empty
+  8×8 `DefineBitsLossless` per atlas id, and the bitmap fills' matrices already address the atlas.
+- **Tags in use**: shapes 1–4, `DefineBitsLossless`, `DefineEditText` with `DefineFont3` outlines (one Verdana) or
+  device fonts (`Accidental Presidency` → `data/AccidentalPresidency.ttf`), sprites, `PlaceObject2/3`,
+  `RemoveObject2`, `FrameLabel`, `ExportAssets`, `DoAction`, `DoInitAction`. No buttons, morphs, sounds or video.
+- **ActionScript 2**, a class library compiled from `com.gameloft.components.*`, `src.*`, `scr.*`, `hudAS.*`
+  (`Object.registerClass` in init actions; getters/setters through `addProperty`). About 50 opcodes and the usual
+  classes (MovieClip, TextField, TextFormat, Array, String, Math, Color, Key, Stage, `flash.geom`).
+- **gameswf extensions**: `_global.viewport` (the visible part of the stage in movie units, under "show all"
+  scaling), `_global.$version == "gameSWF"`, and 3D clips: `_xrotation`, `_yrotation`, `_z` (the main menu's
+  button list is turned by `_global.turnMe`: `_yrotation = -40`, `_rotation = -10`).
+- **Game ↔ Flash**: the game calls AS methods (`CharacterHandle::invokeMethod`: `switchStyle`, `setNumber`,
+  `enableButton`, `startScreen`…), sets visibility and matrices, and loads movies into clips (`loadMovie`).
+  The scripts call 25 natives that `CMenuManager::Init` registers on `_global`: `getString`, `NativeGetString`,
+  `NativePushMenu`, `NativeSwitchMenu`, `NativePopMenu`, `NativeStartLevel`, `registerInGameEvent`,
+  `registerCarEvent`, `registerInGameEventExtended`, `registerPressSceneButton`, `playSound`, `getScreenConfig`,
+  `loadNextStory`, `registerInGameParamValue`, `getGameParamValue`, `registerShopEvent`, `showShopPopup`,
+  `canStartNewGame`, `canRestartLevel`, `getConvertedValue`, `getCurrentLanguage`, `registerHUDEvent`,
+  `getRealScreenWidth/Height/Ratio`. No `fscommand` and no `ExternalInterface`.
+- **HUD** (`CHUDDisplay`, ~200 functions): `BatmanHUD.swf`, root frame `HUD`. `Init` names the button slots and their
+  styles (`bAttack` STRIKE/TAKEDOWN/TAKEDOWN2/COUNTERATTACK, `bJump` JUMP/GLIDE/PLUNGE, `bGrapnel`, `bUtility`,
+  `gadgetWheel.bGadgets`); `SetButtonStyle` invokes `switchStyle` / `setNumber` / `enableButton` on the slot's
+  `button`. The minimap: the level's `<name>_minimap.swf` is loaded into `MinimapPivotInstance.MinimapDummyyInstance`
+  and moved so Batman sits at the pivot (`initMap` / `updateMap`): the map's world origin is its `Zero` clip, level
+  properties 40 and 41 are pixels per metre and zoom (39 is the movie), the pivot turns with the camera, and
+  `CenterMinimap` (the arrow) shows Batman's facing. `SetGrapple` puts `mGraplingHookTarget` over the target.
+- **Menus** (`CMenuManager`, one `RenderFX` per movie): `MainMenu.swf`'s `screenManager.startScreen(type)` with
+  `main`, `ingame`, `death`; `CHUDDisplay::SwitchMenu` calls it.
+
+The engine's player (`engine/src/swf/`): `movie` (parser), `tess` (even-odd trapezoid fill, like gameswf),
+`as`/`as_vm`/`as_builtins` (the AS2 interpreter), `player`/`player_classes` (display list, timelines, events,
+MovieClip/TextField/Color/flash.geom, the natives), `library` (resolution and atlases). The renderer side is
+`render/swf_draw` (atlases, gradients, SDL_ttf text) and `game/flash_screen`, `game/flash_hud`. Masks clip to
+the mask's convex outline. All 51 movies play headless without unhandled opcodes (`tdkr-check swf`).
 
 ## Levels
 
@@ -179,6 +219,10 @@ segments (buildings, roads, bridges) in the same world space.
 - TDKR shaders that skin on the GPU (`SkinWeights`, `SkinIndices`) are not wired to the engine's skinning.
 - 114 models referenced in Gotham aren't in the iOS data. 46 are the streamed footprints; the rest (`hc_prop_billboard*`, …) look like cut content.
 - Batman's cape is missing from the glTF render. Skinning or the controller path is likely different too.
-- gameswf: decide between reimplementing the parts the UI uses and embedding an SWF player.
+- Flash UI: the menus render but nothing acts on `NativeSwitchMenu` / `NativeStartLevel` yet (the menu flow,
+  `CMenuManager`'s stack, input focus). The HUD shows Batman's on-foot buttons; their states (counter, glide,
+  takedown), health, XP, popups, objectives and the joystick for touch are still to be driven from the game.
+  Colour transforms' add terms are ignored on bitmaps; non-convex masks clip to their hull; button hit tests use
+  bounds.
 - The Batpod, Tumbler and Bat vehicles have no N.O.V.A. 3 counterpart.
 - Lights: no level uses the light record (0x265E); lighting objects use other components (`CHasLightComponent`, `CSoundAndLight`).

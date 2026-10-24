@@ -800,8 +800,12 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
         // TDKR: CTemplateLevelProperties is CComponentLevelInit (38 values), f s f f, then
         // CComponentBaseGlobalIllum: c i, fog start, fog end, fog colour as RGBA bytes, then an
         // unused second fog (100, 10000, grey) and the textured vertical fog.
-        constexpr size_t kFog = 44;
+        constexpr size_t kFog = 44, kMinimap = 39;
         if (o.kind != "level_properties" || o.fields.size() < kFog + 6) continue;
+        // The HUD's minimap: its movie, pixels per metre and zoom (CHUDDisplay::initMap).
+        minimap = o.fields[kMinimap].s;
+        minimap_scale = o.fields[kMinimap + 1].as_float();
+        minimap_zoom = o.fields[kMinimap + 2].as_float();
         auto byte = [&](size_t k) { return float(uint8_t(o.fields[k].i)) / 255.0f; };
         fog_start = o.fields[kFog].as_float();
         fog_end = o.fields[kFog + 1].as_float();

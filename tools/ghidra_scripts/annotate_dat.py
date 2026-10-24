@@ -3,7 +3,8 @@
 
 Ghidra shows ARM literal-pool loads as DAT_xxxxxxxx; tuning constants (speeds, angles,
 distances) hide behind them. This appends /* f=<float> i=<int> */ after each DAT_ that
-is not part of an address computation (DAT_x + 0x... is PIC addressing and is left alone).
+is not part of an address computation, and resolves PIC string addresses
+((DAT_x + 0x...): the literal plus the add's pc) to /* "string" */ when they point at text.
 
 Usage: annotate_dat.py work/bin/libKRHP.so DECOMP.c > DECOMP.annotated.c
 """
@@ -36,8 +37,25 @@ def main():
         fs = f"{f:.6g}" if abs(f) < 1e7 and (f == 0 or abs(f) > 1e-6) else "-"
         return f"{m.group(0)} /* f={fs} i={w if w < 0x80000000 else w - 0x100000000} */"
 
+    def cstring(va):
+        for v, o, n in loads:
+            if v <= va < v + n:
+                p = va - v + o
+                e = data.find(b"\0", p, p + 256)
+                if e > p and all(32 <= c < 127 for c in data[p:e]):
+                    return data[p:e].decode()
+        return None
+
+    def pic(m):
+        w = word(int(m.group(1), 16) - GHIDRA_BASE)
+        if w is None:
+            return m.group(0)
+        s = cstring((w + int(m.group(2), 16) - GHIDRA_BASE) & 0xFFFFFFFF)
+        return f'{m.group(0)} /* "{s}" */' if s is not None else m.group(0)
+
     for line in open(src, encoding="utf-8", errors="replace"):
-        sys.stdout.write(re.sub(r"\bDAT_([0-9a-f]{8})\b(?!\s*\+)", annotate, line))
+        line = re.sub(r"\bDAT_([0-9a-f]{8})\b(?!\s*\+)", annotate, line)
+        sys.stdout.write(re.sub(r"\(?DAT_([0-9a-f]{8}) \+ (0x[0-9a-f]+)\)?", pic, line))
 
 
 if __name__ == "__main__":

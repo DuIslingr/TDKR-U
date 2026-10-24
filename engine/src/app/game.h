@@ -16,6 +16,8 @@
 #include "game/combat.h"
 #include "game/death_screen.h"
 #include "game/end_level_screen.h"
+#include "game/flash_hud.h"
+#include "game/flash_screen.h"
 #include "game/hud.h"
 #include "game/lens_flare.h"
 #include "game/level_logic.h"
@@ -137,6 +139,12 @@ private:
     TextRenderer subtitles;
     ParticleList hud_sprites;
     Hud hud;
+    FlashHud flash_hud;            // TDKR's HUD (BatmanHUD.swf) once Batman is playable
+    std::string flash_hud_level;   // the level it was set up for
+    float flash_hud_clock = -1;
+    std::unique_ptr<FlashScreen> swf_view;   // --swf: a Flash movie over the game (input goes to it)
+    float swf_clock = -1;
+    void start_swf_view(int w, int h);
     TouchControls touch;                       // the Touch scheme's on-screen controls
     const std::string settings_path;
     Settings settings;

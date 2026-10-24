@@ -13,8 +13,9 @@ folder from the IPA).
 | Path | What |
 | --- | --- |
 | `engine/` | The engine (C++20, SDL3). Forked from N.O.V.A. 3; so far the archive, texture and model loaders handle TDKR's data |
-| `engine/tools/check.cpp` | `tdkr-check`: decoder checks over a data folder |
-| `tools/` | Python reference decoders (`gla.py`, `textures.py`, `bdae.py`, `bdae2gltf.py`), symbol matching, Ghidra scripts |
+| `engine/tools/check.cpp` | `tdkr-check`: decoder checks over a data folder (`swf_check.cpp`: play a Flash movie to PNG) |
+| `engine/src/swf/` | The Flash player for the gameswf UI (parser, tessellator, ActionScript 2, display list) |
+| `tools/` | Python reference decoders (`gla.py`, `textures.py`, `bdae.py`, `bdae2gltf.py`, `swf.py`), symbol matching, Ghidra scripts |
 | `work/` | Local only (gitignored): extracted data, Ghidra projects, decompiled code |
 
 ## Building (Linux)
@@ -46,3 +47,10 @@ To run a level in the engine: `engine/build/tdkr --data work/data --level Stadio
 `--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera, `--walk-test SECONDS` to walk
 forward first, `--grapple-test SECONDS` to fire the grapnel after 1 s). In the window: mouse to look, WASD to move
 Batman, Shift to sprint, Space to jump (again in the air to glide; while gliding W dives, Shift+W plunges), F to grapple.
+The HUD is the game's own `BatmanHUD.swf`.
+
+The Flash UI: `python3 tools/swf.py info|tree|actions|texts|render FILE.swf` inspects a movie;
+`engine/build/tdkr-check swf work/data MainMenu.swf out.png --size 1280x720 call=screenManager:startScreen:main frames=60`
+plays one headless (steps: `goto=`, `stop=`, `call=`, `hide=`, `show=`, `set=`, `text=`, `load=`, `frames=`, `tree=`;
+text runs show as boxes there). In the game, `--swf MainMenu.swf --swf-step call=screenManager:startScreen:main`
+shows a movie over the level (the mouse drives it; Escape quits), also with `--screenshot`.

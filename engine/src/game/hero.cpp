@@ -174,12 +174,19 @@ float Hero::view_pitch(float pitch) const {
 }
 
 bool Hero::try_grapple(Player& player, const glm::vec3& eye, const glm::vec3& forward) const {
-    if (player.grappling || edges_.empty()) return false;
+    glm::vec3 point, landing;
+    if (player.grappling || !grapple_target(player, eye, forward, point, landing)) return false;
+    player.grapple_to(landing);
+    return true;
+}
+
+bool Hero::grapple_target(const Player& player, const glm::vec3& eye, const glm::vec3& forward, glm::vec3& point,
+                          glm::vec3& landing) const {
+    if (edges_.empty()) return false;
     const glm::vec3 feet = feet_of(player);
     const glm::vec3 aim = glm::normalize(forward);
     const float min_cos = std::cos(glm::radians(grapple_cone));
     float best = -1;
-    glm::vec3 landing{0};
     for (const GrappleEdge& e : edges_) {
         // The edge point nearest the aim line.
         const glm::vec3 ab = e.b - e.a;
@@ -199,11 +206,9 @@ bool Hero::try_grapple(Player& player, const glm::vec3& eye, const glm::vec3& fo
         if (cosang < min_cos || cosang <= best) continue;
         glm::vec3 inward = -glm::vec3(e.normal.x, e.normal.y, 0);
         if (glm::length(inward) > 1e-3f) inward = glm::normalize(inward);
-        best = cosang, landing = p + inward * grapple_inset;
+        best = cosang, point = p, landing = p + inward * grapple_inset;
     }
-    if (best < 0) return false;
-    player.grapple_to(landing);
-    return true;
+    return best >= 0;
 }
 
 glm::vec3 Hero::camera_position(const Player& player, float yaw, float pitch, const CollisionWorld& world) const {

@@ -1,5 +1,7 @@
 #include "app/game.h"
 
+#include "swf/steps.h"
+
 #include <cstdio>
 #include <stdexcept>
 
@@ -64,6 +66,7 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
       viewmodel(scene, gol_),
       subtitles(vfs_, renderer, "Days.ttf", std::max(16.0f, float(options.height) * 0.032f)),
       hud(scene),
+      flash_hud(vfs_, renderer, &main_strings),
       touch(hud),
       settings_path(headless ? std::string() : Settings::default_path()),
       settings(Settings::load(settings_path)),
@@ -347,7 +350,46 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         flare_clock = clock;
         flares.frame(flare_dt, f.camera, f.proj * f.view, w, h, hud_sprites);
     }
-    if (opt.scripts) {
+    // TDKR: the Flash HUD over Batman (the N.O.V.A. 3 HUD below stays off).
+    const bool flash = hero.active();
+    if (flash) {
+        if (flash_hud_level != opt.level) {
+            flash_hud_level = opt.level;
+            flash_hud.start(scene.minimap, scene.minimap_scale, scene.minimap_zoom);
+        }
+        FlashHud::State fs;
+        fs.visible = !menu.open && !death.open && !end_screen.open;
+        fs.cinematic = opt.scripts && logic.player_locked();
+        fs.position = glm::vec2(player.center);
+        fs.facing = hero.facing();
+        {
+            const glm::vec3 fwd = glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0));
+            fs.camera_yaw = glm::degrees(std::atan2(-fwd.x, fwd.y));
+        }
+        glm::vec3 point, landing;
+        const glm::vec3 forward = glm::normalize(glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0)));
+        if (hero.grapple_target(player, f.camera, forward, point, landing)) {
+            const glm::vec4 c = f.proj * f.view * glm::vec4(point, 1);
+            if (c.w > 1e-3f) {
+                fs.grapple = true;
+                fs.grapple_at = glm::vec2((c.x / c.w * 0.5f + 0.5f) * float(w), (0.5f - c.y / c.w * 0.5f) * float(h));
+            }
+        }
+        const float hud_dt = flash_hud_clock < 0 ? 0.0f : std::clamp(clock - flash_hud_clock, 0.0f, 0.25f);
+        flash_hud_clock = clock;
+        flash_hud.update(hud_dt, fs, w, h);
+        if (opt.swf.empty()) flash_hud.draw(hud_sprites);
+    }
+    if (!opt.swf.empty()) {   // --swf: the movie over everything
+        if (!swf_view) start_swf_view(w, h);
+        if (swf_view) {
+            const float dt = swf_clock < 0 ? 0.0f : std::clamp(clock - swf_clock, 0.0f, 0.25f);
+            swf_clock = clock;
+            swf_view->update(dt, w, h);
+            swf_view->draw(hud_sprites);
+        }
+    }
+    if (opt.scripts && !flash) {
         Hud::State hs;
         hs.visible = !combat.player_dead && logic.hud_enabled && (!logic.player_locked() || logic.interface_in_cinematic) && !menu.open;
         hs.clip = combat.ammo_in_clip(), hs.reserve = combat.ammo_reserve();
@@ -597,6 +639,25 @@ void Game::arms_distort() {
     distort_serial = d.serial;
     viewmodel.arms_distort(d.on);
     if (d.on) viewmodel.arms_distort_blend(d.target, d.ms);
+}
+
+void Game::start_swf_view(int w, int h) {
+    swf_view = std::make_unique<FlashScreen>(vfs, renderer, &main_strings);
+    swf_view->on_native = [](const std::string& name, swf::CallArgs& a) {
+        std::string args;
+        for (const swf::Value& v : a.args) args += (args.empty() ? "" : ", ") + (v.type == swf::Value::String ? v.s : std::string("…"));
+        std::fprintf(stderr, "swf native: %s(%s)\n", name.c_str(), args.c_str());
+        return swf::Value();
+    };
+    if (!swf_view->load(opt.swf, w, h)) {
+        swf_view.reset();
+        return;
+    }
+    swf_view->update(0, w, h);
+    for (const std::string& step : opt.swf_steps) {
+        std::string error;
+        if (!swf::run_step(*swf_view->player(), step, &error)) std::fprintf(stderr, "%s\n", error.c_str());
+    }
 }
 
 int Game::run() {

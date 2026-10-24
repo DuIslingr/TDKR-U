@@ -4,6 +4,7 @@
 //   tdkr-check texture DATA_DIR NAME OUT.ppm decode one texture
 //   tdkr-check textures DATA_DIR             decode every texture
 //   tdkr-check shaders DATA_DIR [DUMP_DIR]   translate and compile every effect pass (plain and skinned)
+//   tdkr-check swf DATA_DIR MOVIE OUT.png ... play a Flash movie headless (tools/swf_check.cpp)
 #include <functional>
 #include <chrono>
 #include <cstdio>
@@ -319,6 +320,8 @@ int cmd_cross(const std::string& dir) {
     return failed ? 1 : 0;
 }
 
+int cmd_swf(int argc, char** argv);
+
 int main(int argc, char** argv) {
 #ifdef TDKR_SHADERCROSS
     if (!SDL_ShaderCross_Init()) std::fprintf(stderr, "SDL_ShaderCross_Init: %s\n", SDL_GetError());
@@ -342,6 +345,7 @@ int main(int argc, char** argv) {
             return cmd_anim(argv[2], argv[3], times);
         }
         if (cmd == "texture" && argc >= 5) return cmd_texture(argv[2], argv[3], argv[4]);
+        if (cmd == "swf" && argc >= 5) return cmd_swf(argc - 2, argv + 2);
     } catch (const std::exception& ex) {
         std::fprintf(stderr, "error: %s\n", ex.what());
         return 1;

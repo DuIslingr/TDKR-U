@@ -1,5 +1,6 @@
 // Localised text (strings/<table>_<LANG>.bin/.off with <table>_map.bin): string ids
-// (STR_...) to text. Tables: MAIN, the level's (level properties), NPC barks.
+// (STR_...) to text. Tables: MAIN, the level's (level properties), NPC barks. TDKR's tables
+// hold UTF-16LE with 32-bit lengths and offsets (N.O.V.A. 3's: UTF-8, 16-bit).
 #pragma once
 
 #include <string>

@@ -32,7 +32,10 @@ functions exist in N.O.V.A. 3, and 6,527 of those have the same instruction coun
 | Project | Program | Notes |
 | --- | --- | --- |
 | `work/ghidra/tdkr.gpr` | `libKRHP.so` | 36,472 functions, 3 unnamed. Ghidra loads it at +0x10000 (`nm` 0x43e540 is Ghidra 0x44e540). Analysis takes ~200 s. |
-| `work/ios/tdkr_ios.gpr` | `TDKR` (iOS 1.0.4, armv7, decrypted: `cryptid 0`) | 24,116 functions, 18,817 unnamed before matching. **6,281 named** from libKRHP.so by `tools/match_symbols.py` + `tools/vtable_match.py` (N.O.V.A. 3 got 5,881). The iOS build matches the data we have; Android is 1.0.0. |
+| `work/ios/tdkr_ios.gpr` | `TDKR` (iOS 1.0.4, armv7, decrypted: `cryptid 0`) | 24,116 functions, 18,817 unnamed before matching. **6,281 named** from libKRHP.so by `tools/match_symbols.py` + `tools/vtable_match.py` (N.O.V.A. 3 got 5,881). |
+| `work/ios105/tdkr_ios105.gpr` | `TDKR` (iOS 1.0.5) | 23,931 functions. **5,819 named** from 1.0.4: `match_symbols.py` (strings, calls) plus `tools/bytes_match.py` (same compiler: code with branch targets and image pointers masked); the two agree on all 1,289 functions both name. Full decompile: `work/decomp_ios105/all.c`. |
+| `work/amazon/tdkr_amazon.gpr` | `libKRASarm32.so` (Android/Amazon 1.1.6, `lib_Android.so`, no DWARF) | 25,918 functions; 3,924 named by its exports, **7,431 more** matched from libKRHP.so. Built differently (fewer, larger functions), so code pairing does not apply. Full decompile: `work/decomp_amazon/all.c`. |
+| `work/krasrt/krasrt.gpr` | `libKRAS.so` (the redmemories arm64 runtime) | Unstripped. Its game hooks: `work/krasrt/game_hooks.c`. |
 
 Scripts are in `tools/ghidra_scripts` (copied from N.O.V.A. 3). To decompile by name regex:
 
@@ -40,6 +43,9 @@ Scripts are in `tools/ghidra_scripts` (copied from N.O.V.A. 3). To decompile by 
 /opt/ghidra/support/analyzeHeadless work/ghidra tdkr -process libKRHP.so -noanalysis -readOnly \
     -scriptPath tools/ghidra_scripts -postScript Decomp.java work/decomp/OUT.c "CCustomPakReader::"
 ```
+
+For iOS 1.0.5: `ExportFeatures.java` on the named 1.0.4 program and on 1.0.5, then `match_symbols.py` and
+`bytes_match.py` (1.0.4 binary + features, 1.0.5 binary + features), their union through `ApplyNames.java`.
 
 To rebuild the iOS names: run `ExportFeatures.java` on both programs (giving `work/ghidra/android_features.jsonl`
 and `work/ios/ios_features.jsonl`), then `vtable_match.py`, `match_symbols.py`, and `ApplyNames.java` on `tdkr_ios`.
@@ -100,6 +106,33 @@ shaders, and Gotham (`--level GothamCity.lvc`) draws its streamed city and props
 playlist (Android, 13 parts, `work/youtube`, 360p) are in `work/compare/`. The city is brighter than the footage: no
 lightmaps yet, so no baked night lighting.
 
+### Android: the Amazon build in `DarkKnightRises.apk`
+
+Not a Gameloft release: a 2026 community rebuild (signed `REVIVED`, `com.redmemories.darkknightrises`)
+that runs Gameloft's **Amazon build 1.1.6** (`com.gameloft.android.AMAZ.GloftKRAS`) on arm64 Android:
+
+- `libKRASarm32.so`: Gameloft's original 32-bit game library (soname `lib_Android.so`; engine strings
+  `1.5.21` as in our libKRHP.so; 3,603 exported C++ names, no DWARF).
+- `libKRASaot.so` (71 MB): that library translated ahead of time to arm64 (exports only `aot_*`).
+- `libKRAS.so`: their runtime (Dynarmic ARM recompiler, oaknut, JNI shims for Gameloft's Java classes).
+  Its game hooks only translate Gameloft's data and save paths into the app's folders, hook
+  `registerInGameEvent` (Amazon `0x3e98ac`) to log menu pages, and log shop purchases and Wayne coins.
+  No gameplay changes. The Java side (`classes.dex`, 41 KB) is their own shell.
+- `assets/gamedata.zip`: Gameloft's Android data (1.9 GB unpacked), the same layout as iOS plus
+  device-specific Flash archives (`gameswf_i9000/i9100/i9220/i9250/i9300`). The engine reads it:
+  `--data work/apk_new/and`.
+
+Against iOS 1.0.4, the Android data:
+- **Textures** are ETC1 (PVR format `0x36`) instead of PVRTC4, a few RGB565/RGB888; Flash atlases are
+  `rgb.pvr` + `alpha.pvr` zips with the alpha at half size (plus a `SPLIT` marker).
+- **Is what the footage shows**: its `MainMenu.swf` puts Tech Shop on a white banner and says
+  "Collection"; it adds confirm popups (`screenConfirmExOneButton/TwoButtons`, `InGameConfirmPopUp`), shop
+  items (skill-point packs, a super health restorer), a minigame skip button, and `MainMenu2.swf`.
+- **Adds controller support**: ~140 strings for the Xperia Play and PowerA/MOGA pads (tutorials, loading hints:
+  "Press the right trigger to use your grapnel gun").
+- Rebalances the shop (Batarangs in packs of 20, not 5), changes its own shader set (GLES variants), the
+  shop level and Police Station slightly; Gotham's streaming zips are rebaked.
+
 ### iOS 1.0.5 (`The_Dark_Knight_Rises___1.0.5_ios_6.0(1).ipa`)
 
 A later build (iOS 6+, armv7, `cryptid` 0). **This IPA is a cracked repack**: it injects
@@ -117,6 +150,8 @@ uncompressed content is the same size as 1.0.4 (1.54 GB; the IPA is just stored,
   streamed city: loading them as the missing Gotham models (114 → 31 missing) doubles the buildings, so the
   engine does not.
 - **gameswf_lowres** atlases are 512² (were 256²); `gameswf_normalres` menu backgrounds are re-encoded.
+- **Code**: platform work only. It adds the Facebook SDK (login, posting) and the advertising identifier
+  (`ASIdentifierManager`), and drops the MAC-address and keychain code (Apple's iOS 7 rules).
 
 ## Data formats, and how far N.O.V.A. 3's code gets
 

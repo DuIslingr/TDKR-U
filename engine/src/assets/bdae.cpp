@@ -21,7 +21,7 @@ constexpr Coll kImages{0x68, 0x6C, 0x0C};    // 0x10 in N.O.V.A. 3
 constexpr Coll kMaterials{0x78, 0x7C, 0x24};
 constexpr Coll kGeometries{0x84, 0x88, 0x10};
 constexpr Coll kControllers{0x90, 0x94, 0x0C};
-constexpr Coll kVisualScenes{0xB8, 0xBC, 0x10};
+constexpr Coll kVisualScenes{0xB0, 0xB4, 0x10};   // (0xB8, 0xBC) in N.O.V.A. 3
 constexpr Coll kSceneNodes{0x08, 0x0C, 0x50};
 constexpr Coll kNodeChildren{0x38, 0x3C, 0x50};
 constexpr Coll kNodeInstances{0x40, 0x44, 0x08};
@@ -146,14 +146,14 @@ private:
 
     void index_geometries() {
         for (uint32_t o : b.array(b.root, kGeometries)) {
-            if (b.u32(o + 8) == kGeometryMesh) geometry_offsets.emplace_back(b.cstr(o), b.mesh(o + 0x0C));
+            if (b.u32(o + 8) == kGeometryMesh) geometry_offsets.emplace_back(b.cstr(o), b.block(o + 0x0C));
         }
     }
 
     void index_controllers() {
         // Type 0 controllers are skins, type 1 morphs.
         for (uint32_t o : b.array(b.root, kControllers)) {
-            if (b.u32(o) == 0) controllers[b.cstr(o + 4)] = b.ptr(o + 8);
+            if (b.u32(o) == 0) controllers[b.cstr(o + 4)] = b.block(o + 8);   // TDKR: skins are blocks too
             else if (b.u32(o) == 1) morphs[b.cstr(o + 4)] = b.ptr(o + 8);
         }
     }

@@ -1,11 +1,11 @@
 // Random access to Glitch "BRES" resource images (.bdae): a memory image whose
 // pointers are stored as file offsets, listed in a relocation table.
 //
-// TDKR keeps each mesh out of line: the geometry points at {0, n, block offset, block
-// size, 0}, and the block is u32 size, u32 size - 0x2c, n - 2 self-relative offsets of
-// its pointer fields, then the SMesh. Pointers inside a block are relative to their own
-// address (the list leaves some out, so every pointer in a block is read that way) and
-// its buffers have no u32 prefix.
+// TDKR keeps meshes and skins out of line: the geometry (or skin controller) points at
+// {0, n, block offset, block size, 0}, and the block is n self-relative offsets of its
+// pointer fields, then the SMesh (or skin). Pointers inside a block are relative to their
+// own address (the list leaves some out, so every pointer in a block is read that way)
+// and its buffers have no u32 prefix.
 #pragma once
 
 #include <cstring>
@@ -45,15 +45,15 @@ public:
         const uint32_t p = ptr(off);
         return p && !in_block(off) ? p + 4 : p;
     }
-    // If the geometry's mesh pointer at `off` leads to a TDKR mesh block, register the
-    // block and return its SMesh; else the plain pointer.
-    uint32_t mesh(size_t off) {
+    // If the pointer at `off` leads to a TDKR block reference, register the block and return
+    // the struct in it (an SMesh or a skin); else the plain pointer.
+    uint32_t block(size_t off) {
         const uint32_t p = ptr(off);
         if (!p || u32(p) != 0 || relocs.count(p + 8) || !u32(p + 8)) return p;
         const uint32_t n = u32(p + 4), block = u32(p + 8), size = u32(p + 12);
         check_range(data.size(), block, size);
         blocks[block] = block + size;
-        return block + 8 + 4 * (n - 2);
+        return block + 4 * n;
     }
     std::string cstr(size_t off) const {
         const uint32_t p = ptr(off);
@@ -78,7 +78,7 @@ public:
 
     const Bytes& data;
     std::unordered_set<uint32_t> relocs;
-    std::map<uint32_t, uint32_t> blocks;   // TDKR mesh blocks: start -> end
+    std::map<uint32_t, uint32_t> blocks;   // TDKR blocks: start -> end
     uint32_t root = 0;
 };
 

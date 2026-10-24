@@ -114,10 +114,11 @@ void Game::run_walk_test() {
         PlayerInput in;
         in.forward = i * kPhysicsStep >= 1.0f ? 1.0f : 0.0f;
         player.update(scene.collision(), in, kPhysicsStep);
+        hero.update(scene, player, in, kPhysicsStep);
         step_logic(kPhysicsStep);
         {   // zone tracking follows the walker
             Camera eye = cam;
-            eye.position = player.eye();
+            eye.position = view_position(player.yaw, player.pitch);
             eye.yaw = player.yaw;
             const FrameParams wf = frame(eye, opt.width, opt.height);
             scene.cull(wf.camera, wf.proj * wf.view, opt.scripts ? logic.cinematic_zone() : ZoneSystem::kNone);
@@ -151,7 +152,7 @@ void Game::run_walk_test() {
     }
     std::printf("walk test: start z %.2f, end z %.2f, horizontal distance %.2f m, %s\n", start.z,
                 player.center.z, travelled, player.on_ground ? "on ground" : "in the air");
-    cam.position = player.eye();
+    cam.position = view_position(player.yaw, player.pitch);
     cam.yaw = player.yaw;
 }
 
@@ -211,6 +212,7 @@ int Game::run_screenshot() {
         if (seated) player.center = seat_eye - glm::vec3(0, 0, player.eye_height);
         else if (!(opt.scripts && logic.cinematic_active()) && !(opt.scripts && logic.limited_step(pin.right, kPhysicsStep)))
             player.update(scene.collision(), pin, kPhysicsStep);
+        hero.update(scene, player, pin, kPhysicsStep);
         if (opt.scripts) logic.limited_view_input(player.yaw, player.pitch, kPhysicsStep);
         step_logic(kPhysicsStep);
         if (opt.scripts) {
@@ -289,7 +291,8 @@ int Game::run_screenshot() {
             logic.audio->render(rendered.data() + at, frames);
         }
         Camera eye = cam;
-        if (!opt.have_eye && opt.focus.empty()) eye.position = player.eye(), eye.yaw = player.yaw, eye.pitch = player.pitch;
+        if (!opt.have_eye && opt.focus.empty())
+            eye.position = view_position(player.yaw, player.pitch), eye.yaw = player.yaw, eye.pitch = player.pitch;
         const FrameParams rf = frame(eye, opt.width, opt.height);
         scene.cull(rf.camera, rf.proj * rf.view, opt.scripts ? logic.cinematic_zone() : ZoneSystem::kNone);
         if (opt.every > 0 && t + kPhysicsStep >= float(shots) * opt.every) {   // OUT_000.bmp, OUT_001.bmp, ...
@@ -313,7 +316,7 @@ int Game::run_screenshot() {
         for (const std::string& line : combat.describe())
             if (line.find(" enabled") != std::string::npos) std::printf("  end: %s\n", line.c_str());
     if (run_time > 0 && !opt.have_eye && opt.focus.empty()) {
-        cam.position = player.eye();
+        cam.position = view_position(player.yaw, player.pitch);
         cam.yaw = player.yaw;
         cam.pitch = player.pitch;
     }

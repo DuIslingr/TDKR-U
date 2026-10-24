@@ -22,6 +22,7 @@
 #include "game/loading_screen.h"
 #include "game/main_menu.h"
 #include "game/pause_menu.h"
+#include "game/hero.h"
 #include "game/player.h"
 #include "game/save_game.h"
 #include "game/scene.h"
@@ -86,6 +87,10 @@ private:
     void run_walk_test();
     int run_screenshot();
     FrameParams shot_frame(Camera base);
+    // Where the view goes for a yaw/pitch: behind Batman (third person), else at the player's eye.
+    glm::vec3 view_position(float yaw, float pitch) const {
+        return hero.active() ? hero.camera_position(player, yaw, pitch, scene.collision()) : player.eye();
+    }
 
     // The window (game_window.cpp).
     void run_window();
@@ -121,6 +126,7 @@ private:
     const float* zfar = nullptr;               // the level logic's far plane (SetZFar), once it exists
     ParticleList particle_list;
     Player player;
+    Hero hero;                                 // TDKR: Batman in third person and the follow camera
     LevelLogic logic;
     std::unique_ptr<Audio> audio;
     std::vector<float> rendered;               // --sound-render

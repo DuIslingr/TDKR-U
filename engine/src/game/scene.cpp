@@ -812,14 +812,18 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
     draw_materials_.clear();
     draw_info_.clear();
     irradiance_.clear();
-    // Irradiance volumes belong to level objects: <level>_<object id>.irr, relative to the object.
+    // Irradiance volumes belong to level objects: <level>_<object id>.irr (TDKR:
+    // <level>.lvc_<object id>.irr), relative to the object.
     const std::string stem = lvc_name.substr(0, lvc_name.rfind('.'));
     for (const LevelObject& o : level_.objects) {
         if (!o.base) continue;
-        const auto& hits = vfs_.find(stem + "_" + std::to_string(o.base->id) + ".irr");
-        if (hits.empty()) continue;
+        const std::string id = std::to_string(o.base->id);
+        const auto* hits = &vfs_.find(stem + "_" + id + ".irr");
+        if (hits->empty()) hits = &vfs_.find(lvc_name + "_" + id + ".irr");
+        if (hits->empty()) continue;
+        const auto& found = *hits;
         try {
-            auto vols = load_irradiance(vfs_.read(hits.front()), o.base->position);
+            auto vols = load_irradiance(vfs_.read(found.front()), o.base->position);
             for (auto& v : vols) irradiance_.push_back(std::move(v));
         } catch (const FormatError& ex) {
             std::fprintf(stderr, "irradiance %s_%d: %s\n", stem.c_str(), o.base->id, ex.what());
@@ -853,6 +857,9 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
         ++stats_.placements;
         if (const LoadedModel* lm = model(p.model)) object_instances_[p.object_index] = add_instance(*lm, placement_matrix(p.transform), &p);
     }
+    // Objects disabled or invisible at the start (CComponentBase flags) wait for the scripts.
+    for (const Placement& p : model_placements(level_, gol_))
+        if (!p.transform.visible) set_object_visible(p.object_index, false);
     // TDKR: objects lit by Beast carry their lightmap in CBeastObjectComponent: the atlas region
     // (scale u, scale v, offset u, offset v) and texture, then the same for the low-end atlas.
     constexpr int kCompBeastObject = 0x365CFD67;
@@ -915,12 +922,14 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
     for (const DrawItem& d : draws_) stats_.lod_hidden += !d.visible;
     build_collision();
 
-    // Start at the level's start spawn point (spawn flags: 3 chars, the first marks the start).
+    // Start at the level's start spawn point. TDKR's CSpawnPointObject::Create: base (14 values),
+    // s name, s script, then 3 flag chars, the first marking the level start (IsLevelStartPoint).
+    constexpr size_t kSpawnScript = 15, kSpawnStart = 16;
     const LevelObject* spawn = nullptr;
     for (const auto& o : level_.objects) {
         if (o.kind != "spawn_point" || !o.base) continue;
         if (!spawn) spawn = &o;
-        if (o.fields.size() > 0 && o.fields[0].i == 1) {
+        if (o.fields.size() > kSpawnStart && o.fields[kSpawnStart].i == 1) {
             spawn = &o;
             break;
         }
@@ -928,10 +937,10 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
     // Some start points only play an intro and then move the player on with the Lua
     // call TeleportPlayerToZone(id), where id is another spawn point. Until scripts
     // run, follow that call directly.
-    if (spawn && spawn->fields.size() > 3) {
+    if (spawn && spawn->fields.size() > kSpawnScript) {
         static const std::regex teleport(R"(TeleportPlayerToZone\s*\(\s*(\d+)\s*\))");
         std::smatch m;
-        const std::string& script = spawn->fields[3].s;
+        const std::string& script = spawn->fields[kSpawnScript].s;
         int target = -1;
         for (auto it = std::sregex_iterator(script.begin(), script.end(), teleport); it != std::sregex_iterator(); ++it) {
             target = std::stoi((*it)[1].str());   // the last call wins

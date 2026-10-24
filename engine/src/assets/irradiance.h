@@ -1,4 +1,4 @@
-// Irradiance volumes (<level>_<object id>.irr): grids of spherical-harmonic light
+// Irradiance volumes (<level>_<object id>.irr; TDKR: <level>.lvc_<id>.irr, version 2): grids of spherical-harmonic light
 // probes that light characters and props (the ird_* uniforms of the game's shaders).
 //
 // File: "MIhS", u32 version 3, u32 volume count, then per volume: AABB (6 floats,

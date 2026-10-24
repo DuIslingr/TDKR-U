@@ -155,7 +155,7 @@ class Exporter:
         self.scene_nodes = {}       # node id -> bdae.Node (rest pose for animation)
         self.geometries = {g.id: g for g in model.geometries}
         self.materials = {mt.id: mt for mt in model.materials}
-        self.controllers = {self.b.cstr(c + 4): self.b.ptr(c + 8) for c in model.controllers}
+        self.controllers = {self.b.cstr(c + 4): self.b.block(c + 8) for c in model.controllers}   # TDKR: skins are blocks
 
     # ------------------------------------------------------------------ vertex data
 
@@ -173,7 +173,7 @@ class Exporter:
 
     def _skin_arrays(self, skin, first, count, vertex_count):
         b = self.b
-        wp = b.ptr(skin + 0x58) + 4   # skip the buffer's u32 prefix
+        wp = b.buffer(skin + 0x58)   # past the u32 prefix (none in TDKR blocks)
         # 4 x u8 joint index + up to 4 x f32 weight: the buffer's length in words (+0x54)
         # over the vertex count says how many (3 in Boreas_Thug_A's LOD0, else 4).
         nweights = min(max(b.u32(skin + 0x54) // max(vertex_count, 1) - 1, 1), 4)

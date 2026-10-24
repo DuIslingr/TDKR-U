@@ -11,8 +11,17 @@ namespace {
 
 #include "assets/level_specs.inc"
 
-// CComponentBase::Load values: c, id, position, rotation, scale, 3 flags. The id is field 1.
+// CComponentBase::Load values: c enabled, id, position, rotation, scale, c visible, c always
+// visible, c always update (CGameObject::InitComponentBase). The id is field 1.
 constexpr size_t kBaseFirst = 1;
+
+// Shown when the level starts: enabled and visible (scripts turn on the rest, e.g. the
+// cutscene rigs, which carry their own Batman).
+Transform base_transform(const Value& v) {
+    Transform t = transform_from_values(v, kBaseFirst);
+    t.visible = v[0].i != 0 && v[kBaseFirst + 10].i != 0;
+    return t;
+}
 
 template <typename K, typename V, size_t N>
 auto table(const std::pair<K, V> (&rows)[N]) {
@@ -88,10 +97,11 @@ const std::unordered_map<int, const LevelTypeSpec*>& level_types() {
 
 void read_level_type(DictStream& st, const LevelTypeSpec& lt, LevelObject& o) {
     o.kind = lt.kind;
-    const std::string spec = lt.spec;
-    o.fields = st.spec(expand(spec));
-    const std::string base = std::string("<") + kBaseLoader + ">";
-    if (spec.rfind(base, 0) == 0) o.base = transform_from_values(o.fields, kBaseFirst);
+    const std::string spec = expand(lt.spec);
+    o.fields = st.spec(spec);
+    // Most structure records (spawn points, irradiance volumes, occluders, bake groups...)
+    // start with the base component's fields.
+    if (spec.rfind(loader_spec(kBaseLoader), 0) == 0) o.base = base_transform(o.fields);
     if (o.kind == "skybox") {
         o.model = o.fields[0].s;
     } else if (o.kind == "long_distance_mesh" || o.kind == "reflection_mesh") {
@@ -110,7 +120,7 @@ void read_game_object(DictStream& st, const GolType& type, LevelObject& o) {
         } else if (flag != 0) {
             continue;
         } else if (comp == kCompBaseHash) {
-            o.base = transform_from_values(st.spec(loader_spec(kBaseLoader)), kBaseFirst);
+            o.base = base_transform(st.spec(loader_spec(kBaseLoader)));
         } else if (comp == kCompMeshHash) {
             read_mesh_values(st.spec(loader_spec(kMeshLoader)), o);
         } else if (const std::string& spec = component_spec(comp); !spec.empty()) {
@@ -239,7 +249,7 @@ bool is_helper_model(const std::string& model) {
 
 std::optional<Transform> object_transform(const LevelObject& o, const GolType& type, const Gol& gol) {
     if (o.base) return o.base;
-    if (const Value* t = resolved_template(type, gol, kCompBase)) return transform_from_values(*t, kBaseFirst);
+    if (const Value* t = resolved_template(type, gol, kCompBase)) return base_transform(*t);
     return std::nullopt;
 }
 }  // namespace

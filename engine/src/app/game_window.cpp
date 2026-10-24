@@ -476,6 +476,7 @@ void Game::run_window() {
                 // point may float in the void).
                 if (!(opt.scripts && logic.cinematic_active()) && !seated && !(opt.scripts && logic.limited_step(in.right, kPhysicsStep)))
                     player.update(scene.collision(), in, kPhysicsStep);
+                hero.update(scene, player, in, kPhysicsStep);
                 step_logic(kPhysicsStep);
             }
             if (seated && logic.seat(seat_eye, yaw_min, yaw_max)) player.center = seat_eye - glm::vec3(0, 0, player.eye_height);
@@ -498,7 +499,7 @@ void Game::run_window() {
                 combat.push_player_out();
                 combat_in = {};
             }
-            cam.position = player.eye();
+            cam.position = view_position(cam.yaw, cam.pitch);
             if (player.spawns != view_spawns) {   // spawned or teleported: face its way
                 view_spawns = player.spawns;
                 cam.yaw = player.yaw, cam.pitch = player.pitch;

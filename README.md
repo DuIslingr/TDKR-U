@@ -43,4 +43,5 @@ To check the levels: `python3 tools/lvc.py work/extracted/data/game_config/*.lvc
 `tools/streaming.py` exports just that).
 
 To run a level in the engine: `engine/build/tdkr --data work/data --level Stadion.lvc --no-scripts` (add
-`--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera).
+`--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera, `--walk-test SECONDS` to walk
+forward first). In the window: mouse to look, WASD to move Batman, Shift to sprint, Space to jump.

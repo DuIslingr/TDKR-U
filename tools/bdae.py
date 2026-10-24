@@ -33,7 +33,7 @@ ROOT_EFFECTS = (0x70, 0x74, 0x104)
 ROOT_MATERIALS = (0x78, 0x7C, 0x24)
 ROOT_GEOMETRIES = (0x84, 0x88, 0x10)
 ROOT_CONTROLLERS = (0x90, 0x94, 0x0C)
-ROOT_VISUAL_SCENES = (0xB8, 0xBC, 0x10)
+ROOT_VISUAL_SCENES = (0xB0, 0xB4, 0x10)    # (0xB8, 0xBC) in N.O.V.A. 3
 
 NODE_SIZE = 0x50
 SUBMESH_SIZE = 0x38
@@ -72,6 +72,22 @@ class Bres:
         count, table = struct.unpack_from("<I", data, 0x10)[0], struct.unpack_from("<I", data, 0x18)[0]
         self.relocs = set(struct.unpack_from(f"<{count}I", data, table))
         self.root = self.u32(0x20)
+        self.blocks = []    # TDKR out-of-line blocks: (start, end); pointers in them are self-relative
+
+    def in_block(self, off):
+        return any(a <= off < e for a, e in self.blocks)
+
+    def block(self, off):
+        """TDKR: the pointer at `off` leads to {0, n, block offset, block size, 0} (a mesh or a
+        skin kept out of line): register the block and return the struct in it, after its n
+        self-relative pointer-slot offsets. Else the plain pointer."""
+        p = self.ptr(off)
+        if p is None or self.u32(p) != 0 or (p + 8) in self.relocs or not self.u32(p + 8):
+            return p
+        n, start, size = self.u32(p + 4), self.u32(p + 8), self.u32(p + 12)
+        if (start, start + size) not in self.blocks:
+            self.blocks.append((start, start + size))
+        return start + 4 * n
 
     def u32(self, off):
         return struct.unpack_from("<I", self.data, off)[0]
@@ -89,7 +105,16 @@ class Bres:
     def ptr(self, off):
         """Pointer stored at `off`, or None for a null pointer."""
         v = self.u32(off)
-        return v if v and off in self.relocs else None
+        if not v:
+            return None
+        if off in self.relocs:
+            return v
+        return off + v if self.in_block(off) else None
+
+    def buffer(self, off):
+        """A vertex/index/influence buffer: past its u32 prefix, which blocks do not have."""
+        p = self.ptr(off)
+        return None if p is None else p if self.in_block(off) else p + 4
 
     def cstr(self, off):
         """String pointed to by the pointer at `off`."""
@@ -254,8 +279,7 @@ class Bdae:
     def _mesh_block(self, ref):
         """TDKR: the geometry points at {0, n, block offset, block size, 0} instead of an SMesh.
 
-        The block is u32 size, u32 size - 0x2c, then n - 2 self-relative offsets of the
-        block's pointer fields, then the SMesh. Every pointer in the block (including
+        The block starts with n self-relative offsets of its pointer fields, then the SMesh. Every pointer in the block (including
         submesh names and index buffers, which the list leaves out) is relative to its
         own address, and buffers have no u32 prefix.
         """

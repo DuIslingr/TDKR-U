@@ -61,6 +61,22 @@ and `work/ios/ios_features.jsonl`), then `vtable_match.py`, `match_symbols.py`, 
   sample with it but never define it), and `Coord<n>_scaleoffset` / `LightMapAtlas` set to identity (the shaders dequantize
   texcoords themselves; the loader already has).
 - Fog from `CComponentBaseGlobalIllum`: level-properties fields 44–45 (start, end) and 46–49 (RGBA).
+- **Lightmaps**: `LightMapAtlas` from the material, or per object from `CBeastObjectComponent` (atlas region +
+  `BakeGroup_*.tga`, bound over the material's `LightMap`). Streamed-city materials name only an inline effect id
+  (`#LightMapDC-fx_…`): the loader takes `LightMapDC.bdae` etc. (`StandardDiffuse*`/`SimpleModulate*` → `…All.bdae`).
+- **Driver defines** (`shader_compiler.cpp`): `IS_GAME IRRADIANCE LIGHTING BATMAN_SPECULAR CHARACTER_SPECULAR
+  USE_FRESNEL_ON_PIXEL`, as the device options switch on. Without `IRRADIANCE` the character shaders read an unwritten
+  varying and draw black.
+- **Irradiance**: TDKR's `<level>.lvc_<id>.irr` are version 2 (`CIrradianceVolume::fromDataStream`: two flag bytes
+  after the set count, low-detail point sets, a truncating grid size). Stadion loads its 10.
+- **Visibility at start**: the base component's flags are `c enabled … c visible c always-visible c always-update`
+  (`CGameObject::InitComponentBase`); objects not both enabled and visible start hidden. That hides the cutscene rigs
+  (`cutscene_*_mesh.bdae`, each with its own Batman, posed where the scene plays).
+- **Spawn points**: `CSpawnPointObject::Create` = base, s name, s script, 3 flags (the first: level start), i.
+- **Batman** (`game/hero.cpp`): `batman.bdae` + `batman_anims.bdae` (921 clips) at the player, facing where he moves,
+  with idle/walk/run/sprint/jump/fall/land clips and the hanging cape (`CAPE`, the gliding cape, hidden). A follow camera
+  3 m behind at shoulder height, pulled in front of walls by a collision ray. Movement is N.O.V.A. 3's (ellipsoid on the
+  collision, camera-relative WASD + mouse). The level's own Batman placements (script stand-ins) are hidden.
 - Everything else above the asset layer (Lua API, HUD, menus, combat, zones) is still N.O.V.A. 3's and keyed to its
   small component ids, which find nothing in TDKR's data.
 
@@ -79,7 +95,7 @@ lightmaps yet, so no baked night lighting.
 | --- | --- | --- |
 | `.gla` custom pak | 37 archives | Same as N.O.V.A. 3, but **names are plain text** (N.O.V.A. 3 XOR32-encrypts them). Android's `CCustomPakReader::scanLocalHeader` has no decode step. Three archives are 16-byte empty paks. `tools/gla.py` detects plain names and empty paks. |
 | `.tga` textures | 1230 | Actually **PVR v2** (`PVR!` at +0x2c), mostly PVRTC 4bpp with mips (iOS). N.O.V.A. 3's `textures.py` decodes them. A PC build has to decode PVRTC on load, since desktop GPUs lack it. |
-| `.bdae` models | 1339 | BRES like N.O.V.A. 3, with two differences, fixed in `tools/bdae.py`: (1) image records have a 0xC stride (N.O.V.A. 3: 0x10); (2) each mesh is an **out-of-line block**: the geometry points to `{0, n, offset, size, 0}`; the block is `u32 size, u32 size-0x2c, (n-2)` self-relative pointer-slot offsets, then N.O.V.A. 3's `SMesh`, with **self-relative pointers** and **no u32 prefix** on buffers. All 1295 BRES files parse; Batman converts to glTF with textures. |
+| `.bdae` models | 1339 | BRES like N.O.V.A. 3, with these differences, handled in `tools/bdae.py` and the engine: (1) image records have a 0xC stride (N.O.V.A. 3: 0x10); (2) the root's visual scenes are at `(0xB0, 0xB4)` (N.O.V.A. 3: `(0xB8, 0xBC)`); (3) meshes **and skins** are **out-of-line blocks**: the geometry (or skin controller) points to `{0, n, offset, size, 0}`; the block is `n` self-relative pointer-slot offsets, then N.O.V.A. 3's `SMesh` (or skin struct), with **self-relative pointers** and **no u32 prefix** on buffers; (4) attributes can be **quantized** (`SMesh +0x28`: per-attribute scale/offset; texcoords are s16). All 1295 BRES files parse; Batman converts to glTF skinned and textured. |
 | `effects/*.bdae` | 44 | ZIPs holding `{big,little}_endian_{quantized,not_quantized}.bdae`, `source.dae`, `dependancies.txt`. |
 | `.glsl` | 127 | The game's GLES 2 shaders (`*-v.glsl`/`*-f.glsl`, post effects, BatSonar, CascadedShadow...). N.O.V.A. 3's GLSL to SPIR-V translator is the place to start. |
 | `.lvc` levels + `gol.bin` | 12 | **All 12 parse** with `tools/lvc.py`, each ending exactly at its -1 marker (Gotham City: 13,643 objects). Lua 5.1 scripts are stored as source text in the string table, plus `LuaQ` bytecode. See "Levels" below. |
@@ -142,8 +158,9 @@ segments (buildings, roads, bridges) in the same world space.
 
 ## Open items found so far
 
-- **Lightmaps**: Beast atlases (`BakeGroup_*.tga`) per object (`CBeastObjectComponent`: atlas scale/offset + texture) and per
-  streamed batch (the 30-byte attribute map and materials don't name them yet); without them the scenes lack baked night lighting.
+- 46 streamed batches keep the fallback shader (7 effects aren't shipped: `NormalSpecOverbright`, …).
+- Batman's moves beyond locomotion (combat, grapple, glide, Batpod) and the camera's own rules (`CCameraObject`, `DUMMY_CAMERA`).
+- The fog texture, vertical fog, rain (`MC_WATER`) and reflection shader variants: their textures aren't wired up.
 - Streaming in the engine loads all of Gotham at LOD 0 at once; the game streams cells (`bih_*`, `CRegularGridStreaming`) and picks
   LODs by distance (`lod_selector`).
 - Stadion's `st_stadium_volumetric` light shafts blend far too bright with the game shader.

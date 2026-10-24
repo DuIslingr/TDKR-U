@@ -185,6 +185,7 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
             player.spawn(o->position, o->yaw);
         }
     }
+    hero.start(scene, player);
     for (const std::string& code : opt.exec) logic.exec(code);
     for (const std::string& h : opt.hide_models) std::printf("hid %zu placements of *%s*\n", scene.hide_models(h), h.c_str());
     if (!opt.continue_file.empty() && opt.scripts) {
@@ -474,6 +475,7 @@ void Game::load_level(const std::string& level) {
     scene.load_level(opt.level, 1);
     loading.loaded = true;
     player.spawn(scene.start_position, scene.start_yaw);
+    hero.start(scene, player);
     logic.start();
     combat.start();
     combat.campaign_loadout(opt.level);
@@ -493,6 +495,7 @@ void Game::resume(const SaveGame& g) {
         scene.load_level(opt.level, logic.checkpoint_section());
         loading.loaded = true;
         player.spawn(scene.start_position, scene.start_yaw);
+        hero.start(scene, player);
         logic.respawn_at_checkpoint();
         shop.apply_owned(combat, settings);
         viewmodel.start();
@@ -518,6 +521,7 @@ void Game::step_logic(float dt) {
         scene.load_level(opt.level, section);
         loading.active = false;
         player.spawn(feet, yaw);
+        hero.start(scene, player);
         logic.start(true);
         combat.start(true);
         viewmodel.start();
@@ -597,7 +601,7 @@ void Game::arms_distort() {
 
 int Game::run() {
     view_spawns = player.spawns, view_jumps = player.jumps;
-    cam.position = opt.have_eye ? glm::vec3(opt.eye) : player.eye();
+    cam.position = opt.have_eye ? glm::vec3(opt.eye) : view_position(scene.start_yaw, opt.pitch);
     cam.yaw = opt.have_eye ? opt.eye.w : scene.start_yaw;
     cam.pitch = opt.pitch;
     if (!opt.focus.empty() && !focus_camera(scene, gol, opt.focus, cam.position, cam.yaw, cam.pitch))

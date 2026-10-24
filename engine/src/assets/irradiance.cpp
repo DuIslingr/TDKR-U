@@ -70,7 +70,10 @@ IrradiancePoint IrradianceVolume::sample(const glm::vec3& pos, int set) const {
 
 std::vector<IrradianceVolume> load_irradiance(const Bytes& data, const glm::vec3& offset) {
     if (data.size() < 12 || std::memcmp(data.data(), "MIhS", 4) != 0) throw FormatError("not an irradiance file");
-    if (read_le<int32_t>(data, 4) != 3) return {};   // the game skips other versions (20 files are version 2)
+    // N.O.V.A. 3 reads version 3; TDKR's files are all version 2 (CIrradianceVolume::fromDataStream:
+    // after the set count, u8 "full points" and u8 "low points" flags; the grid size truncates).
+    const int32_t version = read_le<int32_t>(data, 4);
+    if (version != 3 && version != 2) return {};
     const int32_t count = read_le<int32_t>(data, 8);
     size_t o = 12;
     std::vector<IrradianceVolume> out;
@@ -85,15 +88,23 @@ std::vector<IrradianceVolume> load_irradiance(const Bytes& data, const glm::vec3
         vol.fade = read_le<float>(data, o + 28);
         const int32_t sets = read_le<int32_t>(data, o + 32);
         o += 36;
+        bool full = true, low = false;
+        if (version == 2) {
+            check_range(data.size(), o, 2);
+            full = data[o] != 0, low = data[o + 1] != 0;
+            o += 2;
+        }
         if (!(vol.spacing > 0) || sets < 0 || sets > 16) throw FormatError("bad irradiance volume");
-        for (int k = 0; k < 3; ++k) vol.dims[k] = int((box[3 + k] - box[k]) / vol.spacing + 0.5f) + 1;
+        for (int k = 0; k < 3; ++k)
+            vol.dims[k] = version == 2 ? int((box[3 + k] - box[k]) / vol.spacing) + 1 : int((box[3 + k] - box[k]) / vol.spacing + 0.5f) + 1;
         const size_t n = size_t(vol.dims.x) * size_t(vol.dims.y) * size_t(vol.dims.z);
-        for (int32_t s = 0; s < sets; ++s) {
+        for (int32_t s = 0; full && s < sets; ++s) {
             check_range(data.size(), o, n * kPointSize);
             auto& pts = vol.sets.emplace_back(n);
             for (size_t i = 0; i < n; ++i) std::memcpy(pts[i].data(), &data[o + i * kPointSize], kPointSize);
             o += n * kPointSize;
         }
+        if (low) o += size_t(sets) * n * 0x24;   // CIrradiancePointLow sets: not used here
         if (!vol.sets.empty()) out.push_back(std::move(vol));
     }
     return out;

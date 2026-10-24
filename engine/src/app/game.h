@@ -18,6 +18,8 @@
 #include "game/end_level_screen.h"
 #include "game/flash_hud.h"
 #include "game/flash_screen.h"
+#include "game/front_end.h"
+#include "game/missions.h"
 #include "game/hud.h"
 #include "game/lens_flare.h"
 #include "game/level_logic.h"
@@ -142,6 +144,17 @@ private:
     FlashHud flash_hud;            // TDKR's HUD (BatmanHUD.swf) once Batman is playable
     std::string flash_hud_level;   // the level it was set up for
     float flash_hud_clock = -1;
+    // TDKR's menus from its Flash movies (title, main menu, chapters, pause); the N.O.V.A. 3
+    // menus remain for data without them.
+    std::vector<Mission> missions;
+    FrontEnd front_end;
+    bool flash_menus = false;
+    int mission = -1;                         // the mission being played
+    std::chrono::steady_clock::time_point menu_clock{};
+    void show_main_menu();
+    void front_action(FrontEnd::Action a);
+    void start_mission(int index);
+    float menu_dt();
     std::unique_ptr<FlashScreen> swf_view;   // --swf: a Flash movie over the game (input goes to it)
     float swf_clock = -1;
     void start_swf_view(int w, int h);

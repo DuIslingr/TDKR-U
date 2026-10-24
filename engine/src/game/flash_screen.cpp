@@ -1,6 +1,7 @@
 #include "game/flash_screen.h"
 
 #include <cstdio>
+#include <cstdlib>
 
 #include "assets/strings.h"
 #include "core/vfs.h"
@@ -25,7 +26,9 @@ bool FlashScreen::load(const std::string& movie, int width, int height) {
     const std::string tag = def->name;
     auto setup = [this, tag](swf::Player& p) {
         p.log = [tag](const std::string& s) { std::fprintf(stderr, "%s: %s\n", tag.c_str(), s.c_str()); };
-        p.vm.trace = [](const std::string&) {};   // the menus trace a lot
+        // the menus trace a lot: TDKR_SWF_TRACE=1 shows it
+        if (std::getenv("TDKR_SWF_TRACE")) p.vm.trace = [tag](const std::string& s) { std::fprintf(stderr, "%s> %s\n", tag.c_str(), s.c_str()); };
+        else p.vm.trace = [](const std::string&) {};
         p.vm.get_string = [this](const std::string& id) {
             const std::string t = strings_ ? strings_->find(id) : std::string();
             return t.empty() ? id : t;

@@ -10,6 +10,8 @@
 #include <SDL3/SDL.h>
 
 #include "app/game.h"
+
+#include "swf/steps.h"
 #include "app/output.h"
 #include "game/navmesh.h"
 
@@ -380,6 +382,40 @@ int Game::run_screenshot() {
             const auto& zz = z.zones()[i];
             std::printf("  zone %zu id %d bounds (%.0f %.0f %.0f)-(%.0f %.0f %.0f) portals %zu children %zu\n", i, zz.id,
                         zz.min.x, zz.min.y, zz.min.z, zz.max.x, zz.max.y, zz.max.z, zz.portals.size(), zz.children.size());
+        }
+    }
+    if (!opt.front_end.empty()) {   // the Flash menus: SCREEN[:KEYS] (u d l r a=activate b=back .=wait)
+        const size_t colon = opt.front_end.find(':');
+        const std::string screen = opt.front_end.substr(0, colon), keys = colon == std::string::npos ? "" : opt.front_end.substr(colon + 1);
+        using S = FrontEnd::Screen;
+        const S which = screen == "title" ? S::Title : screen == "pause" ? S::Pause : screen == "death" ? S::Death : S::Main;
+        if (!front_end.show(which)) throw std::runtime_error("no Flash menus in this data");
+        auto run = [&](float seconds) {
+            for (float t = 0; t < seconds; t += 1.0f / 30) front_end.update(1.0f / 30, opt.width, opt.height);
+        };
+        run(1.5f);
+        for (char c : keys) {
+            using K = FrontEnd::Key;
+            if (c != '.') front_end.key(c == 'u' ? K::Up : c == 'd' ? K::Down : c == 'l' ? K::Left : c == 'r' ? K::Right : c == 'b' ? K::Back : K::Activate);
+            run(c == 'a' || c == 'b' || c == '.' ? 1.5f : 0.3f);
+            const FrontEnd::Action a = front_end.take_action();
+            if (a.kind != FrontEnd::Action::None) {
+                std::printf("front end action %d", int(a.kind));
+                if (a.mission >= 0 && a.mission < int(missions.size()))
+                    std::printf(": mission %d %s (%s, chapter %d)", a.mission, missions[size_t(a.mission)].name.c_str(),
+                                missions[size_t(a.mission)].level.c_str(), missions[size_t(a.mission)].chapter);
+                std::printf("\n");
+            }
+        }
+        if (const char* path = std::getenv("TDKR_MENU_TREE"); path && front_end.player())
+            if (swf::Instance* i = front_end.player()->find(path)) swf::print_tree(i, 0, 8);
+        if (which == S::Pause || which == S::Death) {
+            menu.open = true;
+            draw_text(shot, opt.width, opt.height);
+        } else {
+            main_menu.open = true;
+            shot = draw_main_menu(opt.width, opt.height);
+            scene_hidden = true;
         }
     }
     if (!opt.main_menu_keys.empty()) {   // the main menu instead of the view

@@ -67,6 +67,8 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
       subtitles(vfs_, renderer, "Days.ttf", std::max(16.0f, float(options.height) * 0.032f)),
       hud(scene),
       flash_hud(vfs_, renderer, &main_strings),
+      missions(load_missions(vfs_, gol_)),
+      front_end(vfs_, renderer, &main_strings, &missions),
       touch(hud),
       settings_path(headless ? std::string() : Settings::default_path()),
       settings(Settings::load(settings_path)),
@@ -86,8 +88,13 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
         const std::string t = main_strings.find(id);
         return t.empty() ? id : t;
     };
+    flash_menus = vfs.exists("MainMenu.swf") && vfs.exists("MenuPressKey.swf");
+    front_end.play_sound = [this](const std::string& s) {
+        if (logic.audio) logic.audio->play(s);
+    };
     if (!headless && !opt.level_given) {
-        main_menu.show();
+        if (flash_menus && front_end.show(FrontEnd::Screen::Title)) main_menu.open = true;
+        else main_menu.show();
         int w = 0, h = 0;
         SDL_GetWindowSizeInPixels(window, &w, &h);
         SDL_PumpEvents();
@@ -250,7 +257,41 @@ void Game::show_loading(const std::string& level, bool section) {
     renderer.render_to_window({}, draw_loading(w, h));
 }
 
+// The Flash menus' step: real time (the game may be paused behind them).
+float Game::menu_dt() {
+    const auto now = std::chrono::steady_clock::now();
+    const float dt = menu_clock.time_since_epoch().count() == 0 ? 0.0f : std::min(std::chrono::duration<float>(now - menu_clock).count(), 0.25f);
+    menu_clock = now;
+    return dt;
+}
+
+void Game::show_main_menu() {
+    if (flash_menus && front_end.show(FrontEnd::Screen::Main)) main_menu.open = true;
+    else main_menu.show();
+}
+
+// A mission from the menus: its level, then its start script (TeleportPlayerToZone, quests).
+void Game::start_mission(int index) {
+    if (index < 0 || index >= int(missions.size())) return;
+    const Mission& m = missions[size_t(index)];
+    std::fprintf(stderr, "mission %d: %s in %s\n", index, m.name.c_str(), m.level.c_str());
+    mission = index;
+    load_level(m.level);
+    if (opt.scripts && !m.script.empty()) logic.exec(m.script);
+}
+
 FrameParams Game::draw_main_menu(int w, int h) {
+    if (flash_menus && front_end.open()) {
+        loading_overlay.clear();
+        loading_sprites.vertices.clear();
+        loading_sprites.batches.clear();
+        front_end.update(menu_dt(), w, h);
+        front_end.draw(loading_sprites);
+        FrameParams f;
+        f.overlay = &loading_overlay;
+        f.sprites = &loading_sprites;
+        return f;
+    }
     loading_hud.set_screen(w, h);
     if (h != loading_fonts_for) {
         loading_fonts_for = h;
@@ -475,7 +516,10 @@ void Game::draw_text(FrameParams& f, int w, int h) {
     }
     if (death.open) death.draw(overlay, hud_sprites, hud, subtitles, w, h);
     if (end_screen.open) end_screen.draw(overlay, hud_sprites, hud, menu_title, subtitles, w, h);
-    if (menu.open) {
+    if (menu.open && flash_menus && front_end.open()) {   // the Flash pause menu over the HUD
+        front_end.update(menu_dt(), w, h);
+        front_end.draw(hud_sprites);
+    } else if (menu.open) {
         std::vector<Hud::ObjectiveLine> lines;
         if (!logic.objectives.primary.empty()) lines.push_back({logic.objectives.primary, true, logic.objectives.primary_done});
         for (const auto& o : logic.objectives.secondary) lines.push_back({o.text, false, o.done});

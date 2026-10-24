@@ -39,7 +39,7 @@ struct Options {
     // Other versions' archives, mounted after the main data to fill what it lacks; by
     // default the iOS build's app folder beside it (<data>/../ios/ipa/Payload/TDKR.app).
     std::vector<std::string> extra_data;
-    std::string level = "levels/San_Francisco_1_FINAL.lvc";   // the campaign's first level
+    std::string level = "l_menu.lvc";   // the menus' level (behind the title and main menu)
     std::vector<std::string> effects;   // --effect: started 6 m in front of the camera
     bool sound_check = false;           // decode every sound in the sound table and exit
     bool mute = false;
@@ -64,6 +64,7 @@ struct Options {
     std::string save_file;      // the save file to write (also headless), instead of the preferences folder's
     std::string continue_file;  // headless: resume from this save file after the level loads
     int loading_screen = -1;
+    std::string front_end;                 // headless: SCREEN[:KEYS] of the Flash menus (u d l r a b)
     std::string swf;                       // a Flash movie over the game (menus), with
     std::vector<std::string> swf_steps;    // scripted steps to reach a screen (swf/steps.h)
     float death_screen = -1;    // headless: draw the death screen this long after it opened

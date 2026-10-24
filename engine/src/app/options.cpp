@@ -60,6 +60,7 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--continue") o.continue_file = next();
         else if (a == "--loading-screen") o.loading_screen = std::stoi(next());
         else if (a == "--swf") o.swf = next();
+        else if (a == "--front-end") o.front_end = next();
         else if (a == "--swf-step") o.swf_steps.push_back(next());
         else if (a == "--death-screen") o.death_screen = std::stof(next());
         else if (a == "--end-screen") o.end_screen = std::stof(next());

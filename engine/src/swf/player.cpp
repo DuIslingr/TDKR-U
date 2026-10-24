@@ -611,10 +611,11 @@ void Player::run_frame(Instance* clip, int f) {
         vm.run_actions(code, root_ ? ObjectPtr(root_) : ObjectPtr(share(clip)));
     }
     if (actions) {
+        // Skipped if a goto moves the clip on before they run (attachMovie then gotoAndPlay).
         std::weak_ptr<Instance> weak = share(clip);
         for (const ActionBuffer& code : fr.actions)
-            queue([this, weak, code] {
-                if (auto i = weak.lock(); i && !i->removed) vm.run_actions(code, i);
+            queue([this, weak, code, f] {
+                if (auto i = weak.lock(); i && !i->removed && i->frame == f) vm.run_actions(code, i);
             });
     }
     for (const Control& c : fr.controls) {
@@ -711,8 +712,8 @@ void Player::rebuild(Instance* clip, int f) {
     clip->frame = f;
     std::weak_ptr<Instance> weak = share(clip);
     for (const ActionBuffer& code : s->frames[size_t(f)].actions)
-        queue([this, weak, code] {
-            if (auto i = weak.lock(); i && !i->removed) vm.run_actions(code, i);
+        queue([this, weak, code, f] {
+            if (auto i = weak.lock(); i && !i->removed && i->frame == f) vm.run_actions(code, i);
         });
     for (auto& [d, t] : want) {
         if (Instance* e = clip->child_at(d)) {
@@ -786,30 +787,103 @@ void Player::step_frame() {
 
 // --- input ---------------------------------------------------------------------------------------------
 
+// The topmost clip with button handlers under `p` (screen pixels); a button takes the hits for
+// everything inside it, as in Flash.
 Instance* Player::hit(Instance* inst, glm::vec2 p) {
     if (!inst->visible || inst->removed || inst->kind != Instance::Clip) return nullptr;
     for (auto it = inst->children.rbegin(); it != inst->children.rend(); ++it) {
         Instance* c = it->get();
-        if (c->kind != Instance::Clip || !c->visible || c->removed) continue;
-        if (Instance* h = hit(c, p)) return h;
+        if (c->kind != Instance::Clip || !c->visible || c->removed || c->clip_depth) continue;
         Value handler;
         const Value self(c->shared_from_this());
         const bool button = (vm.lookup(c, "onPress", handler, self) && handler.function()) ||
                             (vm.lookup(c, "onRelease", handler, self) && handler.function());
-        if (!button) continue;
-        Value enabled = vm.get_member(self, "enabled");
+        if (!button) {
+            if (Instance* h = hit(c, p)) return h;
+            continue;
+        }
+        const Value enabled = vm.get_member(self, "enabled");
         if (!enabled.undefined() && !VM::to_boolean(enabled)) continue;
-        Value area = vm.get_member(self, "hitArea");
-        Instance* target = area.instance() ? area.instance() : c;
-        const Rect b = target->bounds(target->world_matrix());
-        if (p.x * kTwips >= b.xmin && p.x * kTwips <= b.xmax && p.y * kTwips >= b.ymin && p.y * kTwips <= b.ymax) return c;
+        const Value area = vm.get_member(self, "hitArea");
+        const Instance* target = area.instance() ? area.instance() : c;
+        glm::vec2 q[4];
+        screen_corners(target, target->bounds(Matrix{}), q);
+        // inside the (convex) quad, whichever way it winds
+        float sign = 0;
+        bool inside = true;
+        for (int k = 0; k < 4 && inside; ++k) {
+            const glm::vec2 a = q[k], b = q[(k + 1) % 4];
+            const float s = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+            if (s != 0) {
+                if (sign == 0) sign = s;
+                else if ((s > 0) != (sign > 0)) inside = false;
+            }
+        }
+        if (inside) return c;
     }
     return nullptr;
 }
 
+bool Player::is_button(Instance* c) {
+    Value handler;
+    const Value self(c->shared_from_this());
+    if (!((vm.lookup(c, "onPress", handler, self) && handler.function()) || (vm.lookup(c, "onRelease", handler, self) && handler.function())))
+        return false;
+    const Value enabled = vm.get_member(self, "enabled");
+    return enabled.undefined() || VM::to_boolean(enabled);
+}
+
+void Player::collect_buttons(Instance* inst, std::vector<Button>& out) {
+    if (!inst->visible || inst->removed || inst->kind != Instance::Clip) return;
+    for (const auto& child : inst->children) {
+        Instance* c = child.get();
+        if (c->kind != Instance::Clip || !c->visible || c->removed || c->clip_depth) continue;
+        if (!is_button(c)) {
+            if (c->cxform.mul.a > 0.01f) collect_buttons(c, out);   // not under faded-out screens
+            continue;
+        }
+        const Value area = vm.get_member(Value(c->shared_from_this()), "hitArea");
+        const Instance* target = area.instance() ? area.instance() : c;
+        glm::vec2 q[4];
+        screen_corners(target, target->bounds(Matrix{}), q);
+        const glm::vec2 center = (q[0] + q[1] + q[2] + q[3]) * 0.25f;
+        if (center.x < 0 || center.y < 0 || center.x > screen_.x || center.y > screen_.y) continue;
+        out.push_back({c, center});
+    }
+}
+
+std::vector<Player::Button> Player::buttons() {
+    std::vector<Button> out;
+    collect_buttons(root_.get(), out);
+    return out;
+}
+
+void Player::hover(Instance* clip) {
+    // Touch-made buttons have no roll-over: their pressed look (drag over / out) stands in.
+    auto handles = [&](Instance* i, const char* event) {
+        Value fn;
+        return vm.lookup(i, event, fn, Value(i->shared_from_this())) && fn.function();
+    };
+    auto old = hover_.lock();
+    if (old.get() == clip) return;
+    if (old && !old->removed) dispatch(old.get(), handles(old.get(), "onRollOut") ? "onRollOut" : "onDragOut");
+    if (clip) dispatch(clip, handles(clip, "onRollOver") ? "onRollOver" : "onDragOver");
+    hover_ = clip ? share(clip) : nullptr;
+    run_queue();
+}
+
+void Player::press(Instance* clip) {
+    if (!clip || clip->removed) return;
+    dispatch(clip, "onPress");
+    run_queue();
+    if (!clip->removed) dispatch(clip, "onRelease");
+    run_queue();
+}
+
 void Player::pointer_move(float x, float y) {
     pointer_ = (glm::vec2(x, y) - offset_) / scale_;
-    Instance* h = hit(root_.get(), pointer_);
+    screen_pointer_ = glm::vec2(x, y);
+    Instance* h = hit(root_.get(), screen_pointer_);
     auto old = hover_.lock();
     if (old.get() != h) {
         if (old && !old->removed) dispatch(old.get(), pointer_down_ ? "onDragOut" : "onRollOut");
@@ -828,7 +902,7 @@ void Player::pointer_down(float x, float y) {
     std::vector<std::shared_ptr<Instance>> clips;
     each_clip(root_.get(), clips);
     for (const auto& c : clips) dispatch(c.get(), "onMouseDown");
-    if (Instance* h = hit(root_.get(), pointer_)) {
+    if (Instance* h = hit(root_.get(), screen_pointer_)) {
         pressed_ = share(h);
         dispatch(h, "onPress");
     }
@@ -842,7 +916,7 @@ void Player::pointer_up(float x, float y) {
     each_clip(root_.get(), clips);
     for (const auto& c : clips) dispatch(c.get(), "onMouseUp");
     if (auto p = pressed_.lock(); p && !p->removed) {
-        dispatch(p.get(), hit(root_.get(), pointer_) == p.get() ? "onRelease" : "onReleaseOutside");
+        dispatch(p.get(), hit(root_.get(), screen_pointer_) == p.get() ? "onRelease" : "onReleaseOutside");
     }
     pressed_.reset();
     run_queue();
@@ -1105,22 +1179,50 @@ glm::vec2 Player::Persp::project(glm::vec2 local) const {
     return screen.apply(center + (glm::vec2(p) - center) * k);
 }
 
+Player::Persp Player::make_persp(const Instance* inst, const Matrix& parent_screen) const {
+    Persp persp;
+    persp.screen = parent_screen;
+    persp.linear = inst->matrix;
+    persp.linear.tx = persp.linear.ty = 0;
+    persp.origin = glm::vec3(inst->matrix.tx, inst->matrix.ty, inst->z * kTwips);
+    persp.sy = std::sin(glm::radians(inst->rot_y)), persp.cy = std::cos(glm::radians(inst->rot_y));
+    persp.sx = std::sin(glm::radians(inst->rot_x)), persp.cx_ = std::cos(glm::radians(inst->rot_x));
+    const Matrix parent_world = inst->parent_ ? inst->parent_->world_matrix() : Matrix{};
+    persp.center = parent_world.inverse().apply(glm::vec2(movie_->width(), movie_->height()) * (0.5f * kTwips));
+    const float focal = movie_->width() * 0.5f / std::tan(glm::radians(27.5f)) * kTwips;
+    persp.focal = focal / std::max(parent_world.x_scale(), 1e-3f);
+    return persp;
+}
+
+static bool is_3d(const Instance* i) { return i->kind == Instance::Clip && (i->rot_x != 0 || i->rot_y != 0 || i->z != 0); }
+
+void Player::screen_corners(const Instance* inst, const Rect& r, glm::vec2 out[4]) const {
+    std::vector<const Instance*> chain;
+    for (const Instance* i = inst; i; i = i->parent_) chain.push_back(i);
+    Matrix m{scale_ / kTwips, 0, 0, scale_ / kTwips, offset_.x, offset_.y};
+    Persp persp;
+    bool have = false;
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+        const Instance* i = *it;
+        if (!have && is_3d(i)) {
+            persp = make_persp(i, m);
+            have = true;
+            m = Matrix{};
+        } else {
+            m = m * i->matrix;
+        }
+    }
+    const glm::vec2 c[4] = {{r.xmin, r.ymin}, {r.xmax, r.ymin}, {r.xmax, r.ymax}, {r.xmin, r.ymax}};
+    for (int k = 0; k < 4; ++k) out[k] = have ? persp.project(m.apply(c[k])) : m.apply(c[k]);
+}
+
 void Player::draw(Instance* inst, const Matrix& pm, const CxForm& pcx, DrawList& out, const ClipShape* clip) {
     if (!inst->visible || inst->removed) return;
     Matrix m = pm * inst->matrix;
     Persp persp;
-    const bool is3d = !persp_ && inst->kind == Instance::Clip && (inst->rot_x != 0 || inst->rot_y != 0 || inst->z != 0);
+    const bool is3d = !persp_ && is_3d(inst);
     if (is3d) {
-        persp.screen = pm;
-        persp.linear = inst->matrix;
-        persp.linear.tx = persp.linear.ty = 0;
-        persp.origin = glm::vec3(inst->matrix.tx, inst->matrix.ty, inst->z * kTwips);
-        persp.sy = std::sin(glm::radians(inst->rot_y)), persp.cy = std::cos(glm::radians(inst->rot_y));
-        persp.sx = std::sin(glm::radians(inst->rot_x)), persp.cx_ = std::cos(glm::radians(inst->rot_x));
-        const Matrix parent_world = inst->parent_ ? inst->parent_->world_matrix() : Matrix{};
-        persp.center = parent_world.inverse().apply(glm::vec2(movie_->width(), movie_->height()) * (0.5f * kTwips));
-        const float focal = movie_->width() * 0.5f / std::tan(glm::radians(27.5f)) * kTwips;
-        persp.focal = focal / std::max(parent_world.x_scale(), 1e-3f);
+        persp = make_persp(inst, pm);
         m = Matrix{};
         persp_ = &persp;
     }

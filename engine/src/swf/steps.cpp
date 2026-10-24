@@ -54,7 +54,14 @@ bool run_step(Player& player, const std::string& s, std::string* error) {
     else if (kind == "show") player.set_visible(arg(0), true);
     else if (kind == "text") player.set_text(arg(0), arg(1));
     else if (kind == "load") player.load_movie(arg(0), arg(1));
-    else if (kind == "frames") {
+    else if (kind == "click") {
+        const float x = float(std::atof(arg(0).c_str())), y = float(std::atof(arg(1).c_str()));
+        player.pointer_down(x, y);
+        player.step_frame();
+        player.pointer_up(x, y);
+    } else if (kind == "move") {
+        player.pointer_move(float(std::atof(arg(0).c_str())), float(std::atof(arg(1).c_str())));
+    } else if (kind == "frames") {
         for (int k = 0, n = std::atoi(arg(0).c_str()); k < n; ++k) player.step_frame();
     } else if (kind == "set") {
         player.set_member(arg(0), arg(1), parse_value(arg(2)));

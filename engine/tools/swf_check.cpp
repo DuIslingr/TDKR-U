@@ -132,6 +132,13 @@ int cmd_swf(int argc, char** argv) {
                                if (++messages <= 200) std::printf("%s\n", s.c_str());
                            };
                            p.vm.trace = p.log;
+                           p.on_native = [&](const std::string& name, swf::CallArgs& a) {
+                               if (name == "getString" || name == "NativeGetString") return swf::Value();
+                               std::string args;
+                               for (const swf::Value& v : a.args) args += (args.empty() ? "" : ", ") + p.vm.to_string(v);
+                               std::printf("native %s(%s)\n", name.c_str(), args.c_str());
+                               return swf::Value();
+                           };
                            p.vm.get_string = [&](const std::string& id) {
                                const std::string t = strings.find(id);
                                return t.empty() ? id : t;

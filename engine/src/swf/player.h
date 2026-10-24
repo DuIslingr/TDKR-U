@@ -175,6 +175,17 @@ public:
     void pointer_down(float x, float y);
     void pointer_up(float x, float y);
 
+    // Keyboard focus: the clips a pointer could press (onPress / onRelease), visible and enabled,
+    // with their hit area's centre on screen; hover one (roll over, the last one rolls out) and
+    // press it (press, release).
+    struct Button {
+        Instance* clip;
+        glm::vec2 center;   // screen pixels
+    };
+    std::vector<Button> buttons();
+    void hover(Instance* clip);
+    void press(Instance* clip);
+
     // The host API (paths like "mMenuStack.menu" from the root).
     Instance* find(const std::string& path) const;
     Value invoke(const std::string& path, const std::string& method, std::vector<Value> args = {});
@@ -216,6 +227,8 @@ private:
     void draw_text(Instance* inst, const Matrix& m, const CxForm& cx, DrawList& out, const ClipShape* clip);
     ClipShape mask_shape(Instance* mask, const Matrix& m, const ClipShape* within);
     Instance* hit(Instance* inst, glm::vec2 p);
+    bool is_button(Instance* c);
+    void collect_buttons(Instance* inst, std::vector<Button>& out);
     void dispatch(Instance* inst, const char* event);
 
     // gameswf's 3D clips (_xrotation / _yrotation / _z): their content is drawn in their own
@@ -231,6 +244,10 @@ private:
         glm::vec2 project(glm::vec2 local) const;
     };
     const Persp* persp_ = nullptr;
+    Persp make_persp(const Instance* inst, const Matrix& parent_screen) const;
+    // A local rectangle's corners on screen, through the 3D clips above it as drawn.
+    void screen_corners(const Instance* inst, const Rect& r, glm::vec2 out[4]) const;
+    glm::vec2 screen_pointer_{0};
     glm::vec2 to_screen(const Matrix& m, glm::vec2 p) const { return persp_ ? persp_->project(m.apply(p)) : m.apply(p); }
 
     std::shared_ptr<MovieDef> movie_;

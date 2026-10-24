@@ -43,8 +43,12 @@ void Game::apply_display() {
 
 // The pause menu: the game stands still, the pointer is free, the sound stops.
 void Game::set_menu(bool on) {
-    if (on) menu.show();
-    else menu.open = false;
+    if (on && flash_menus && hero.active()) menu.open = front_end.show(FrontEnd::Screen::Pause);
+    if (on && !menu.open) menu.show();
+    if (!on) {
+        menu.open = false;
+        if (front_end.screen() == FrontEnd::Screen::Pause || front_end.screen() == FrontEnd::Screen::Death) front_end.close();
+    }
     SDL_SetWindowRelativeMouseMode(window, !on && !touch_mode && !main_menu.open);
     fire_held = aim_held = false;
     touch.release_all();
@@ -66,7 +70,7 @@ void Game::menu_action(PauseMenu::Action a) {
     switch (a) {
         case A::Resume: set_menu(false); break;
         case A::Exit:   // back to the main menu
-            set_menu(false), main_menu.show();
+            set_menu(false), show_main_menu();
             SDL_SetWindowRelativeMouseMode(window, false);
             if (logic.audio) logic.audio->set_paused(true);
             break;
@@ -91,7 +95,7 @@ void Game::end_action(EndLevelScreen::Action a) {
             settings.chapters = int(c) + 1, settings.save(settings_path);
     if (a == EndLevelScreen::Action::Menu) {
         logic.level_ended = false, end_screen_done = false;
-        main_menu.show();
+        show_main_menu();
     } else {
         SDL_SetWindowRelativeMouseMode(window, !touch_mode);
     }
@@ -102,10 +106,42 @@ void Game::death_action(DeathScreen::Action a) {
     death.open = false;
     combat.respawn();
     if (a == DeathScreen::Action::Menu) {
-        main_menu.show();
+        show_main_menu();
         SDL_SetWindowRelativeMouseMode(window, false);
     } else {
         SDL_SetWindowRelativeMouseMode(window, !touch_mode);
+    }
+}
+
+void Game::front_action(FrontEnd::Action a) {
+    using A = FrontEnd::Action;
+    switch (a.kind) {
+        case A::StartMission:
+        case A::Continue: {
+            SaveGame g;
+            const bool resume_save = a.kind == A::Continue && SaveGame::read(save_path, g);
+            set_menu(false);
+            main_menu.open = false;
+            front_end.close();
+            if (resume_save) resume(g);
+            else start_mission(a.kind == A::Continue ? first_mission(missions) : a.mission);
+            SDL_SetWindowRelativeMouseMode(window, !touch_mode);
+            break;
+        }
+        case A::Resume: set_menu(false); break;
+        case A::RestartCheckpoint: set_menu(false), logic.respawn_player(); break;
+        case A::RestartLevel:
+            set_menu(false);
+            if (mission >= 0) start_mission(mission);
+            else load_level(opt.level);
+            break;
+        case A::MainMenu:
+            set_menu(false), show_main_menu();
+            SDL_SetWindowRelativeMouseMode(window, false);
+            if (logic.audio) logic.audio->set_paused(true);
+            break;
+        case A::Quit: running = false; break;
+        case A::None: break;
     }
 }
 
@@ -163,6 +199,35 @@ void Game::handle_event(const SDL_Event& e) {
         const bool pressed = (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                              e.type == SDL_EVENT_FINGER_DOWN;
         if (pressed && loading.press() && logic.audio) logic.audio->set_paused(menu.open);
+        return;
+    }
+    if (flash_menus && front_end.open() && (main_menu.open || menu.open)) {   // the Flash menus take every input
+        using K = FrontEnd::Key;
+        SDL_SetWindowRelativeMouseMode(window, false);
+        if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+            switch (e.key.key) {
+                case SDLK_ESCAPE: case SDLK_BACKSPACE: front_end.key(K::Back); break;
+                case SDLK_UP: case SDLK_W: front_end.key(K::Up); break;
+                case SDLK_DOWN: case SDLK_S: front_end.key(K::Down); break;
+                case SDLK_LEFT: case SDLK_A: front_end.key(K::Left); break;
+                case SDLK_RIGHT: case SDLK_D: front_end.key(K::Right); break;
+                case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: front_end.key(K::Activate); break;
+                default: break;
+            }
+        } else if (e.type == SDL_EVENT_MOUSE_MOTION && e.motion.which != SDL_TOUCH_MOUSEID) {
+            const glm::vec2 at = to_pixels(e.motion.x, e.motion.y, false);
+            front_end.pointer_move(at.x, at.y);
+        } else if ((e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+                   e.button.which != SDL_TOUCH_MOUSEID && e.button.button == SDL_BUTTON_LEFT) {
+            const glm::vec2 at = to_pixels(e.button.x, e.button.y, false);
+            if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) front_end.pointer_down(at.x, at.y);
+            else front_end.pointer_up(at.x, at.y);
+        } else if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_UP) {
+            const glm::vec2 at = to_pixels(e.tfinger.x, e.tfinger.y, true);
+            if (e.type == SDL_EVENT_FINGER_DOWN) front_end.pointer_down(at.x, at.y);
+            else front_end.pointer_up(at.x, at.y);
+        }
+        front_action(front_end.take_action());
         return;
     }
     if (main_menu.open && !menu.open) {   // the main menu takes every input

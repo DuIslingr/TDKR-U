@@ -448,6 +448,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         FlashHud::State fs;
         fs.visible = !menu.open && !death.open && !end_screen.open;
         fs.cinematic = opt.scripts && logic.player_locked();
+        if (opt.scripts && !logic.messages().empty()) fs.dialog = logic.messages().front().text;
         fs.position = glm::vec2(player.center);
         fs.facing = hero.facing();
         using HM = FlashHud::State::Move;
@@ -651,6 +652,7 @@ void Game::resume(const SaveGame& g) {
 void Game::step_logic(float dt) {
     if (!opt.scripts) return;
     logic.update(dt);
+    if (hero.active()) scene.set_object_visible(hero.object(), !logic.player_hidden);
     if (logic.pending_section) {   // LoadLevelSections: reload, keep the player
         const uint32_t section = logic.pending_section;
         const glm::vec3 feet = player.center - glm::vec3(0, 0, player.radius.z);

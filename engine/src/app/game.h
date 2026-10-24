@@ -196,6 +196,8 @@ private:
     glm::vec2 pad_menu_stick{0};            // last left-stick direction sent to a menu
     void pad_event(const SDL_Event& e);
     float pad_axis(SDL_GamepadAxis axis) const;   // -1..1, with a dead zone
+    // The grapnel may fire: no script has it off (SetGrapnelControlEnable) and no cinematic runs.
+    bool can_grapple() const { return !opt.scripts || (logic.controls.grapnel && !logic.player_locked()); }
     bool running = true;
     std::chrono::steady_clock::time_point last;
 };

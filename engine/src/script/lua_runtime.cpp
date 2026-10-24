@@ -127,6 +127,8 @@ void ScriptRuntime::finish(Thread& t) {
 void ScriptRuntime::resume(Thread& t) {
     lua_pushinteger(t.L, t.owner);
     lua_setglobal(t.L, "this");
+    lua_pushinteger(t.L, t.owner);   // TDKR's name for it (LuaThread::Resume)
+    lua_setglobal(t.L, "CurrentActor");
     const int status = lua_resume(t.L, 0);
     t.started = true;
     if (status == LUA_YIELD) {

@@ -1,8 +1,9 @@
-// The game's script functions (the C functions libTDKR_neon.so registers with Lua).
+// The game's script functions (the C functions libKRHP.so's RegisterScriptFunctions registers).
 // Every name the game registers exists; those not implemented yet log their first use
 // and return nothing. Behaviour follows the decompiled originals where noted.
 #include <cstdlib>
 #include <random>
+#include <string_view>
 
 extern "C" {
 #include <lauxlib.h>
@@ -31,6 +32,7 @@ std::string str_arg(lua_State* L, int arg) { return lua_isstring(L, arg) ? lua_t
 int not_implemented(lua_State* L) {
     LevelLogic& c = ctx(L);
     const std::string name = lua_tostring(L, lua_upvalueindex(2));
+    ++c.missing_calls[name];
     if (c.warned_.insert(name).second) c.log("script API not implemented yet: " + name);
     return 0;
 }
@@ -1464,6 +1466,7 @@ const Entry kImplemented[] = {
 void register_game_api(LevelLogic& logic) {
     lua_State* L = logic.runtime_.state();
     for (const char* name : kGameFunctions) {
+        if (std::string_view(name) == "print") continue;   // the runtime's own
         lua_pushlightuserdata(L, &logic);
         lua_pushstring(L, name);
         lua_pushcclosure(L, not_implemented, 2);
@@ -1473,6 +1476,7 @@ void register_game_api(LevelLogic& logic) {
     // The NPC constants the AI scripts compare with (the order of the game's posture names).
     logic.runtime_.load("NPC = { PostureStand = 0, PostureCover = 1, PostureCoverFire = 2, PostureMachineGun = 3, "
                         "PostureHiCover = 4, PostureCrouch = 5 }", "NPC constants");
+    register_tdkr_api(logic);
 }
 
 }  // namespace tdkr

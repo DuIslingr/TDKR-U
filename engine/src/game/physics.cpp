@@ -302,6 +302,21 @@ bool CollisionWorld::ray_down(const glm::vec3& from, float max_dist, float& hit_
 }
 
 bool CollisionWorld::raycast(const glm::vec3& from, const glm::vec3& to, float& t, uint8_t* material, glm::vec3* normal) const {
+    // A long ray's bounding box holds most of a city: test it in short pieces, nearest first.
+    constexpr float kPiece = 16.0f;
+    if (const float len = glm::distance(from, to); len > kPiece) {
+        const int n = int(std::ceil(len / kPiece));
+        for (int k = 0; k < n; ++k) {
+            const float a0 = float(k) / float(n), a1 = float(k + 1) / float(n);
+            float tp = 1;
+            if (raycast(from + (to - from) * a0, from + (to - from) * a1, tp, material, normal)) {
+                t = a0 + tp * (a1 - a0);
+                return true;
+            }
+        }
+        t = 1;
+        return false;
+    }
     std::vector<uint32_t> cand;
     candidates(glm::min(from, to), glm::max(from, to), cand);
     const glm::vec3 dir = to - from;

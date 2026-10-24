@@ -974,7 +974,8 @@ Value Player::invoke(const std::string& path, const std::string& method, std::ve
 }
 
 void Player::set_member(const std::string& path, const std::string& member, const Value& v) {
-    if (Instance* i = find(path)) vm.set_member(Value(i->shared_from_this()), member, v);
+    if (path == "_global") vm.set_member(Value(vm.global), member, v);
+    else if (Instance* i = find(path)) vm.set_member(Value(i->shared_from_this()), member, v);
 }
 
 Value Player::get_member(const std::string& path, const std::string& member) {

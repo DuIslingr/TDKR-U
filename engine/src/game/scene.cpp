@@ -695,7 +695,11 @@ void Scene::update(float dt, const glm::vec3& camera) {
     for (auto& a : animated_) {
         if (!a->library) continue;
         a->time += dt * a->speed;
-        pose(*a);
+        // Hidden objects keep their clock but are posed only once shown again (an object
+        // without draws, a camera or a dummy rig, always: its nodes are looked at).
+        bool shown = a->draws.empty();
+        for (const auto& d : a->draws) shown = shown || !draws_[d.item].hidden;
+        if (shown) pose(*a);
     }
     for (LodInstance& li : lod_instances_) select_lods(li, camera);
     // CCoronasControllerNode: a ray from the camera to each corona; seen, it fades in

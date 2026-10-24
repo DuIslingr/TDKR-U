@@ -242,12 +242,42 @@ Missions start as the menus start them: the mission's level, then its start Lua 
 `Enable(900161) TeleportPlayerToZone(900163)`). The level's string table is level properties field 10
 (`020_gothamcity.xml` → `strings/020_GothamCity_*`; N.O.V.A. 3 used field 24).
 
-**The script API is the big gap.** TDKR's level scripts call **341 native functions; the engine implements 25**
-of them (those N.O.V.A. 3 shares), so 18,574 of 29,973 native calls do nothing yet. The most used missing ones:
-`ActorSetState` (1,760 calls), `ObjectiveRemove` (922), `ActorLookTo`, `NPCSetStance`, `KillActor`, `SpawnObject`,
-`ObjectiveAdd`, `CameraFollowObject`, `NPCAttackTarget`, `NPCGoToPath`, `StartPipeGame`, `GetDistFromMC`,
-interaction, quests (`SetQuestEnabled/Completed/Failed/Accepted`, `StartMainStoryFromQuestId`), traffic, cop AI,
-QTEs, popups. `ShowObjectiveMessage` / `ClearObjectiveMessage` are in (the HUD's `objectiveMessage_popin`).
+**The script API.** `RegisterScriptFunctions()` registers **723 natives** one `CLuaScriptManager::RegisterCFunction`
+call at a time; `tools/gen_script_api.py` follows its ARM code (each name and function is a PC-relative literal) to
+list them into `engine/src/script/game_api_names.inc`. All are registered, so scripts never call nil: those not
+implemented log their first use and count their calls (`--trace-scripts` prints the count at the end of a headless run).
+TDKR's own natives are in `engine/src/game/tdkr_api.cpp`; the constants (`STATE_TYPE_*` bits, `FACE_*`, `WEAPON_*`,
+`IGNORE_CONTROLS_*`, `DEATH_*`, ...) come from `CLuaScriptManager::RegisterScriptGlobalVariables`,
+`CHUDDisplay::m_faces` and `CAIController::Script_Init`. The scripts' id for Batman is 0.
+
+- **Components** are hashed in TDKR: trigger `0x37F7A8AE` (the same fields as N.O.V.A. 3's; target -1 is the player),
+  box `0x729EC572` and cylinder `0x749126C3` shapes, interaction `0x34747EBE` (radius, ?, script with
+  `Obj<id>_OnScriptEvent`, button frame), quest `0x55A6393B`, main story `0x5863BD59`, state set `0x5441A117`.
+- **Triggers** run `OnEnter`, `OnExit`, `WhileIn`, `WhileOut`, or, if defined, `Obj<id>_Always` every update instead
+  of the tests (each start counts against the run count). Spawn points run `Obj<id>_OnSpawn` when the player is
+  teleported there (`PlayerComponent::TeleportInSpawnpoint`). Threads see their object as `CurrentActor`.
+- **Quests** (`CQuestManager`, `CQuestComponent::Update`): statuses 0 disabled, 1 enabled, 2 initialising, 3 running,
+  4/5/6 failed, 7 completed, 9/10/11 canceled, 12 accepted. Enabled runs `Obj<quest>_InitQuest` and moves on to 2,
+  where `_Enabled` runs whenever it is not running; Accepted runs `_Accepted` then 3, where `_Running` runs whenever
+  it is not running (the scripts poll there); Completed runs `_Completed` once. `CLuaScriptManager::StartFunction`
+  never starts a function its object is already running, which makes these per-update starts safe.
+- **The main story** is the `MainStory` gol type's list (quest, level string, `Templ18253_<n>_InitQuest`, `_Briefing`,
+  `_SkipMission`, reminder seconds, `_OnScriptEvent`). `EnableMainStory` starts the current entry; completing its
+  quest advances to the next. `NextMission(zone)` makes a mission zone current (`CZonesManager::NextMission`; its
+  `Obj<zone>_Init` runs).
+- **Actors**: a state set lists states as (name, `STATE_TYPE_*` mask, ?, loop, ..., clips at [27]); NPC types inherit
+  theirs from several parents (`Male_Civilian_Movement`, `Decor_Social`, `Couple_Anims`, ...), all on
+  `batman_anims.bdae`. `ActorSetState` plays one of the state's clips; `ActorIsInStateType` tests the mask.
+  `NPCGoToWaypoint` follows a waypoint chain, running each `Obj<wp>_OnReach` (cars and the helicopter too).
+- **Cameras**: `PlayCameraAnim(object, clip, loop[, wait])` makes the object's animated camera the view
+  (`CCameraMgr::SetMaxCamera`) until `EndCinematic` / `CameraSwitchToPlayer`.
+
+**The tutorial** (mission 0) now runs from its scripts: trigger 900161 enables quest 222; its `InitQuest` hides
+Batman for the stand-in on the gargoyle (900281) and enables 900207, whose `Always` spawns the street's NPCs and
+traffic and plays camera 900283 under Alfred's lines (subtitles in the `mCinematicHUD` bar); `EndCinematic`, the
+limo drives off along its waypoints, `SetQuestAccepted(222)`, and `_Running` steps through the prompts (look around,
+move to the checkpoint, ...). Still missing on that path: melee and the enemies' AI (the snipers stand still), the
+objective markers over objects, the dialog portraits, sounds and music, traffic and the monorail.
 
 **Controller prompts** (Android 1.1.6, `ShowObjectiveMessage`): with a PowerA pad connected, ids starting
 `STR_TUTORIAL`, `STR_SAVE_LUCIUS_OBJ_6` and `STR_TURBULENCE_THIEF_MINIGAME` get `_POWER_A` inserted after that

@@ -223,6 +223,8 @@ int Game::run_screenshot() {
             const TouchControls::Output o = touch.take();
             pin.forward = o.forward, pin.right = o.right;
             player.yaw += o.look.x;
+            if (opt.scripts && o.look.x != 0) logic.player_did.look = true;   // the tutorial's checks
+            if (opt.scripts && (o.forward != 0 || o.right != 0)) logic.player_did.move = true;
         }
         if (opt.scripts) logic.advance_real_time(kPhysicsStep);   // QTE bookkeeping (headless keeps full speed)
         if (float ly, lp; opt.scripts && logic.look_target(ly, lp)) player.yaw = ly, player.pitch = lp;   // PlayerLookTo
@@ -333,6 +335,17 @@ int Game::run_screenshot() {
     if (!opt.sound_render.empty() && logic.audio) {
         if (!save_wav(rendered, logic.audio->rate(), opt.sound_render)) throw std::runtime_error("cannot write " + opt.sound_render);
         std::printf("wrote %s (%.1f s of sound)\n", opt.sound_render.c_str(), double(rendered.size() / 2) / logic.audio->rate());
+    }
+    if (opt.trace_scripts && hero.active())
+        std::printf("hero: at (%.1f %.1f %.1f), %s\n", player.center.x, player.center.y, player.center.z,
+                    logic.player_hidden ? (scene.object_hidden(hero.object()) ? "hidden" : "hidden by script but drawn") : "shown");
+    if (opt.trace_scripts && !logic.missing_calls.empty()) {   // the unimplemented natives the run called, most first
+        std::vector<std::pair<int, std::string>> calls;
+        for (const auto& [name, n] : logic.missing_calls) calls.push_back({n, name});
+        std::sort(calls.rbegin(), calls.rend());
+        std::printf("unimplemented script calls:");
+        for (const auto& [n, name] : calls) std::printf(" %s %d", name.c_str(), n);
+        std::printf("\n");
     }
     if (opt.list_actors && opt.scripts)
         for (const std::string& line : combat.describe())

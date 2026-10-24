@@ -235,7 +235,7 @@ void Game::pad_event(const SDL_Event& e) {
     }
     if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
         const float t = float(e.gaxis.value) / 32767.0f;
-        if (t > 0.6f && !pad_trigger_held && hero.active()) hero.try_grapple(player, cam.position, cam.forward());
+        if (t > 0.6f && !pad_trigger_held && hero.active() && can_grapple()) hero.try_grapple(player, cam.position, cam.forward());
         pad_trigger_held = t > (pad_trigger_held ? 0.3f : 0.6f);
     }
 }
@@ -437,8 +437,18 @@ void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && !e.key.repeat) combat_in.reload = true;
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_G && !e.key.repeat && logic.controls.items) combat_in.grenade = true;
     // TDKR: F fires the grapnel at the edge the view aims at.
-    if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && !e.key.repeat && hero.active())
+    if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && !e.key.repeat && hero.active() && can_grapple())
         hero.try_grapple(player, cam.position, cam.forward());
+    // TDKR: strike (left button, X / square) and counter (right button, Y / triangle). There is no
+    // melee yet; the tutorial only needs to see them (HasPlayerAttacked, HasPlayerCounterd).
+    if (hero.active() && opt.scripts && !logic.player_locked()) {
+        const bool strike = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) ||
+                            (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_WEST);
+        const bool counter = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_RIGHT) ||
+                             (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH);
+        if (strike && logic.controls.combat) logic.player_did.attack = true;
+        if (counter && logic.controls.counter) logic.player_did.counter = true;
+    }
     // Grenades or mines on the grenade button (the original's swipe), and the
     // detonation of the mines placed.
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_H && !e.key.repeat && logic.controls.items) combat_in.switch_throwable = true;
@@ -468,6 +478,7 @@ void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_MOUSE_MOTION && !(opt.scripts && (logic.player_locked() || !logic.controls.rotate))) {
         // Slower while aiming (zoomed in); the Sensitivity and Invert Y-Axis settings.
         const float k = 0.12f * cam.fov / kFov * settings.sensitivity * logic.look_sensitivity;
+        if (e.motion.xrel != 0 || e.motion.yrel != 0) logic.player_did.look = true;
         cam.yaw -= e.motion.xrel * k;
         cam.pitch = glm::clamp(cam.pitch - e.motion.yrel * k * (settings.invert_y ? -1.0f : 1.0f), -89.0f, 89.0f);
     }
@@ -595,6 +606,13 @@ void Game::run_window() {
                     in.right = glm::clamp(float(keys[SDL_SCANCODE_D]) - float(keys[SDL_SCANCODE_A]) + touch_in.right +
                                               pad_axis(SDL_GAMEPAD_AXIS_LEFTX), -1.0f, 1.0f);
                     in.forward *= logic.move_sensitivity, in.right *= logic.move_sensitivity;
+                    // IgnoreControls: directions the stick does not push (up 1, down 2, left 4, right 8).
+                    const int ig = lc.ignore;
+                    if (ig & 1) in.forward = std::min(in.forward, 0.0f);
+                    if (ig & 2) in.forward = std::max(in.forward, 0.0f);
+                    if (ig & 4) in.right = std::max(in.right, 0.0f);
+                    if (ig & 8) in.right = std::min(in.right, 0.0f);
+                    if (in.forward != 0 || in.right != 0) logic.player_did.move = true;
                 }
                 const bool pad_a = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH);
                 const bool pad_run = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_STICK);
@@ -604,6 +622,8 @@ void Game::run_window() {
                 if (touch_mode && settings.auto_leveling && touch_in.look == glm::vec2(0) && (in.forward != 0 || in.right != 0))
                     cam.pitch -= std::clamp(cam.pitch, -40.0f * dt, 40.0f * dt);
                 if (lc.rotate) {
+                    if (touch_in.look != glm::vec2(0) || pad_axis(SDL_GAMEPAD_AXIS_RIGHTX) != 0 || pad_axis(SDL_GAMEPAD_AXIS_RIGHTY) != 0)
+                        logic.player_did.look = true;
                     const float k = cam.fov / kFov * settings.sensitivity * logic.look_sensitivity;
                     cam.yaw += touch_in.look.x * k;
                     cam.pitch = glm::clamp(cam.pitch + touch_in.look.y * k * (settings.invert_y ? -1.0f : 1.0f), -89.0f, 89.0f);

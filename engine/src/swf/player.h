@@ -189,7 +189,7 @@ public:
     // The host API (paths like "mMenuStack.menu" from the root).
     Instance* find(const std::string& path) const;
     Value invoke(const std::string& path, const std::string& method, std::vector<Value> args = {});
-    void set_member(const std::string& path, const std::string& member, const Value& v);
+    void set_member(const std::string& path, const std::string& member, const Value& v);   // path "_global": a global
     Value get_member(const std::string& path, const std::string& member);
     bool goto_and_play(const std::string& path, const std::string& label);
     bool goto_and_stop(const std::string& path, const std::string& label);

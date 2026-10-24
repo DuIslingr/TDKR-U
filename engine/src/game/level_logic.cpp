@@ -18,19 +18,17 @@ namespace tdkr {
 
 namespace {
 
-constexpr int kCompTrigger = 0x06;        // CTriggerComponent
+constexpr int kCompTrigger = 0x37F7A8AE;  // CTriggerComponent
 constexpr int kCompRunScript = 0x1E;      // CRunScriptComponent (OnDead)
-constexpr int kCompInteractive = 0x44;    // CInteractiveComponent
+constexpr int kCompInteractive = 0x34747EBE;   // CInteractionComponent: radius, ?, script (OnScriptEvent), button frame
 constexpr int kCompDoor = 0x61;           // CDoorAIComponent
 constexpr int kCompEffects = 0x92;        // CEffectsComponent: [[effect, node, autostart, ...], ...]
 constexpr int kCompEffectBuiltIn = 0xAE;  // CEffectBuiltInComponent: effect, ?, node, autostart, ?
-constexpr int kCompBuiltinBox = 0xA6;     // CComponentBuiltinBox: width, depth, height
-constexpr int kCompBuiltinCylinder = 0xA8;   // CComponentBuiltinCylinder: radius, height
+constexpr int kCompBuiltinBox = 0x729EC572;        // CBoxNodeComponent: width, depth, height
+constexpr int kCompBuiltinCylinder = 0x749126C3;   // CCylinderNodeComponent: radius, height
 constexpr int kCompCinematic = 0x41;      // CCinematicComponent: length ms, ..., [11] script event tracks, [13] object clips
 constexpr int kCompPath = 0x15;            // CPathComponent: id, ?, first waypoint, last waypoint, ?
 constexpr int kCompMotionOnPath = 0x16;    // CMotionOnPathComponent: node, path id, max speed, accel, brake, loop
-
-constexpr float kUseRange = 2.5f;         // metres from the player's eye
 
 // Every string in a value tree that holds script functions.
 void collect_scripts(const Value& v, std::vector<std::string>& out) {
@@ -76,6 +74,7 @@ void LevelLogic::load_objects() {
         Object obj;
         obj.index = i;
         obj.type = o.kind == "object" ? o.name : o.kind;
+        obj.collision_only = obj.type == "CollisionMesh";
         if (o.kind == "level_properties" && !o.fields.list.empty()) {
             properties_id_ = o.fields[0].i;
             if (o.fields.size() > 44 && o.fields[41].type == Value::String) {
@@ -120,9 +119,9 @@ void LevelLogic::load_objects() {
             return resolved_template(g->second, gol, c);
         };
 
-        if (const Value* t = o.components.count(kCompTrigger) ? &o.components.at(kCompTrigger) : nullptr; t && t->size() >= 16) {
+        if (const Value* t = o.components.count(kCompTrigger) ? &o.components.at(kCompTrigger) : nullptr; t && t->size() >= 14) {
             // CTriggerComponent::Load: id, position, rotation, scale, run count, enabled, script,
-            // target mode, ?, type mask, ...; the shape is the builtin box/cylinder times the scale.
+            // target (-1: the player), ?; the shape is the box/cylinder node times the scale.
             const Value& v = *t;
             obj.id = v[0].i;
             obj.position = {v[1].as_float(), v[2].as_float(), v[3].as_float()};
@@ -131,7 +130,7 @@ void LevelLogic::load_objects() {
             obj.enabled = obj.visible = v[11].i != 0;
             Trigger tr;
             tr.runs_left = tr.runs = v[10].i;
-            tr.player_target = v[13].i == 0 || (v[15].i & 1);
+            tr.player_target = v[13].i < 0;
             if (const Value* cyl = o.components.count(kCompBuiltinCylinder) ? comp(kCompBuiltinCylinder) : nullptr; cyl && cyl->size() >= 2) {
                 tr.cylinder = true;
                 tr.center = glm::vec2(obj.position);
@@ -191,7 +190,7 @@ void LevelLogic::load_objects() {
         }
         if (const Value* it = comp(kCompInteractive); it && it->size() >= 1) {
             obj.interactive = true;
-            obj.interact_enabled = (*it)[0].i != 0;
+            obj.interact_radius = (*it)[0].as_float();
             ++stats_.interactive;
         }
         objects_[obj.id] = obj;
@@ -314,7 +313,18 @@ void LevelLogic::start(StartMode mode) {
     level_fog_start_ = scene.fog_start;
     level_fog_end_ = scene.fog_end;
     level_fog_density_ = scene.fog_density;
+    // The AI controller's functions first (CAIController::Script_Init: AIFunctions, the sound
+    // scripting the levels' chunks call), then the level, its quests and the main story.
+    for (const auto& [type, g] : gol)
+        if (g.name == "AIController") load_type_scripts(type);
     load_objects();
+    if (mode != StartMode::Section) quests.load(scene.level(), gol);
+    mission_zone = -1;
+    walkers_.clear();
+    player_did = {};
+    play_time = 0, player_speed = 0, last_interaction = -1, camera_anim = -1, weather = false, player_hidden = false;
+    last_player_ = player.center;
+    control_glow.clear();
     for (auto& [id, o] : objects_)   // vehicles (CComponentVehicleCar) and their parts
         if (object_component(o, 0x96)) vehicle(id);
     if (!keep_player) {
@@ -331,6 +341,7 @@ void LevelLogic::start(StartMode mode) {
     // Apply the starting state: hidden objects are disabled; doors start closed.
     for (auto& [id, o] : objects_) {
         if (o.index == std::numeric_limits<size_t>::max()) continue;
+        if (o.collision_only) scene.set_object_visible(o.index, false);
         if (!o.visible) {
             scene.set_object_visible(o.index, false);
             scene.set_object_collision(o.index, false);
@@ -389,7 +400,7 @@ void LevelLogic::start(StartMode mode) {
     if (mode == StartMode::New && start_spawn_id_ >= 0)
         if (const Object* sp = object(start_spawn_id_)) teleport_player(*sp);
     if (properties_id_ >= 0) start_script("Obj" + std::to_string(properties_id_) + "_OnEnter", properties_id_);
-    if (start_spawn_id_ >= 0 && mode == StartMode::New && !skip_intro) start_script("Obj" + std::to_string(start_spawn_id_) + "_Default", start_spawn_id_);
+    if (start_spawn_id_ >= 0 && mode == StartMode::New && !skip_intro) start_script("Obj" + std::to_string(start_spawn_id_) + "_OnSpawn", 0);
 }
 
 // --- linked objects -------------------------------------------------------------------
@@ -575,9 +586,23 @@ void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
         man_gun(cp.gun);
     }
     checkpoint_ = cp.spawn;
-    start_script("Obj" + std::to_string(cp.spawn) + "_Default", cp.spawn);
+    start_script("Obj" + std::to_string(cp.spawn) + "_OnSpawn", 0);
     start_fade(true, 1000, glm::vec3(0));
     log("respawned at checkpoint " + std::to_string(cp.spawn));
+}
+
+void LevelLogic::enable_controls(bool on) {
+    controls.move = controls.rotate = controls.jump = controls.combat = controls.grapnel = controls.counter = controls.gadgets = on;
+    controls.shoot = controls.aim = controls.rush = on;
+    hud_enabled = on;
+}
+
+// CZonesManager::NextMission: the mission zone changes (the game streams its objects in;
+// here they are all loaded already) and the zone's Obj<id>_Init runs.
+void LevelLogic::next_mission(int zone) {
+    if (zone == mission_zone) return;
+    mission_zone = zone;
+    if (zone >= 0) start_script("Obj" + std::to_string(zone) + "_Init", zone);
 }
 
 void LevelLogic::start_script(const std::string& function, int owner) {
@@ -611,7 +636,7 @@ void LevelLogic::enable(Object& o, bool on) {
 void LevelLogic::show(Object& o, bool on) {
     o.visible = on;
     if (o.index == std::numeric_limits<size_t>::max()) return;
-    scene.set_object_visible(o.index, on);
+    scene.set_object_visible(o.index, on && !o.collision_only);
     if (o.door < 0 || doors_[size_t(o.door)].state == Door::State::Closed) scene.set_object_collision(o.index, on);
 }
 
@@ -653,8 +678,11 @@ void LevelLogic::message(const std::string& id, float seconds) {
     log("message: " + id + (text != id ? " \"" + text + "\"" : ""));
 }
 
+// PlayerComponent::TeleportInSpawnpoint: the player stands at the spawn point, whose
+// Obj<id>_OnSpawn runs (owned by the player).
 void LevelLogic::teleport_player(const Object& spawn) {
     player.spawn(spawn.position, spawn.yaw);
+    start_script("Obj" + std::to_string(spawn.id) + "_OnSpawn", 0);
     if (have_handover_) {   // a cinematic hands over to the player where its camera was
         player.yaw = glm::degrees(std::atan2(-handover_.x, handover_.y));
         player.pitch = glm::degrees(std::asin(glm::clamp(handover_.z, -1.0f, 1.0f)));
@@ -724,7 +752,20 @@ void LevelLogic::update_triggers() {
     for (auto& [id, o] : objects_) {
         if (o.trigger < 0) continue;
         Trigger& t = triggers_[size_t(o.trigger)];
-        if (!o.enabled || !t.player_target) continue;
+        if (!o.enabled) continue;
+        const std::string prefix = "Obj" + std::to_string(id) + "_";
+        auto act = [&](const char* event) {
+            const std::string fn = prefix + event;
+            if (!runtime_.has_function(fn)) return;
+            start_script(fn, id);
+            if (t.runs_left > 0 && --t.runs_left == 0) enable(o, false);
+        };
+        // An Obj<id>_Always runs every update instead of the inside/outside tests.
+        if (runtime_.has_function(prefix + "Always")) {
+            act("Always");
+            continue;
+        }
+        if (!t.player_target) continue;
         bool in = feet.z <= t.max.z && feet.z + height >= t.min.z;
         if (t.rotated) {
             const glm::vec3 c = glm::vec3(t.to_local * glm::vec4(player.center, 1));
@@ -736,13 +777,6 @@ void LevelLogic::update_triggers() {
         } else if (in) {
             in = feet.x + r >= t.min.x && feet.x - r <= t.max.x && feet.y + r >= t.min.y && feet.y - r <= t.max.y;
         }
-        const std::string prefix = "Obj" + std::to_string(id) + "_";
-        auto act = [&](const char* event) {
-            const std::string fn = prefix + event;
-            if (!runtime_.has_function(fn)) return;
-            start_script(fn, id);
-            if (t.runs_left > 0 && --t.runs_left == 0) enable(o, false);
-        };
         const bool was = t.inside;
         t.inside = in;
         if (trace && in != was) log((in ? "enter trigger " : "leave trigger ") + std::to_string(id));
@@ -866,21 +900,21 @@ bool LevelLogic::use() {
         if (!o || !start_object_script(*o, "OnExit")) leave_vehicle();
         return true;
     }
-    const glm::vec3 eye = player.eye(), fwd = player.view_forward();
+    // CInteractionComponent::IsInInteractionRadius: the nearest usable object within its radius.
     Object* best = nullptr;
-    float best_d = kUseRange;
+    float best_d = 1e30f;
     for (auto& [id, o] : objects_) {
-        if (!o.interactive || !o.enabled || !o.interact_enabled) continue;
-        const glm::vec3 to = o.position + glm::vec3(0, 0, 1) - eye;
-        const float d = glm::length(to);
-        if (d > best_d || glm::dot(to, fwd) < 0) continue;
+        if (!o.interactive || !o.enabled || !o.interact_enabled || o.dead) continue;
+        const float d = glm::distance(glm::vec2(o.position), glm::vec2(player.center));
+        if (d > o.interact_radius || d > best_d || std::abs(o.position.z - player.center.z) > 3) continue;
         best = &o;
         best_d = d;
     }
     if (!best) return false;
     // The original pushes its circuit minigame (GS_FaneMinigame) first when the instance's
     // minigame flag ([3]) is set, but no campaign object sets it: the use is OnEnter alone.
-    start_object_script(*best, "OnEnter");
+    last_interaction = best->id;
+    start_object_script(*best, "OnScriptEvent");
     return true;
 }
 
@@ -988,6 +1022,8 @@ void LevelLogic::update_cinematics(float dt) {
 }
 
 bool LevelLogic::cinematic_view(Scene::CameraView& out) const {
+    if (camera_anim >= 0)
+        if (auto it = objects_.find(camera_anim); it != objects_.end() && scene.camera_view(it->second.index, out)) return true;
     for (auto it = cinematics_.rbegin(); it != cinematics_.rend(); ++it)
         if (scene.camera_view(it->index, out)) return true;
     return false;
@@ -1530,6 +1566,9 @@ void LevelLogic::update_heat_haze(float dt) {
 }
 
 void LevelLogic::update(float dt) {
+    play_time += dt;
+    if (dt > 0) player_speed = glm::distance(glm::vec2(player.center), glm::vec2(last_player_)) / dt;
+    last_player_ = player.center;
     for (ParamRamp& r : param_ramps_) {
         r.elapsed = std::min(r.elapsed + dt, r.seconds);
         scene.set_object_param(r.object, r.param, glm::vec4(r.from + (r.to - r.from) * r.elapsed / r.seconds), 1);
@@ -1589,6 +1628,8 @@ void LevelLogic::update(float dt) {
     }
     for (auto& m : messages_) m.seconds_left -= dt;
     while (!messages_.empty() && messages_.front().seconds_left <= 0) messages_.pop_front();
+    quests.update(dt);
+    update_walkers(dt);
     update_triggers();
     update_doors(dt);
     update_zone_fog();

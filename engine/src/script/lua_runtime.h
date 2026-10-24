@@ -7,7 +7,7 @@
 //   (4, name, ids...) WaitForEvent: resume when the event is sent (for each listed id,
 //                    e.g. WaitForEnemiesDead's objects; none: any)
 //   (3, code, obj)   wait for an effect (teleport-in); resumed after a short delay
-// The global `this` holds the owning object's id while a coroutine runs.
+// The globals `this` and (TDKR) `CurrentActor` hold the owning object's id while a coroutine runs.
 #pragma once
 
 #include <functional>

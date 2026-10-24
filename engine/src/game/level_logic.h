@@ -3,9 +3,9 @@
 // game's script API (Enable, Wait, LockDoor, TeleportPlayerToZone, ...).
 //
 // Scripts are the Lua chunks stored in the level: the level properties' Obj<id>_OnEnter
-// runs when the level starts, the start spawn point's Obj<id>_Default when the player
-// spawns, triggers run Obj<id>_OnEnter/OnExit/WhileIn/WhileOut (CTriggerComponent),
-// interactive objects Obj<id>_OnEnter when used.
+// runs when the level starts, a spawn point's Obj<id>_OnSpawn when the player spawns there,
+// triggers run Obj<id>_OnEnter/OnExit/WhileIn/WhileOut, or Obj<id>_Always every update
+// (CTriggerComponent), interactive objects Obj<id>_OnScriptEvent when used.
 #pragma once
 
 #include <deque>
@@ -26,6 +26,7 @@
 #include "assets/strings.h"
 #include "game/controls.h"
 #include "render/renderer.h"
+#include "game/quests.h"
 #include "game/scene.h"
 #include "script/lua_runtime.h"
 
@@ -65,7 +66,47 @@ public:
     struct Controls {
         bool move = true, rotate = true, shoot = true, jump = true, aim = true, rush = true, powers = true, weapons = true,
              items = true;
+        // TDKR (CLevel::Set<Kind>ControlEnable): strikes, the grapnel, the counter button, the
+        // gadget wheel. `ignore`: IgnoreControls' directions (IGNORE_CONTROLS_UP 1, DOWN 2,
+        // LEFT 4, RIGHT 8) the stick does not push the player.
+        bool combat = true, grapnel = true, counter = true, gadgets = true;
+        int ignore = 0;
     } controls;
+    // EnableControls(on): every control at once, and the HUD's buttons with them.
+    void enable_controls(bool on);
+    // HUD buttons that glow (EnableControlGlow: "move", "melee", "counterAttack", "grapnel", ...).
+    std::unordered_set<std::string> control_glow;
+    // What the player has done, for the tutorial (PlayerComponent +0x2e2..: HasCameraMoved,
+    // HasPlayerMoved, HasPlayerAttacked, HasPlayerCounterd). Set by the game's input.
+    struct PlayerDid {
+        bool look = false, move = false, attack = false, counter = false;
+    } player_did;
+    // The quests and the main story (game/quests.h).
+    Quests quests{*this};
+    // NextMission(zone): the current mission zone (CZonesManager +0x4c); its Obj<zone>_Init runs.
+    int mission_zone = -1;
+    void next_mission(int zone);
+    // CScriptGlobals: script variables kept across levels and saved with the game
+    // (RegisterGlobalVar / SetGlobalVar / GetGlobalVar).
+    std::map<std::string, int> global_vars;
+    double play_time = 0;            // CLevel +0x2c: game seconds since the level started (GetTime)
+    float player_speed = 0;          // metres per second over the ground, as of the last update
+    int last_interaction = -1;       // the object last used (GetCurrentInteractionObjectID)
+    bool weather = false;            // the weather effect (rain) is on
+    bool player_hidden = false;      // HideObject(0): Batman is not drawn (a cinematic stand-in plays him)
+    int next_spawn_id = 2000000000;  // ids for SpawnObject's actors
+    // NPCGoToWaypoint(actor, ?, waypoint[, run]) (CNpcAIComponent's waypoint goal, without a
+    // nav mesh yet): the actor heads straight for the waypoint at its walk or run speed
+    // (SetActorSpeedWalk / Run, m/s), facing where it goes, on its Walk / Run state; there
+    // Obj<waypoint>_OnReach runs and it goes on along the waypoint chain, stopping (Idle) at
+    // its end. Cars and helicopters drive the same chains.
+    void walk_to(int id, int waypoint, bool run);
+    void stop_walking(int id);
+    void set_actor_speed(int id, float speed, bool run);
+    bool walking(int id) const;
+    // PlayCameraAnim: the object whose animated camera holds the view (CCameraMgr's max
+    // camera) until CameraSwitchToPlayer; -1 none.
+    int camera_anim = -1;
     bool hud_enabled = true;               // EnableHud
     bool interface_in_cinematic = false;   // ForceInterfaceInCinematic: the HUD stays up in a cinematic
     std::string weapon_state;              // SetCrtWeaponState request, taken by the view model
@@ -225,6 +266,8 @@ public:
         float yaw = 0;               // degrees
         bool enabled = true, visible = true, dead = false;
         bool interactive = false, interact_enabled = true;
+        float interact_radius = 3;   // CInteractionComponent: metres from the player
+        bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
         float health = 100;
         std::string state;
         int trigger = -1, door = -1;
@@ -426,6 +469,7 @@ public:
     std::vector<Trigger> triggers_;
     std::vector<Door> doors_;
     std::unordered_set<std::string> warned_;   // unimplemented API functions already reported
+    std::map<std::string, int> missing_calls;   // calls to unimplemented API functions, by name
 
 private:
     enum class StartMode { New, Section, Respawn };
@@ -543,6 +587,15 @@ private:
     bool camera_held_ = false, restore_view_ = false;
     float held_yaw_ = 0, held_pitch_ = 0;
     void update_movers(float dt);
+    struct Walker {
+        int id = 0, target = -1;
+        bool run = false;
+        float walk_speed = 1.5f, run_speed = 4.5f;
+    };
+    std::vector<Walker> walkers_;
+    Walker& walker(int id);
+    void update_walkers(float dt);
+    void actor_state(Object& o, const std::string& state);
     struct Elevator {
         int id = 0, type = 0;
         size_t index = 0;
@@ -662,9 +715,12 @@ private:
     float level_fog_start_ = 0, level_fog_end_ = 0, level_fog_density_ = 0;
     void update_zone_fog();
     Stats stats_;
+    glm::vec3 last_player_{0};
 };
 
-// Register the game's script functions with the runtime (game/game_api.cpp).
+// Register the game's script functions with the runtime (game/game_api.cpp), TDKR's own
+// last (game/tdkr_api.cpp).
 void register_game_api(LevelLogic& logic);
+void register_tdkr_api(LevelLogic& logic);
 
 }  // namespace tdkr

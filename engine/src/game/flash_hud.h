@@ -37,6 +37,7 @@ public:
         float camera_yaw = 0, facing = 0;   // degrees about Z (the map turns with the camera)
         enum class Move { Ground, Air, Glide, Plunge } move = Move::Ground;   // the jump slot's style
         const char* attack = "STRIKE";   // the attack slot's style (STRIKE, TAKEDOWN, COUNTERATTACK)
+        std::string dialog;              // the line being said (ShowMessage): subtitles in a cinematic
     };
     void update(float dt, const State& state, int width, int height);
     // The objective popup (objectiveMessage_popin): show with text, or hide.
@@ -47,6 +48,15 @@ public:
 
 private:
     void set_up();
+    void hide_unused();
+    // CHUDDisplay::StartCinematic / EndCinematic: the letterbox bars and subtitles instead of
+    // the controls (mCinematicHUD.startCinematic hides the rest of the HUD).
+    void cinematic(bool on);
+    // CHUDDisplay::AddDialogLine / AddCinematicLine: the Dialog box (setTextDialog,
+    // openDialog / closeDialog), or the cinematic subtitle.
+    void dialog(const std::string& text);
+    bool cinematic_ = false;
+    std::string dialog_;
     // CHUDDisplay::SetButtonStyle: the slot's button switches style and (dis)ables, once per change.
     void button(const std::string& slot, const std::string& style, bool enabled);
     std::map<std::string, std::pair<std::string, int>> buttons_;   // slot -> (style, enabled)

@@ -147,6 +147,41 @@ bool Brawl::in_sight(const glm::vec3& from, const glm::vec3& to) const {
     return !scene_.collision().raycast(from, to, t);
 }
 
+// CAwarenessComponent, simplified (0x6754056B: [0] sight distance, [4] near distance, [12]
+// seconds to spot, [13] field of view in degrees): Batman in sight within the distance and the
+// view's cone, or anywhere within the near distance, fills the time; out of it, it drains. Spotted,
+// the enemy goes for him.
+void Brawl::update_awareness(float dt) {
+    const glm::vec3 chest = feet() + glm::vec3(0, 0, 1.2f);
+    for (auto it = logic_.watchers.begin(); it != logic_.watchers.end();) {
+        LevelLogic::Object* o = logic_.object(it->first);
+        if (!o || o->dead) {
+            it = logic_.watchers.erase(it);
+            continue;
+        }
+        if (!o->enabled || !o->visible || logic_.attack_targets.count(o->id)) {
+            ++it;
+            continue;
+        }
+        float sight = 12, near = 3, spot = 1.2f, fov = 160;
+        if (const Value* a = logic_.object_component(*o, 0x6754056B); a && a->size() >= 14)
+            sight = (*a)[0].as_float(), near = (*a)[4].as_float(), spot = (*a)[12].as_float(), fov = (*a)[13].as_float();
+        const glm::vec3 eye = o->position + glm::vec3(0, 0, 1.6f), to = chest - eye;
+        const float dist = glm::length(to);
+        const float y = glm::radians(o->yaw);
+        const float facing = dist > 1e-3f ? glm::dot(glm::vec2(-std::sin(y), std::cos(y)), glm::normalize(glm::vec2(to))) : 1.0f;
+        const bool seen = dist < near || (dist < sight && facing >= std::cos(glm::radians(fov * 0.5f)) && in_sight(eye, chest));
+        it->second = seen ? it->second + dt : std::max(it->second - dt, 0.0f);
+        if (it->second >= spot) {
+            if (logic_.trace) logic_.log("brawl: " + std::to_string(o->id) + " spots Batman");
+            logic_.attack_targets[o->id] = 0;
+            it = logic_.watchers.erase(it);
+            continue;
+        }
+        ++it;
+    }
+}
+
 // CSniperComponent, simplified: sweep, lock on, aim, shoot, reload.
 void Brawl::update_snipers(float dt) {
     constexpr float kRange = 70, kCone = 7, kSweepWidth = 35, kSweepSpeed = 18, kAimTime = 1.6f, kReload = 2.2f;
@@ -491,6 +526,7 @@ void Brawl::update(float dt) {
         }
         if (o->index != std::numeric_limits<size_t>::max()) scene_.set_object_pose(o->index, o->position, o->yaw);
     }
+    update_awareness(dt);
     update_snipers(dt);
     if (batarang_flight_ >= 0) {   // the batarang lands: a heavy hit
         batarang_flight_ -= dt;

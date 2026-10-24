@@ -12,6 +12,8 @@ extern "C" {
 #include <lua.h>
 }
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "audio/audio.h"
 #include "game/level_logic.h"
 #include "game/player.h"
@@ -649,13 +651,19 @@ int api_npc_attack_target(lua_State* L) {
     return 0;
 }
 // NPCSetStance(actor, waypoint, "Aggressive" | "Passive" | "Coward" | "StandGround" | "Mission"):
-// an aggressive actor goes for Batman, a passive one stops.
+// an aggressive actor goes for Batman once it is aware of him (LevelLogic::watchers), a passive
+// one stops.
 int api_npc_set_stance(lua_State* L) {
     LevelLogic& c = ctx(L);
     const std::string stance = str_arg(L, 3);
     if (!c.object(int_arg(L, 1))) return 0;
-    if (stance == "Aggressive") c.attack_targets[int_arg(L, 1)] = 0;
-    else c.attack_targets.erase(int_arg(L, 1));
+    const int id = int_arg(L, 1);
+    c.stances[id] = stance;
+    if (stance == "Aggressive") {
+        if (!c.attack_targets.count(id)) c.watchers.emplace(id, 0.0f);   // it attacks once it has spotted Batman
+    } else {
+        c.attack_targets.erase(id), c.watchers.erase(id);
+    }
     return 0;
 }
 
@@ -812,6 +820,8 @@ int api_actor_is_detected(lua_State* L) {
     LevelLogic& c = ctx(L);
     const int id = int_arg(L, 1);
     bool seen = id == 0 && (!c.attacking_batman.empty() || !c.snipers.empty());
+    if (id == 0)
+        for (const auto& [w, t] : c.watchers) seen = seen || t > 0;   // noticing him
     for (const auto& [enemy, target] : c.attack_targets) {
         const LevelLogic::Object* o = c.object(enemy);
         if (target == id && o && !o->dead && o->enabled) seen = true;
@@ -906,6 +916,80 @@ int api_hide_object_node(lua_State* L) {
 // "MoveFast" is the run.
 int api_control_event(lua_State* L) {
     if (str_arg(L, 1) == "MoveFast") ctx(L).player_rush = lua_tointeger(L, lua_upvalueindex(2)) != 0;
+    return 0;
+}
+
+// SetBurceWayneCombatStyle(on) (PlayerComponent +0x4e8, sic): Bruce Wayne's way of fighting in the
+// Pit. (Recorded; the brawl's moves stay Batman's.)
+int api_bruce_combat_style(lua_State* L) {
+    ctx(L).bruce_style = bool_arg(L, 1);
+    return 0;
+}
+// StopAnimation(object) / SetAnimationSpeed(object, speed) (CAnimationComponent): its clip held,
+// or played at that speed.
+int api_animation_speed(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || o->index == kNoIndex) return 0;
+    c.scene.set_clip_speed(o->index, lua_tointeger(L, lua_upvalueindex(2)) ? float(lua_tonumber(L, 2)) : 0.0f);
+    return 0;
+}
+int api_stop_camera_anim(lua_State* L) {   // StopCameraAnim(): the animated camera lets go
+    ctx(L).camera_anim = -1;
+    return 0;
+}
+// PauseSound(sound[, ms]): here it fades out.
+int api_pause_sound(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (c.audio) c.audio->stop(str_arg(L, 1), float(lua_tonumber(L, 2)));
+    return 0;
+}
+// MissionFailed(text) (CLevel::MissionFailed without its reload): the mission over, from the
+// last checkpoint. (The death screen's text is not shown.)
+int api_mission_failed(lua_State* L) {
+    ctx(L).log("mission failed: " + str_arg(L, 1));
+    ctx(L).respawn_player();
+    return 0;
+}
+// NPCGetTarget(actor): whom it is fighting, or nil.
+int api_npc_get_target(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (auto it = c.attack_targets.find(int_arg(L, 1)); it != c.attack_targets.end()) lua_pushinteger(L, it->second);
+    else lua_pushnil(L);
+    return 1;
+}
+int api_fade_out_white(lua_State* L) {   // StartFadeOutWhite(ms)
+    ctx(L).start_fade(false, std::max(float(lua_tonumber(L, 1)), 1.0f), glm::vec3(1));
+    return 0;
+}
+
+// NPCGetStance(actor): the stance last set ("Aggressive", "Passive", ...), nil for no actor.
+int api_npc_get_stance(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || !c.object_component(*o, kCompNpcAi)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    auto it = c.stances.find(o->id);
+    lua_pushstring(L, it != c.stances.end() ? it->second.c_str() : (c.attack_targets.count(o->id) ? "Aggressive" : "Passive"));
+    return 1;
+}
+int api_is_enabled(lua_State* L) {   // IsEnabled(object)
+    const LevelLogic::Object* o = ctx(L).object(int_arg(L, 1));
+    lua_pushboolean(L, o && o->enabled);
+    return 1;
+}
+// PlayEffectOnObject(effect, object, dx, dy, dz, attached, node[, sx, sy, sz, ?]): the effect at the
+// object's node, offset (CEffectsManager). (It does not follow the object here.)
+int api_play_effect_on_object(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 2));
+    if (!o) return 0;
+    glm::mat4 at = glm::translate(glm::mat4(1), o->position);
+    if (o->index != kNoIndex) at = c.scene.object_matrix(o->index, str_arg(L, 7));
+    at = at * glm::translate(glm::mat4(1), glm::vec3(float(lua_tonumber(L, 3)), float(lua_tonumber(L, 4)), float(lua_tonumber(L, 5))));
+    c.scene.particles().start(str_arg(L, 1), at);
     return 0;
 }
 
@@ -1233,6 +1317,20 @@ const Entry kTdkr[] = {
     {"ActorFadeOut", api_actor_fade_out},
     {"SetOnGargoyle", api_set_on_gargoyle},
     {"SetGlideControlEnable", api_set_control<&LevelLogic::Controls::glide>},
+    {"SetTakedownControlEnable", api_set_control<&LevelLogic::Controls::silent>},
+    {"SetBurceWayneCombatStyle", api_bruce_combat_style},
+    {"StopAnimation", api_animation_speed, 0},
+    {"SetAnimationSpeed", api_animation_speed, 1},
+    {"StopCameraAnim", api_stop_camera_anim},
+    {"PauseSound", api_pause_sound},
+    {"MissionFailed", api_mission_failed},
+    {"NPCGetTarget", api_npc_get_target},
+    {"StartFadeOutWhite", api_fade_out_white},
+    {"SetWeapon", api_nothing},   // (weapons in hands are not drawn yet)
+    {"NPCGetStance", api_npc_get_stance},
+    {"IsEnabled", api_is_enabled},
+    {"PlayEffectOnObject", api_play_effect_on_object},
+    {"ResumeSound", api_nothing},   // (PauseSound stops it here)
     {"NPCSetSniper", api_npc_set_sniper},
     {"NPCSetCanBePulledAllTheWay", api_nothing},   // (every pull here lands at Batman)
     {"MissionFailedAutoReload", api_mission_failed_reload},

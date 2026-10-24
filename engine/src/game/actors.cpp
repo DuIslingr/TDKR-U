@@ -86,6 +86,12 @@ void LevelLogic::set_actor_speed(int id, float speed, bool run) {
     (run ? w.run_speed : w.walk_speed) = speed;
 }
 
+// A walker's state: its type's own (Ranged_Walk, ...), else the plain one.
+void LevelLogic::walk_state(Object& o, size_t which, const char* fallback) {
+    const std::string own = default_state(o, which);
+    if (own.empty() || !actor_state(o, own)) actor_state(o, fallback);
+}
+
 void LevelLogic::update_walkers(float dt) {
     for (size_t k = 0; k < walkers_.size(); ++k) {
         Walker& w = walkers_[k];
@@ -101,18 +107,18 @@ void LevelLogic::update_walkers(float dt) {
         if (w.to_point && dist <= std::max(step, 0.05f)) {   // there: it stands
             o->position = w.point;
             w.to_point = false;
-            actor_state(*o, "Idle");
+            walk_state(*o, 1, "Idle");
         } else if (dist <= std::max(step, 0.05f)) {   // reached: its OnReach, then the next on the chain
             o->position = wp->position;
             const int reached = w.target;
             w.target = next_waypoint(reached);
             if (w.target == reached) w.target = -1;
             start_script("Obj" + std::to_string(reached) + "_OnReach", w.id);
-            if (w.target < 0) actor_state(*o, "Idle");
+            if (w.target < 0) walk_state(*o, 1, "Idle");
         } else {
             o->position += to * (step / dist);
             if (glm::length(glm::vec2(to)) > 1e-3f) o->yaw = glm::degrees(std::atan2(-to.x, to.y));
-            actor_state(*o, w.run ? "Run" : "Walk");
+            walk_state(*o, w.run ? 6 : 5, w.run ? "Run" : "Walk");
         }
         if (o->index != std::numeric_limits<size_t>::max()) scene.set_object_pose(o->index, o->position, o->yaw);
     }

@@ -66,6 +66,8 @@ LevelLogic::Object* LevelLogic::object(int id) {
 void LevelLogic::load_objects() {
     const Level& level = scene.level();
     std::unordered_set<int> templated;   // gol types whose template scripts are loaded
+    bool tdkr_start = false;             // a TDKR level-start spawn point found
+    start_spawn_id_ = -1;
     for (size_t i = 0; i < level.objects.size(); ++i) {
         const LevelObject& o = level.objects[i];
         // Scripts: every chunk defines Obj<id>_<Event> functions in the shared state; the
@@ -116,6 +118,9 @@ void LevelLogic::load_objects() {
             obj.yaw = o.base->rotation.z;
             // The level start: the first spawn point flagged as such (as Scene picks it).
             if (start_spawn_id_ < 0 && o.fields.size() > 0 && o.fields[0].i == 1) start_spawn_id_ = obj.id;
+            // TDKR (CSpawnPointObject::Create): field 16 marks the level start (IsLevelStartPoint),
+            // as Scene picks it; it wins over the first spawn point.
+            if (!tdkr_start && o.fields.size() > 16 && o.fields[16].i == 1) start_spawn_id_ = obj.id, tdkr_start = true;
             objects_[obj.id] = obj;
             continue;
         }
@@ -205,6 +210,8 @@ void LevelLogic::load_objects() {
             obj.interact_radius = (*it)[0].as_float();
             ++stats_.interactive;
         }
+        // An actor starts in its state set's idle state (ActorGetState: "Ranged_Idle", ...).
+        if (const Value* st = comp(0x5441A117); st && st->size() > 1 && (*st)[1].type == Value::String) obj.state = (*st)[1].s;
         objects_[obj.id] = obj;
     }
     stats_.objects = objects_.size();
@@ -336,14 +343,14 @@ void LevelLogic::start(StartMode mode) {
     mission_zone = -1;
     walkers_.clear();
     attack_targets.clear(), snipers.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
-    attacking_batman.clear(), batman_target = -1, killed_by_batman.clear();
+    attacking_batman.clear(), batman_target = -1, killed_by_batman.clear(), watchers.clear(), stances.clear();
     player_did = {};
     play_time = 0, player_speed = 0, last_interaction = -1, camera_anim = -1, weather = false, player_hidden = false;
     win = {};
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
     story_request = {};
-    riding = -1, qte_navigation = false;
+    riding = -1, qte_navigation = false, bruce_style = false;
     map_icons.clear();
     level_request = {};
     object_sounds.clear();
@@ -663,6 +670,7 @@ LevelLogic::Object& LevelLogic::add_object(int id, size_t index, const std::stri
     o.home = position;
     o.enabled = o.visible = false;
     if (index < scene.level().objects.size()) read_effects(o, scene.level().objects[index]);
+    o.state = default_state(o, 1);
     ++stats_.objects;
     return o;
 }
@@ -1993,6 +2001,11 @@ void LevelLogic::update_button_qte(float dt) {
     }
 }
 
+std::string LevelLogic::default_state(const Object& o, size_t which) const {
+    const Value* st = object_component(o, 0x5441A117);   // CStateSetComponent
+    return st && st->size() > which && (*st)[which].type == Value::String ? (*st)[which].s : std::string();
+}
+
 bool LevelLogic::destroyable(int id) const {
     const Object* o = object(id);
     return o && !o->dead && o->enabled && o->visible && object_component(*o, kCompDestroyable);
@@ -2010,6 +2023,8 @@ void LevelLogic::destroy(int id) {
         p.position = &o.position;
         if (audio->play((*d)[4].s, p) < 0) audio->play_event((*d)[4].s, p);
     }
+    if (d->size() > 5 && !(*d)[5].s.empty() && o.index < scene.level().objects.size())
+        scene.particles().start((*d)[5].s, scene.object_matrix(o.index));
     std::erase_if(objective_markers, [&](const ObjectiveMarker& m) { return m.id == o.id; });
     if (trace) log("destroyed " + std::to_string(o.id));
     start_object_script(o, "OnScriptEvent");

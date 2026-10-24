@@ -71,6 +71,7 @@ private:
     };
     std::unordered_map<int, Sniper> snipers_;
     void update_snipers(float dt);
+    void update_awareness(float dt);   // the watchers spotting Batman
     void hurt_batman(float damage, const std::string& state);
     bool in_sight(const glm::vec3& from, const glm::vec3& to) const;
     struct Fighter {

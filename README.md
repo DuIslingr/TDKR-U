@@ -74,7 +74,8 @@ the mouse turns the circles. On the Batpod (quest 1000) W / S (or the left stick
 E gets off; `--auto-play` drives it after the objective, tailing a moving one from 40-50 m back. The Underground plays through
 the same way (`--level Underground.lvc --spawn-at 700002 --exec "StartMainStoryFromQuestId(838)" --exec
 'SetWeaponAmmo("Batarang_01", 10)' --auto-play`); auto-play breaks the objectives' lights with the batarang. A
-storyboard skips on a key or click.
+storyboard skips on a key or click. The Pit too (`--level ThePit.lvc --auto-play`); at a place marker
+auto-play also presses use (the Pit's valves stand beside their markers).
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

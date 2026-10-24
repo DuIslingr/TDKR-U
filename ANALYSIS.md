@@ -419,6 +419,28 @@ screen, the `underground_end` storyboard and `RequireLoadLevel("STR_FPS_LEVEL_TH
 - Batarangs are inventory: mission 1 gives 10 (`SetWeaponAmmo`) and pickups refill them; a level started on its own
   has none.
 
+**The Pit** (`ThePit.lvc`, loaded by the Underground's storyboard callback; quest 603): from its start spawn (1500003)
+Bane's speech in the cinematic, the `the_pit_intro` storyboard ("day 3, 95, 179"), then Bruce Wayne
+(`brucepit.bdae`, animated with `batman_anims.bdae`) follows a prisoner, takes the two guards out with the steam valves,
+fights the inmates, works the rock puzzle (throwing rocks at buttons: the batarang's targets), climbs and, at the end,
+the blind prisoner's "Rise!"; quest 603 completed, its win screen, and `RequireLoadLevel` to Gotham's spawn 600101,
+where quest 838 completes and the main story moves on to 301 (`under_pressure_intro`). What it needed:
+
+- **The level start**: TDKR's spawn points (`CSpawnPointObject::Create`) carry their model at `[14]` and mark the
+  level start at `[16]` (Scene already started there; the scripts' start spawn now agrees). The player's model is the
+  start spawn's.
+- **Awareness** (`CAwarenessComponent` `0x6754056B`: `[0]` sight distance, `[4]` near distance, `[12]` seconds to spot,
+  `[13]` field of view; gunmen 15 m / 180 degrees / 1.2 s, thugs 11 m / 160, snipers 60 m / 10): an enemy set
+  `Aggressive` watches and goes for Batman only once it has seen him that long (or he is near); hits, noise and
+  `NPCAttackTarget` start a fight at once. `ActorIsDetected(0)` is true while one is noticing him.
+- **Default states**: the state set's names after its list are the defaults: `[1]` idle, `[2]` hurt, `[3]` death,
+  `[5]` walk, `[6]` run (`Ranged_Idle`, `Ranged_Walk`, ...); actors start in `[1]` (the guards' scripts compare with
+  `"Ranged_Idle"`) and walk with their own.
+- `SetTakedownControlEnable` (the takedown button), `SetBurceWayneCombatStyle` (sic; recorded), `NPCGetStance`,
+  `NPCGetTarget`, `IsEnabled`, `StopAnimation` / `SetAnimationSpeed`, `StopCameraAnim`, `PlayEffectOnObject` (the effect at
+  the object's node plus an offset), `StartFadeOutWhite`, `PauseSound` (here a fade out), `MissionFailed` (back to the
+  checkpoint; the death screen's text is not shown). Breakables now play their death effect.
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it

@@ -972,9 +972,11 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
             }
         }
     }
+    player_model.clear();
     if (spawn) {
         start_position = spawn->base->position;
         start_yaw = spawn->base->rotation.z;
+        if (spawn->fields.size() > 14 && spawn->fields[14].type == Value::String) player_model = spawn->fields[14].s;
     }
     stats_.load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 }

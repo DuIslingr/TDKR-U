@@ -758,7 +758,7 @@ void Game::auto_play(float dt) {
     if ((auto_play_wait -= dt) > 0) return;
     auto_play_wait = 3.0f;
     if (!hero.active() || logic.player_locked() || logic.hack.active || logic.button_qte.object >= 0 || brawl.busy() ||
-        !logic.attacking_batman.empty() || player.grappling) {
+        !logic.attacking_batman.empty() || player.grappling || storyboard.active()) {
         if ((auto_play_held += 3.0f) >= 30.0f) {   // say why, every half minute
             auto_play_held = 0;
             std::string who;
@@ -844,6 +844,11 @@ void Game::auto_play(float dt) {
         // At a place that has not gone away: the nearest trigger with an OnEnter around it, not
         // yet walked into (the way there leads through it in the game).
         if (!use && !logic.is_enemy(m.id) && glm::distance(to, player.center) < 2.0f) {
+            if (logic.use()) {   // something usable here (the Pit's valve beside its marker)
+                std::printf("[auto-play] used what is at %d\n", m.id);
+                auto_play_wait = 6.0f;
+                return;
+            }
             float best = 15;
             int through = -1;
             for (const auto& [id, t] : logic.objects())

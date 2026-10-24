@@ -62,6 +62,8 @@ void Hero::start(Scene& scene, Player& player) {
     }
     // Levels also place Batman as script-driven stand-ins (Gotham: five NPCs and an animated
     // object, for cinematics); the player's Batman replaces them.
+    // The player is who the level's start spawn point says (the Pit: Bruce Wayne).
+    if (!scene.player_model.empty()) model = scene.player_model;
     scene.hide_models(model);
     object_ = kNone;
     acting_ = false;

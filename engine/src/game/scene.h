@@ -195,6 +195,7 @@ public:
     // Where the player starts: the level's start spawn point (floor level).
     glm::vec3 start_position{0, 0, 0};
     float start_yaw = 0;   // degrees about Z
+    std::string player_model;   // TDKR: the start spawn point's model (14: batman.bdae, the Pit's brucepit.bdae)
 
 private:
     struct LoadedModel {

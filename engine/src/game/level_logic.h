@@ -122,6 +122,11 @@ public:
     std::unordered_set<int> attacking_batman;
     int batman_target = -1;
     std::unordered_set<int> killed_by_batman;
+    // NPCSetStance(..., "Aggressive") on an enemy not yet aware of Batman: it watches
+    // (CAwarenessComponent: its sight distance, field of view and the time to spot him) and goes
+    // for him once it has spotted him (the brawl's update_awareness). Seconds he has been seen.
+    std::unordered_map<int, float> watchers;
+    std::unordered_map<int, std::string> stances;   // NPCSetStance's, for NPCGetStance
     // GrapplingLockTarget(object or waypoint): the grapnel goes there, whatever the view aims at
     // (CActorBaseComponent::SetGrapplingLockTarget); -1 none.
     int grapple_lock = -1;
@@ -213,6 +218,7 @@ public:
     // QTE_StartNavigation / QTE_EndNavigation (PlayerComponent::*QTENavigation): the chase mode,
     // the interface off. (Its runs along waypoints from grapnel target to target are not done.)
     bool qte_navigation = false;
+    bool bruce_style = false;   // SetBurceWayneCombatStyle: Bruce Wayne fights (the Pit)
     // CNpcAIComponent's enemy flag ([1]), or an actor the scripts set on Batman.
     bool is_enemy(int id) const;
     // CDestroyableComponent (0x068D1134: [1] death clip, [4] sound, [5] effect, [6] disabled on
@@ -420,6 +426,9 @@ public:
     }
     const std::unordered_map<int, Object>& objects() const { return objects_; }
     const Value* object_component(const Object& o, int comp) const;   // its own, else its type's
+    // CStateSetComponent's default states after its list: [1] idle, [2] hurt, [3] death, [4] idle,
+    // [5] walk, [6] run (Ranged_Idle, Ranged_Walk, ... for the gunmen). Empty when it has none.
+    std::string default_state(const Object& o, size_t which) const;
     // Play a state of the actor's state set (one of its clips at random); false if it has none.
     bool actor_state(Object& o, const std::string& state, bool restart = false);
     int object_type(const Object& o) const {
@@ -753,6 +762,7 @@ private:
     std::vector<Walker> walkers_;
     Walker& walker(int id);
     void update_walkers(float dt);
+    void walk_state(Object& o, size_t which, const char* fallback);
     struct Elevator {
         int id = 0, type = 0;
         size_t index = 0;

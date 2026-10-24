@@ -297,6 +297,7 @@ void Game::show_main_menu() {
 void Game::start_mission(int index) {
     if (index < 0 || index >= int(missions.size())) return;
     const Mission& m = missions[size_t(index)];
+    logic.quests.carry_over = false;   // a mission starts the story afresh
     std::fprintf(stderr, "mission %d: %s in %s\n", index, m.name.c_str(), m.level.c_str());
     mission = index;
     load_level(m.level);
@@ -459,6 +460,17 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         fs.visible = !menu.open && !death.open && !end_screen.open;
         fs.cinematic = opt.scripts && logic.player_locked();
         if (opt.scripts) fs.frame = logic.hud_state;
+        if (opt.scripts) {
+            fs.hack = {logic.hack.active ? logic.hack.serial : 0, logic.hack.grid, logic.hack.size, logic.hack.start_row,
+                       logic.hack.end_row, logic.hack.ms, logic.hack.price};
+            if (const LevelLogic::Object* q = logic.object(logic.button_qte.object)) {
+                const glm::vec4 c = f.proj * f.view * glm::vec4(q->position + glm::vec3(0, 0, 1.0f), 1);
+                if (c.w > 1e-3f) {
+                    fs.qte = true;
+                    fs.qte_at = glm::vec2((c.x / c.w * 0.5f + 0.5f) * float(w), (0.5f - c.y / c.w * 0.5f) * float(h));
+                }
+            }
+        }
         // Spoken lines go to the dialog box; "Progress Saved" is the checkpoint notice.
         if (opt.scripts)
             for (const LevelLogic::Message& m : logic.messages())
@@ -526,6 +538,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         const float hud_dt = flash_hud_clock < 0 ? 0.0f : std::clamp(clock - flash_hud_clock, 0.0f, 0.25f);
         flash_hud_clock = clock;
         flash_hud.update(hud_dt, fs, w, h);
+        if (const int r = flash_hud.take_hack_result(); r && opt.scripts) logic.end_hack(r == 1);
         if (logic.hud_objective.serial != flash_hud_objective) {
             flash_hud_objective = logic.hud_objective.serial;
             flash_hud.objective(logic.hud_objective.shown, logic.hud_objective.text);
@@ -715,7 +728,66 @@ static glm::vec3 past_edge(const glm::vec3& lock, const glm::vec3& from) {
     return lock + glm::vec3(d * 1.5f, 0.0f);
 }
 
+// --auto-play: every few seconds out of a fight, Batman goes to the first objective marker
+// (an enemy: next to it, for --fight-test; something usable: there, and uses it; a place: on
+// it), or else to the nearest usable thing.
+void Game::auto_play(float dt) {
+    // On the way: half a metre a step along the line, through whatever is in between (the
+    // triggers on the way fire), then the use.
+    if (!auto_play_path.empty()) {
+        player.center = auto_play_path.front() + glm::vec3(0, 0, player.radius.z);
+        auto_play_path.erase(auto_play_path.begin());
+        if (auto_play_path.empty() && auto_play_use >= 0) {
+            std::printf("[auto-play] use %d\n", auto_play_use);
+            logic.use();
+            auto_play_use = -1;
+        }
+        return;
+    }
+    if ((auto_play_wait -= dt) > 0) return;
+    auto_play_wait = 3.0f;
+    if (!hero.active() || logic.player_locked() || logic.hack.active || logic.button_qte.object >= 0 || brawl.busy() ||
+        !logic.attacking_batman.empty() || player.grappling)
+        return;
+    // The markers, then (none left) the nearest usable thing within 40 m.
+    std::vector<LevelLogic::ObjectiveMarker> goals = logic.objective_markers;
+    if (goals.empty()) {
+        float best = 40;
+        for (const auto& [id, o] : logic.objects())
+            if (o.interactive && o.enabled && o.interact_enabled && !o.dead)
+                if (const float d = glm::distance(o.position, player.center); d < best) best = d, goals = {{id, "usable", ""}};
+    }
+    for (const LevelLogic::ObjectiveMarker& m : goals) {
+        LevelLogic::Object* o = logic.object(m.id);
+        if (!o || o->dead || !o->enabled) continue;
+        const bool use = o->interactive && o->interact_enabled;
+        glm::vec2 back(player.center - o->position);
+        back = glm::length(back) > 1e-3f ? glm::normalize(back) : glm::vec2(0, -1);
+        const glm::vec3 to = o->position + glm::vec3(back * (use ? 0.8f : logic.is_enemy(m.id) ? 2.5f : 0.0f), 1.0f);   // a place: on it
+        hero.face(glm::degrees(std::atan2(back.x, -back.y)));
+        const glm::vec3 from = player.center - glm::vec3(0, 0, player.radius.z);
+        const int n = int(glm::distance(to, from) / 0.5f);
+        if (n > 2) std::printf("[auto-play] to %d (%s) at (%.1f %.1f %.1f)\n", m.id, m.text.c_str(), to.x, to.y, to.z);
+        for (int k = 1; k <= n; ++k) auto_play_path.push_back(glm::mix(from, to, float(k) / float(n)));
+        auto_play_use = use ? m.id : -1;
+        if (auto_play_path.empty() && use) {
+            std::printf("[auto-play] use %d\n", m.id);
+            logic.use();
+        }
+        return;
+    }
+}
+
+// A QTE button (QTE_EnableControl) answered: Batman's grapnel at its object.
+bool Game::answer_qte() {
+    if (!opt.scripts || logic.button_qte.object < 0) return false;
+    const LevelLogic::Object* o = logic.object(logic.button_qte.object);
+    if (o && hero.active()) brawl.grapnel_at(o->position);
+    return logic.press_button_qte();
+}
+
 bool Game::fire_grapnel(const glm::vec3& eye, const glm::vec3& forward) {
+    if (answer_qte()) return true;
     if (opt.scripts && hero.active())   // at an enemy: the pull
         if (const int t = brawl.pull_target(eye, forward); t >= 0) return brawl.pull(t);
     glm::vec3 lock;
@@ -729,11 +801,27 @@ bool Game::fire_grapnel(const glm::vec3& eye, const glm::vec3& forward) {
 void Game::step_logic(float dt) {
     if (!opt.scripts) return;
     logic.update(dt);
+    // RequireLoadLevel: the next level, the quests carried over; in a window, once the win
+    // screen asked for just before (the Stock Exchange's end) has been closed.
+    if (!logic.level_request.file.empty() && !(window && (logic.win.pending || flash_hud.win_open()))) {
+        const LevelLogic::LevelRequest r = logic.level_request;
+        std::printf("[script] loading %s (spawn %d)\n", r.file.c_str(), r.spawn);
+        logic.quests.carry_over = true;
+        load_level(r.file);
+        if (const LevelLogic::Object* sp = r.spawn >= 0 ? logic.object(r.spawn) : nullptr) logic.teleport_player(*sp);
+        return;
+    }
+    if (hero.active()) player.can_glide = logic.controls.glide;   // SetGlideControlEnable
+    if (hero.active()) combat.player_invulnerable = true;   // TDKR: Batman's health is the brawl's, not N.O.V.A. 3's
     if (hero.active()) brawl.update(dt);
     if (!std::isnan(logic.face_request)) {   // ActorLookTo(0, ...)
         hero.face(logic.face_request);
         logic.face_request = NAN;
     }
+    if (opt.auto_play) auto_play(dt);
+    // --fight-test answers a QTE button after a moment, and wins the hacking game after a few seconds.
+    if (opt.fight_test && logic.button_qte.object >= 0 && logic.button_qte.left < 3.5f) answer_qte();
+    if (opt.fight_test && logic.hack.active && (fight_test_hack += dt) > 4.0f) fight_test_hack = 0, logic.end_hack(true);
     // --fight-test also fires the grapnel when the scripts have locked it onto a target (an enemy: the pull).
     if (opt.fight_test && hero.active() && logic.grapple_lock >= 0 && logic.controls.grapnel && !logic.player_locked() &&
         player.on_ground && !player.grappling && !brawl.busy()) {

@@ -67,6 +67,10 @@ start and, headless, counts the calls to natives not implemented yet). `--touch-
 the end of a headless run; `--did look,move` marks those done from the start, `--fight-test` strikes, counters,
 takes down and fires a locked grapnel by itself, and `--exec-at T:LUA` runs a script line at T seconds (e.g.
 `--exec-at "75:ObjectSetPosition(0,-478.7,-970.5,26.2)"` to stand somewhere).
+`--auto-play` (with `--fight-test`) also walks Batman to each objective marker in turn and uses it (or, with no
+marker, the nearest usable thing), answers QTE buttons and wins the hacking game: the Stock Exchange plays through
+headless with `--level StockExchange.lvc --exec "TeleportPlayerToZone(701998)" --auto-play`. In the hacking game
+the mouse turns the circles.
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

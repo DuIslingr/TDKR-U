@@ -26,6 +26,7 @@ int int_arg(lua_State* L, int i) { return int(lua_tointeger(L, i)); }
 std::string str_arg(lua_State* L, int i) { return lua_isstring(L, i) ? lua_tostring(L, i) : ""; }
 bool bool_arg(lua_State* L, int i) { return lua_toboolean(L, i) != 0; }
 constexpr size_t kNoIndex = std::numeric_limits<size_t>::max();
+constexpr int kCompInteraction = 0x34747EBE;   // CInteractionComponent
 
 // CLevel::FindObjectOrWaypoint's position: the player's feet for 0.
 bool position_of(LevelLogic& c, int id, glm::vec3& out) {
@@ -77,6 +78,23 @@ int api_get_quests_with_status(lua_State* L) {
     for (const Quests::Quest& q : c.quests.all())
         if (q.status == status) lua_pushinteger(L, q.object), ++n;
     return n;
+}
+// RequireLoadLevel(level name[, spawn]): change level (the quests carry over).
+int api_require_load_level(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const std::string file = LevelLogic::level_file(str_arg(L, 1));
+    if (file.empty()) {
+        c.log("RequireLoadLevel: no level " + str_arg(L, 1));
+        return 0;
+    }
+    c.level_request = {file, lua_gettop(L) >= 2 ? int_arg(L, 2) : -1};
+    return 0;
+}
+// GetCurrentLevel(level name): whether that is the level being played.
+int api_get_current_level(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    lua_pushboolean(L, LevelLogic::level_name(c.scene.level_name()) == str_arg(L, 1));
+    return 1;
 }
 int api_add_map_icon(lua_State* L) {   // AddGenericObjectOnMap(object, icon, ...)
     ctx(L).map_icons[int_arg(L, 1)] = str_arg(L, 2);
@@ -363,10 +381,16 @@ int api_enable_interaction(lua_State* L) {
     if (LevelLogic::Object* o = c.object(int_arg(L, 1))) o->interact_enabled = lua_tointeger(L, lua_upvalueindex(2)) != 0;
     return 0;
 }
-// SetInteractionParams(object, radius, ?, button frame).
+// SetInteractionParams(object, radius, target, button frame) (CInteractionComponent::
+// SetInteractionParams): its radius, and the object using it enables (OnInteract).
 int api_set_interaction_params(lua_State* L) {
     LevelLogic& c = ctx(L);
-    if (LevelLogic::Object* o = c.object(int_arg(L, 1))) o->interact_radius = float(lua_tonumber(L, 2));
+    LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || !c.object_component(*o, kCompInteraction)) return 0;
+    o->interactive = true;
+    o->interact_radius = float(lua_tointeger(L, 2));
+    o->interact_target = lua_isnumber(L, 3) ? int_arg(L, 3) : -1;
+    o->interact_enabled = true;
     return 0;
 }
 int api_current_interaction(lua_State* L) {
@@ -545,6 +569,47 @@ int api_mission_failed_reload(lua_State* L) {
     ctx(L).respawn_player();
     return 0;
 }
+// NPCIsKilledByMC(actor[, any way]): dead, and Batman's doing.
+int api_npc_killed_by_mc(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    lua_pushboolean(L, o && o->dead && c.killed_by_batman.count(o->id));
+    return 1;
+}
+// ActorIsAttacking(actor, target (-1: anyone)[, ...]) / ActorIsAttacked(actor[, ...]).
+int api_actor_is_attacking(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const int id = int_arg(L, 1), target = lua_gettop(L) >= 2 ? int_arg(L, 2) : -1;
+    bool on = false;
+    if (id == 0) on = c.batman_target >= 0 && (target == -1 || target == c.batman_target);
+    else on = c.attacking_batman.count(id) && (target == -1 || target == 0);
+    lua_pushboolean(L, on);
+    return 1;
+}
+int api_actor_is_attacked(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const int id = int_arg(L, 1);
+    lua_pushboolean(L, id == 0 ? !c.attacking_batman.empty() : c.batman_target == id);
+    return 1;
+}
+int api_actor_fade_out(lua_State* L) {   // ActorFadeOut(actor) (CGameObject::FadeOut): gone
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) ctx(L).show(*o, false);
+    return 0;
+}
+// SetOnGargoyle(actor, gargoyle[, state]): the actor perched where the gargoyle object is, facing its way.
+int api_set_on_gargoyle(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* g = c.object(int_arg(L, 2));
+    if (!g) return 0;
+    if (int_arg(L, 1) == 0) {
+        c.player.spawn(g->position, g->yaw);
+        c.face_request = g->yaw;
+    } else if (LevelLogic::Object* o = c.object(int_arg(L, 1))) {
+        o->yaw = g->yaw;
+        c.teleport_object(*o, g->position);
+    }
+    return 0;
+}
 // ActorGrapnelEnable(actor, on): CGameObject::SetTargetable.
 int api_actor_grapnel_enable(lua_State* L) {
     if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->targetable = bool_arg(L, 2);
@@ -558,6 +623,13 @@ int api_set_actor_health(lua_State* L) {
 // NPCGoToWaypoint(actor, ?, waypoint[, run]) / NPCGoToWaypointWithNavmesh.
 int api_npc_go_to_waypoint(lua_State* L) {
     ctx(L).walk_to(int_arg(L, 1), int_arg(L, 3), bool_arg(L, 4));
+    return 0;
+}
+// NPCGoToWaypointWithNavmesh(actor, waypoint): there at a run (CNpcAIComponent::NPCGotoWaypoint
+// with its run flag), not if it is dead.
+int api_npc_go_to_waypoint_navmesh(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (const LevelLogic::Object* o = c.object(int_arg(L, 1)); o && !o->dead) c.walk_to(o->id, int_arg(L, 2), true);
     return 0;
 }
 // SetActorSpeedWalk / SetActorSpeedRun(actor, metres per second).
@@ -583,6 +655,90 @@ int api_npc_set_stance(lua_State* L) {
     if (!c.object(int_arg(L, 1))) return 0;
     if (stance == "Aggressive") c.attack_targets[int_arg(L, 1)] = 0;
     else c.attack_targets.erase(int_arg(L, 1));
+    return 0;
+}
+
+// NPCSetTarget(actor, target) (CNpcAIComponent::NPCTargetSet): what it aims at; Batman (0)
+// is a fight, anyone else (the hostages) it turns to face.
+int api_npc_set_target(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    LevelLogic::Object* o = c.object(int_arg(L, 1));
+    glm::vec3 at;
+    if (!o || o->dead || lua_isnil(L, 2) || !position_of(c, int_arg(L, 2), at)) return 0;
+    if (int_arg(L, 2) == 0) c.attack_targets[o->id] = 0;
+    else if (glm::length(glm::vec2(at - o->position)) > 1e-3f) o->yaw = glm::degrees(std::atan2(-(at.x - o->position.x), at.y - o->position.y));
+    return 0;
+}
+// GetEnemiesInRange(object, radius[, height]): the living enemies within `radius` of the object
+// and `height` (0: any) of its level, nearest first, at most 18; nil when none.
+int api_get_enemies_in_range(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    glm::vec3 from;
+    const float radius = float(lua_tonumber(L, 2));
+    float height = float(lua_tonumber(L, 3));
+    if (height <= 0.1f) height = 10000;
+    std::vector<std::pair<float, int>> found;
+    if (position_of(c, int_arg(L, 1), from))
+        for (const auto& [id, o] : c.objects())
+            if (c.is_enemy(id) && std::abs(o.position.z - from.z) <= height)
+                if (const float d = glm::distance(o.position, from); d < radius) found.push_back({d, id});
+    std::sort(found.begin(), found.end());
+    if (found.empty()) {
+        lua_pushnil(L);
+        return 1;
+    }
+    const int n = std::min(int(found.size()), 18);
+    for (int i = 0; i < n; ++i) lua_pushinteger(L, found[size_t(i)].second);
+    return n;
+}
+int api_get_frame_time(lua_State* L) {   // GetFrameTime: the last frame's milliseconds (Application +0xf7c)
+    lua_pushinteger(L, lua_Integer(ctx(L).frame_ms));
+    return 1;
+}
+// SpawnObjectNearActor(actor, distance, type[, model][, {front_angle, back_angle}]): a new
+// actor of that type `distance` from the actor, in a random direction (CZonesManager::
+// SpawnObjectNearActor); its id, or -1.
+int api_spawn_object_near_actor(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* near = c.object(int_arg(L, 1));
+    const std::string type = str_arg(L, 3);
+    int type_id = -1;
+    for (const auto& [id, g] : c.gol)
+        if (g.name == type) type_id = id;
+    if (!near || type_id < 0) {
+        lua_pushinteger(L, -1);
+        return 1;
+    }
+    const float a = std::uniform_real_distribution<float>(0.0f, 6.2831853f)(rng()), d = float(lua_tonumber(L, 2));
+    const glm::vec3 at = near->position + glm::vec3(std::cos(a) * d, std::sin(a) * d, 0.0f);
+    const int id = c.next_spawn_id++;
+    const size_t index = c.scene.spawn_object(type_id, id, at, near->yaw);
+    if (index == kNoIndex) {
+        lua_pushinteger(L, -1);
+        return 1;
+    }
+    LevelLogic::Object& o = c.add_object(id, index, type, at, near->yaw);
+    c.enable(o, true);
+    c.show(o, true);
+    ActorState st;
+    if (find_state(c.gol, type_id, "Idle", st) && !st.clips.empty()) {
+        o.state = "Idle";
+        c.scene.play_clip(index, st.clips[0], true);
+    }
+    lua_pushinteger(L, id);
+    return 1;
+}
+// EnableTalkMode(on): Batman talks on the radio (CActorBaseComponent::EnableTalk); its click.
+int api_enable_talk_mode(lua_State* L) {
+    if (bool_arg(L, 1) && ctx(L).audio) ctx(L).audio->play("sfx_radio_start");
+    return 0;
+}
+// PostProcessingEffectAdd(name, ms | {time_to_run, time_to_fade_in, extra_texture, ...}) /
+// PostProcessingEffectRemove(name) (CPostProcessManager): RadialBlur, ShockWave, HeatHaze and
+// ColorCorrection (a 16x16x16 LUT in commons_tex) are not drawn yet; the trace shows them.
+int api_post_effect(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (c.trace) c.log(std::string(lua_tointeger(L, lua_upvalueindex(2)) ? "post effect on: " : "post effect off: ") + str_arg(L, 1));
     return 0;
 }
 
@@ -826,6 +982,8 @@ const Entry kTdkr[] = {
     {"SetQuestCanceled", api_set_quest<Quests::Canceled>},
     {"GetQuestStatus", api_get_quest_status},
     {"GetQuestsWithStatus", api_get_quests_with_status},
+    {"RequireLoadLevel", api_require_load_level},
+    {"GetCurrentLevel", api_get_current_level},
     {"AddGenericObjectOnMap", api_add_map_icon},
     {"RemoveGenericObjectFromMap", api_remove_map_icon},
     {"IsQuestDisabled", api_is_quest<Quests::Disabled>},
@@ -901,6 +1059,13 @@ const Entry kTdkr[] = {
     {"KillActor", api_kill_actor},
     {"SetActorHealth", api_set_actor_health},
     {"ActorGrapnelEnable", api_actor_grapnel_enable},
+    {"ActorTargetEnable", api_actor_grapnel_enable},
+    {"NPCIsKilledByMC", api_npc_killed_by_mc},
+    {"ActorIsAttacking", api_actor_is_attacking},
+    {"ActorIsAttacked", api_actor_is_attacked},
+    {"ActorFadeOut", api_actor_fade_out},
+    {"SetOnGargoyle", api_set_on_gargoyle},
+    {"SetGlideControlEnable", api_set_control<&LevelLogic::Controls::glide>},
     {"NPCSetSniper", api_npc_set_sniper},
     {"NPCSetCanBePulledAllTheWay", api_nothing},   // (every pull here lands at Batman)
     {"MissionFailedAutoReload", api_mission_failed_reload},
@@ -926,7 +1091,6 @@ const Entry kTdkr[] = {
     {"EngineFunction_1", api_nothing},
     {"SetForceBestLOD", api_nothing},
     {"EnableActorCollision", api_nothing},
-    {"EnableTalkMode", api_nothing},
     {"CameraShake", api_camera_shake},
     {"NPCAttackTarget", api_npc_attack_target},
     {"NPCSetStance", api_npc_set_stance},
@@ -942,7 +1106,7 @@ const Entry kTdkr[] = {
     {"EndCinematicObject", api_end_cinematic_object},
     {"PlayAnimation", api_play_animation},
     {"ActorPlayWeaponAnimation", api_nothing},
-    {"NPCGoToWaypointWithNavmesh", api_npc_go_to_waypoint},
+    {"NPCGoToWaypointWithNavmesh", api_npc_go_to_waypoint_navmesh},
     {"SetActorSpeedWalk", api_set_actor_speed, 0},
     {"SetActorSpeedRun", api_set_actor_speed, 1},
     {"SetSlowMotion", api_set_slow_motion},
@@ -956,6 +1120,39 @@ const Entry kTdkr[] = {
     {"SetObjectUpdateInCinematicSkip", api_nothing},
     {"SetAlwaysVisible", api_nothing},
     {"SetAlwaysUpdate", api_nothing},
+    {"NPCSetTarget", api_npc_set_target},
+    {"GetEnemiesInRange", api_get_enemies_in_range},
+    {"GetFrameTime", api_get_frame_time},
+    {"SpawnObjectNearActor", api_spawn_object_near_actor},
+    {"EnableTalkMode", api_enable_talk_mode},
+    {"PostProcessingEffectAdd", api_post_effect, 1},
+    {"PostProcessingEffectRemove", api_post_effect, 0},
+    // Gotham's traffic, crowds, patrols, monorail and trains, the side missions' manager, the
+    // achievements and the flickering smart lights are not in this port yet: the scripts'
+    // settings for them go nowhere.
+    {"Traffic_SpawnerEnable", api_nothing},
+    {"Traffic_SpawnerDisable", api_nothing},
+    {"Traffic_SpawnerSetSetting", api_nothing},
+    {"Traffic_StreetPatrolSet", api_nothing},
+    {"Traffic_StreetPatrolRanges", api_nothing},
+    {"Traffic_CrowdSetBehavior", api_nothing},
+    {"Traffic_CrowdSetDensity", api_nothing},
+    {"Traffic_PoolReset", api_nothing},
+    {"Traffic_FreezeSemaphore", api_nothing},
+    {"Traffic_UnfreezeSemaphore", api_nothing},
+    {"StartSideMissionManager", api_nothing},
+    {"StopSideMissionManager", api_nothing},
+    {"SideMissionManagerQuestAdd", api_nothing},
+    {"SideMissionManagerQuestRemove", api_nothing},
+    {"EnableMonorailManager", api_nothing},
+    {"StartMonorailManager", api_nothing},
+    {"StopMonorailManager", api_nothing},
+    {"AddMonorailLine", api_nothing},
+    {"AddTrainLine", api_nothing},
+    {"IncrementAchievementValue", api_nothing},
+    {"SetAchievementVariable", api_nothing},
+    {"GiveAchievement", api_nothing},
+    {"SetEnableLight", api_nothing},
 };
 
 int api_unlock_mission(lua_State* L) { return api_log_mission(L); }

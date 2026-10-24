@@ -92,6 +92,7 @@ SoundTable parse_sound_table(const std::string& xml) {
             s.loop = to_str(a, "loop") == "yes";
             s.ref_distance = to_float(a, "refdistance", 0);
             s.max_distance = to_float(a, "maxdistance", 0);
+            s.base_gain = to_float(a, "basegain", 1);
             if (size_t(s.uid) >= t.sounds.size()) t.sounds.resize(size_t(s.uid) + 1);
             t.sounds[size_t(s.uid)] = std::move(s);
         } else if (kind == "event") {

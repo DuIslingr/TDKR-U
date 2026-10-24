@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -33,6 +34,8 @@ constexpr int kCompCinematic = 0x41;      // CCinematicComponent: length ms, ...
 // ([[[start, end, script], ...]]), [7] camera tracks ([[type, [[ms, end ms, position, target], ...]]],
 // relative to the object), [8] object clips ([[object, [[clip, start, speed, loop, length]], ...]]).
 constexpr int kCompCinematicTdkr = 0x17AC851F;
+constexpr int kCompPullable = 0x4891830C;   // PullableObjectComponent: idle, struggle, fall, back clips, struggle ms, ...
+constexpr int kCompNpcAi = 0x0113F791;     // CNpcAIComponent: behaviour, enemy, ...
 constexpr int kCompPath = 0x15;            // CPathComponent: id, ?, first waypoint, last waypoint, ?
 constexpr int kCompMotionOnPath = 0x16;    // CMotionOnPathComponent: node, path id, max speed, accel, brake, loop
 
@@ -173,7 +176,8 @@ void LevelLogic::load_objects() {
             obj.id = tf->id;
             obj.position = tf->position;
             obj.yaw = tf->rotation.z;
-            obj.enabled = obj.visible = tf->visible;
+            obj.enabled = tf->enabled;   // an enabled, invisible object (TDKR's usable planes) can be used
+            obj.visible = tf->visible;
         }
         if (const Value* d = comp(kCompDoor); d && d->size() >= 1) {
             Door door;
@@ -330,11 +334,16 @@ void LevelLogic::start(StartMode mode) {
     mission_zone = -1;
     walkers_.clear();
     attack_targets.clear(), snipers.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
+    attacking_batman.clear(), batman_target = -1, killed_by_batman.clear();
     player_did = {};
     play_time = 0, player_speed = 0, last_interaction = -1, camera_anim = -1, weather = false, player_hidden = false;
     win = {};
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
+    hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
     map_icons.clear();
+    level_request = {};
+    object_sounds.clear();
+    ambience = {};
     last_player_ = player.center;
     control_glow.clear();
     for (auto& [id, o] : objects_)   // vehicles (CComponentVehicleCar) and their parts
@@ -603,6 +612,8 @@ void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
     log("respawned at checkpoint " + std::to_string(cp.spawn));
 }
 
+// (TDKR's EnableControls switches the interface and the input, not the design flags of
+// SetGlideControlEnable (CBaseControlScheme::EnableGlideControl): the glide keeps its own.)
 void LevelLogic::enable_controls(bool on) {
     controls.move = controls.rotate = controls.jump = controls.combat = controls.grapnel = controls.counter = controls.gadgets =
         controls.silent = controls.batarang = on;
@@ -644,6 +655,8 @@ void LevelLogic::enable(Object& o, bool on) {
     if (!on)
         for (size_t k = 0; k < o.effects.size(); ++k) stop_effect(o, int(k));
     if (o.trigger >= 0 && !on) triggers_[size_t(o.trigger)].inside = false;
+    // CTriggerComponent::Enable: turned on again, its run count starts over.
+    if (o.trigger >= 0 && on) triggers_[size_t(o.trigger)].runs_left = triggers_[size_t(o.trigger)].runs;
 }
 
 void LevelLogic::show(Object& o, bool on) {
@@ -930,8 +943,17 @@ bool LevelLogic::use() {
     if (!best) return false;
     // The original pushes its circuit minigame (GS_FaneMinigame) first when the instance's
     // minigame flag ([3]) is set, but no campaign object sets it: the use is OnEnter alone.
+    // TDKR (CInteractionComponent::OnInteract): with a target object (SetInteractionParams),
+    // that object is enabled instead; its button goes either way.
     last_interaction = best->id;
-    start_object_script(*best, "OnScriptEvent");
+    if (trace) log("use " + std::to_string(best->id));
+    if (Object* t = best->interact_target >= 0 ? object(best->interact_target) : nullptr) {
+        best->interact_enabled = false;
+        enable(*t, true);
+        if (t->trigger >= 0) triggers_[size_t(t->trigger)].inside = false;
+    } else {
+        start_object_script(*best, "OnScriptEvent");
+    }
     return true;
 }
 
@@ -1078,6 +1100,99 @@ void LevelLogic::script_camera(const glm::vec3& position, const glm::vec3& targe
     }
     c.to_position = position, c.to_target = target;
     c.t = 0, c.length = ms / 1000.0f, c.on = true;
+}
+
+void LevelLogic::play_ambience(const std::string& preset) {
+    static std::unordered_map<std::string, Ambience> presets;
+    if (presets.empty()) {   // data/BATMAN_TDKR.vxa
+        const auto& files = scene.vfs().find("BATMAN_TDKR.vxa");
+        if (!files.empty()) {
+            const Bytes b = scene.vfs().read(files[0]);
+            size_t o = 0;
+            auto u32 = [&]() -> uint32_t {
+                if (o + 4 > b.size()) return 0;
+                uint32_t v;
+                std::memcpy(&v, b.data() + o, 4);
+                o += 4;
+                return v;
+            };
+            auto f32 = [&]() {
+                const uint32_t u = u32();
+                float f;
+                std::memcpy(&f, &u, 4);
+                return f;
+            };
+            auto str = [&]() {
+                const uint32_t n = u32();
+                std::string s = o + n <= b.size() ? std::string(reinterpret_cast<const char*>(b.data() + o), n) : "";
+                o += n;
+                u32();
+                return s;
+            };
+            o = 4;
+            o += u32();            // the version string
+            o += 4, u32();         // "data", size
+            for (uint32_t k = 0, n = u32(); k < n && o < b.size(); ++k) {
+                Ambience a;
+                const std::string name = str();
+                u32();
+                a.min_s = f32(), a.max_s = f32();
+                f32(), f32();
+                for (uint32_t s = 0, m = u32(); s < m && o < b.size(); ++s) a.sounds.push_back(str());
+                presets[name] = std::move(a);
+            }
+        }
+    }
+    auto it = presets.find(preset);
+    ambience = it != presets.end() ? it->second : Ambience{};
+    ambience.timer = ambience.sounds.empty() ? -1 : ambience.min_s;
+}
+
+void LevelLogic::update_ambience(float dt) {
+    if (!audio || ambience.timer < 0 || (ambience.timer -= dt) > 0) return;
+    const std::string& s = ambience.sounds[size_t(std::rand()) % ambience.sounds.size()];
+    if (audio->table().event(s)) audio->play_event(s, {});
+    else audio->play(s);
+    ambience.timer = ambience.min_s + (ambience.max_s - ambience.min_s) * float(std::rand()) / float(RAND_MAX);
+}
+
+namespace {
+// The game's level names, in its order, and their files.
+const std::pair<const char*, const char*> kLevels[] = {
+    {"STR_FPS_LEVEL_GOTHAM", "GothamCity.lvc"},           {"STR_FPS_LEVEL_GOTHAM_ISLAND_2", "GothamCity_Island2.lvc"},
+    {"STR_FPS_LEVEL_THEPIT", "ThePit.lvc"},               {"STR_FPS_LEVEL_STOCKEXCHANGE", "StockExchange.lvc"},
+    {"STR_FPS_LEVEL_UNDERGROUND", "Underground.lvc"},     {"STR_FPS_LEVEL_BATCAVE", "BatCave.lvc"},
+    {"STR_FPS_LEVEL_POLICE", "Police_Station.lvc"},       {"STR_FPS_LEVEL_MILITARY", "Military.lvc"},
+    {"STR_FPS_LEVEL_STADIUM", "Stadion.lvc"},
+};
+}  // namespace
+
+std::string LevelLogic::level_file(const std::string& name) {
+    for (const auto& [n, f] : kLevels)
+        if (name == n) return f;
+    return "";
+}
+
+std::string LevelLogic::level_name(const std::string& file) {
+    for (const auto& [n, f] : kLevels)
+        if (to_lower(file) == to_lower(f)) return n;
+    return "";
+}
+
+void LevelLogic::update_object_sounds() {
+    if (!audio) return;
+    for (auto it = object_sounds.begin(); it != object_sounds.end();) {
+        std::erase_if(it->second, [&](int h) { return !audio->playing(h); });
+        if (it->second.empty()) {
+            it = object_sounds.erase(it);
+            continue;
+        }
+        const Object* o = it->first ? object(it->first) : nullptr;
+        const glm::vec3 at = it->first == 0 ? player.center : o ? o->position : glm::vec3(0);
+        if (it->first == 0 || o)
+            for (int h : it->second) audio->set_position(h, at);
+        ++it;
+    }
 }
 
 void LevelLogic::gadget_start() {
@@ -1703,6 +1818,7 @@ void LevelLogic::update_heat_haze(float dt) {
 
 void LevelLogic::update(float dt) {
     play_time += dt;
+    frame_ms = dt * 1000.0f;
     if (dt > 0) player_speed = glm::distance(glm::vec2(player.center), glm::vec2(last_player_)) / dt;
     last_player_ = player.center;
     for (ParamRamp& r : param_ramps_) {
@@ -1765,7 +1881,10 @@ void LevelLogic::update(float dt) {
     for (auto& m : messages_) m.seconds_left -= dt;
     while (!messages_.empty() && messages_.front().seconds_left <= 0) messages_.pop_front();
     quests.update(dt);
+    update_object_sounds();
+    update_ambience(dt);
     update_gadget(dt);
+    update_button_qte(dt);
     if (script_cam_.on) script_cam_.t += dt;
     update_walkers(dt);
     update_triggers();
@@ -1773,6 +1892,70 @@ void LevelLogic::update(float dt) {
     update_zone_fog();
     update_fog(dt);
     runtime_.update(dt * 1000.0f);
+}
+
+
+void LevelLogic::end_hack(bool won) {
+    if (!hack.active) return;
+    hack.active = false;
+    hud_state = "HUD";
+    enable_controls(true);   // CLevel::EnableControls
+    if (trace) log(std::string("hack: ") + (won ? "won" : "lost"));
+    const std::string& fn = won ? hack.win : hack.lose;
+    if (!fn.empty()) start_script(fn, -1);
+}
+
+bool LevelLogic::press_button_qte() {
+    if (button_qte.object < 0) return false;
+    const ButtonQte q = button_qte;
+    button_qte = {};
+    if (trace) log("qte: pressed at " + std::to_string(q.object));
+    if (audio) audio->play("sfx_qte_success");
+    if (!q.win.empty()) start_script(q.win, -1);
+    // PlayerComponent::StartScriptedMinigame: the pull (PullableObjectComponent: idle, struggle,
+    // fall and back clips, then the struggle's length in ms).
+    Object* o = minigame_object == q.object ? object(q.object) : nullptr;
+    if (!o || o->index >= scene.level().objects.size()) return true;
+    auto c = scene.level().objects[o->index].components.find(kCompPullable);
+    if (c == scene.level().objects[o->index].components.end() || c->second.size() < 5) return true;
+    const Value& v = c->second;
+    scene.play_clip(o->index, v[1].s, true);
+    pull_ = {o->id, std::max(v[4].as_float(), 0.0f) / 1000.0f, v[2].s};
+    minigame_object = -1;
+    return true;
+}
+
+void LevelLogic::update_button_qte(float dt) {
+    if (button_qte.object >= 0) {
+        button_qte.left -= dt;
+        if (button_qte.left <= 0) {   // missed
+            const std::string lose = button_qte.lose;
+            if (trace) log("qte: missed at " + std::to_string(button_qte.object));
+            button_qte = {};
+            if (audio) audio->play("sfx_qte_fail");
+            if (!lose.empty()) start_script(lose, -1);
+        }
+    }
+    if (pull_.object >= 0 && (pull_.left -= dt) <= 0) {   // down it comes: its fall, its script
+        if (Object* o = object(pull_.object)) {
+            if (o->index < scene.level().objects.size()) scene.play_clip(o->index, pull_.fall, false);
+            start_object_script(*o, "OnScriptEvent");
+        }
+        pull_ = {};
+    }
+}
+
+bool LevelLogic::is_enemy(int id) const {
+    const Object* o = object(id);
+    if (!o || o->dead || !o->enabled || !o->visible || o->index >= scene.level().objects.size()) return false;
+    if (attack_targets.count(id)) return true;
+    // CNpcAIComponent: [0] its behaviour (AI_BEHAVIOR_*), [1] whether it is an enemy (the
+    // mercenaries, snipers and thugs; not the civilians or the police).
+    const LevelObject& lo = scene.level().objects[o->index];
+    const Value* ai = nullptr;
+    if (auto it = lo.components.find(kCompNpcAi); it != lo.components.end()) ai = &it->second;
+    else if (auto g = gol.find(lo.type); g != gol.end()) ai = resolved_template(g->second, gol, kCompNpcAi);
+    return ai && ai->size() > 1 && (*ai)[1].i != 0;
 }
 
 }  // namespace tdkr

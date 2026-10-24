@@ -15,8 +15,10 @@ constexpr int kCompMainStory = 0x5863BD59;   // CMainStoryQuestsComponent: [[que
 }  // namespace
 
 void Quests::load(const Level& level, const Gol& gol) {
+    std::vector<Quest> before;
+    if (carry_over) before = quests_;
     quests_.clear();
-    last_completed_ = -1;
+    if (!carry_over) last_completed_ = -1;
     for (const LevelObject& o : level.objects) {
         auto c = o.components.find(kCompQuest);
         if (c == o.components.end() || !o.base || c->second.size() < 3) continue;
@@ -24,16 +26,21 @@ void Quests::load(const Level& level, const Gol& gol) {
         q.id = c->second[0].i;
         q.object = o.base->id;
         q.title = c->second[1].s, q.debrief = c->second[2].s;
+        for (const Quest& b : before)
+            if (b.id == q.id) q.status = b.status, q.ended = b.ended;
         quests_.push_back(q);
     }
     // The MainStory type's story quests; its scripts are Templ<type>_<n>_<event>
     // (CMainStoryQuestsComponent::Load).
     story_.clear();
     story_type_ = -1;
-    story_on_ = false;
-    story_index_ = story_started_ = -1;
-    briefed_ = finished_ = advance_ = false;
-    reminder_ms_ = -1;
+    if (!carry_over) {
+        story_on_ = false;
+        story_index_ = story_started_ = -1;
+        briefed_ = finished_ = advance_ = false;
+        reminder_ms_ = -1;
+    }
+    carry_over = false;
     for (const auto& [id, type] : gol) {
         auto t = type.templates.find(kCompMainStory);
         if (t == type.templates.end() || t->second.size() < 1) continue;

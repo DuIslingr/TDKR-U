@@ -54,6 +54,7 @@ public:
     // at (within 40 m, a few degrees, in sight); -1 none.
     int pull_target(const glm::vec3& eye, const glm::vec3& forward) const;
     bool pull(int id);   // fire the grapnel at it
+    void grapnel_at(const glm::vec3& at);   // Batman fires it at a thing (a QTE's minigame object)
     // The batarang (Batman_05_Batarang: Batarang_Throw) at the enemy the view aims at (or the
     // nearest ahead), within 30 m and in sight, if the scripts allow it and there is ammo
     // ("Batarang_01"); it lands a moment later for a heavy hit.

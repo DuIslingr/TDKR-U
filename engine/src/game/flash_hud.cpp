@@ -24,6 +24,12 @@ bool FlashHud::start(const std::string& minimap, float minimap_scale, float mini
         if ((name == "registerInGameEvent" || name == "registerInGameEventExtended") && a.size() > 0 &&
             a[0].type == swf::Value::String && a[0].s == "CONTINUE_FROM_WIN")
             close_win();
+        // The hacking game's end (minigame.swf: registerInGameEvent("GAME_PIPE", "WIN" | "LOSE"),
+        // its skip button "SKIP_MINIGAME_BUTTON").
+        if (name == "registerInGameEvent" && a.size() > 1 && a[0].type == swf::Value::String && a[1].type == swf::Value::String) {
+            if (a[0].s == "GAME_PIPE" && hack_serial_ > 0) hack_result_ = a[1].s == "WIN" ? 1 : 2;
+            if (a[0].s == "SKIP_MINIGAME_BUTTON" && hack_serial_ > 0) hack_result_ = 1;
+        }
         return swf::Value();
     };
     win_open_ = false;
@@ -115,6 +121,22 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         }
         grapple_shown_ = state.grapple;
     }
+    // CHUDDisplay::AddButtonToScene: the QTE button over its object, from its QTEStart.
+    if (swf::Instance* b = p.find("mQTEButtonInstance")) {
+        b->visible = state.qte && state.visible;
+        if (state.qte) {
+            const glm::vec2 at = (state.qte_at - p.offset()) / p.scale();
+            b->matrix.tx = at.x * 20.0f;
+            b->matrix.ty = at.y * 20.0f;
+            b->accept_moves = false;
+            if (!qte_shown_) p.goto_and_play("mQTEButtonInstance", "QTEStart");
+        }
+        qte_shown_ = state.qte;
+    }
+    if (state.frame == "Hacking" && state.hack.serial != hack_serial_ && state.hack.serial > 0) {
+        if (state.frame != frame_) set_frame(state.frame);
+        start_hack(state.hack);
+    }
     if (win_open_) {   // the win screen alone
         screen_.update(dt, width, height);
         return;
@@ -194,6 +216,13 @@ void FlashHud::set_frame(const std::string& frame) {
     if (!p) return;
     frame_ = frame;
     if (frame == "HUD") {
+        if (hack_serial_ > 0) {   // CHUDDisplay::ResetAfterHack: the game's clips go
+            if (swf::Instance* area = p->find("mHackArea")) {
+                for (auto& c : area->children) p->unload(c.get());
+                area->children.clear();
+            }
+            hack_serial_ = 0;
+        }
         for (auto& [slot, last] : buttons_) last = {"", -1};
         set_up();
         width_ = height_ = 0;
@@ -202,6 +231,23 @@ void FlashHud::set_frame(const std::string& frame) {
     p->goto_and_stop("", frame);
     // The binoculars in a cinematic: the visor alone, not its zoom slider and controls.
     for (const char* hidden : {"sZoom", "zoomInterface", "analyzer"}) p->set_visible(hidden, false);
+}
+
+// CHUDDisplay::StartPipeMinigame: minigame.swf into mHackArea, then
+// miniGame.init(grid, rows, columns, start row, end row, ms).
+void FlashHud::start_hack(const State::Hack& h) {
+    swf::Player* p = screen_.player();
+    hack_serial_ = h.serial;
+    hack_result_ = 0;
+    if (!p || !p->load_movie("mHackArea", "minigame.swf")) {
+        std::fprintf(stderr, "hud: could not load minigame.swf\n");
+        hack_result_ = 1;   // not playable here: let the scripts go on
+        return;
+    }
+    p->set_visible("mHackArea", true);
+    p->invoke("mHackArea.miniGame", "init",
+              {swf::Value(h.grid), swf::Value(double(h.size)), swf::Value(double(h.size)), swf::Value(double(h.start_row)),
+               swf::Value(double(h.end_row)), swf::Value(double(h.ms)), swf::Value(double(h.price))});
 }
 
 void FlashHud::close_win() {

@@ -55,6 +55,7 @@ public:
     void stop(const std::string& name, float fade_ms = 0);
     void stop(int handle, float fade_ms = 0);
     void stop_all();
+    void stop_music(float fade_ms = 0);   // every voice on the music bus (VoxSoundManager::StopMusic)
     // The pause menu, the main menu, the loading screen: voices hold where they are, but
     // those of the sound `except` (the title music) play on.
     void set_paused(bool paused, const std::string& except = {});
@@ -120,7 +121,7 @@ private:
         // Interactive clips: the state's playlist and where in it; the segment left behind
         // at a state change fades out alongside.
         int state = 0, element = 0;
-        bool done = false, ui = false;
+        bool done = false, ui = false, music = false;
         size_t tail_frame = 0, tail_end = 0;
         float tail_gain = 0, tail_step = 0;
     };

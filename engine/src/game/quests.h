@@ -45,6 +45,10 @@ public:
     // The level's quest objects and the main story's quests (their script chunks are already
     // loaded with the level; the story's are loaded here).
     void load(const Level& level, const Gol& gol);
+    // CQuestManager outlives levels: with `carry_over` set, the next load keeps the statuses of
+    // the quests it finds again and the main story where it was (RequireLoadLevel); a new game
+    // or mission clears it.
+    bool carry_over = false;
     void update(float dt);
 
     // CQuestManager::SetQuestStatus / GetQuestStatus.

@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include <glm/glm.hpp>
 
@@ -51,6 +52,15 @@ public:
         };
         std::vector<Marker> markers;
         std::string frame = "HUD";       // SetHudState: the movie's frame (HUD, Binoculars, ...)
+        // StartPipeGame: the hacking game to start in the Hacking frame (a new serial: a new game).
+        struct Hack {
+            int serial = 0;
+            std::string grid;
+            int size = 0, start_row = 0, end_row = 0, ms = 0, price = 0;
+        } hack;
+        // QTE_EnableControl: the QTE button over an object (screen pixels).
+        bool qte = false;
+        glm::vec2 qte_at{0};
     };
     void update(float dt, const State& state, int width, int height);
     // The objective popup (objectiveMessage_popin): show with text, or hide.
@@ -62,6 +72,11 @@ public:
     // The checkpoint notice (CheckpointMessageInstance: its text, then its Anim).
     void checkpoint_message(const std::string& text);
     bool win_open() const { return win_open_; }
+    // The hacking game (minigame.swf in mHackArea): it takes the pointer while it is up; its
+    // outcome once (registerInGameEvent GAME_PIPE WIN / LOSE; its skip button counts as a win):
+    // 0 none yet, 1 won, 2 lost.
+    bool hacking() const { return frame_ == "Hacking" && hack_serial_ > 0; }
+    int take_hack_result() { return std::exchange(hack_result_, 0); }
     void close_win();
     void press_continue();   // the win screen's button, from the keyboard or a pad
     void draw(ParticleList& out);
@@ -97,6 +112,9 @@ private:
     float minimap_scale_ = 1, minimap_zoom_ = 1;
     glm::vec2 map_center_{0}, map_zero_{0};   // twips
     bool grapple_shown_ = false;
+    int hack_serial_ = 0, hack_result_ = 0;
+    void start_hack(const State::Hack& h);
+    bool qte_shown_ = false;
     std::map<std::string, float> left_base_;   // the left group's authored x (twips)
 };
 

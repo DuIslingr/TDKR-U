@@ -70,7 +70,7 @@ public:
         // TDKR (CLevel::Set<Kind>ControlEnable): strikes, the grapnel, the counter button, the
         // gadget wheel. `ignore`: IgnoreControls' directions (IGNORE_CONTROLS_UP 1, DOWN 2,
         // LEFT 4, RIGHT 8) the stick does not push the player.
-        bool combat = true, grapnel = true, counter = true, gadgets = true, silent = true, batarang = true;
+        bool combat = true, grapnel = true, counter = true, gadgets = true, silent = true, batarang = true, glide = true;
         int ignore = 0;
     } controls;
     // EnableControls(on): every control at once, and the HUD's buttons with them.
@@ -91,9 +91,37 @@ public:
     std::map<std::string, int> weapon_ammo;   // SetWeaponAmmo / GetWeaponAmmo, by weapon name ("Batarang_01")
     // AddGenericObjectOnMap(object, icon, ?): icons on the minimap (not drawn yet).
     std::map<int, std::string> map_icons;
+    // RequireLoadLevel(level name, spawn): the game should change level (the caller loads it,
+    // keeping the quests, and puts Batman at the spawn point). Level names are the game's
+    // table (STR_FPS_LEVEL_GOTHAM, ..._STOCKEXCHANGE, ...); level_file / level_name map them.
+    struct LevelRequest {
+        std::string file;
+        int spawn = -1;
+    } level_request;
+    static std::string level_file(const std::string& name);
+    static std::string level_name(const std::string& file);
+    // Sounds started at objects (StartSoundAtObjectNode / StartEventAtObjectNode): they follow
+    // them, and StopCurrentSFXAtObject stops them. 0 is Batman.
+    std::unordered_map<int, std::vector<int>> object_sounds;
+    void update_object_sounds();
+    // PlayAmbience(preset) (VoxSoundManager::PlayNewAmbience): every few seconds (the preset's
+    // range) one of its sounds, at random. The presets are data/BATMAN_TDKR.vxa: "voxa", a
+    // version string, "data", size, count, then per preset its name, u32 0, u32 ?, f32 min and
+    // max seconds, f32 x2 ?, the sound count and the sounds (u32 length, name, u32 0 each).
+    void play_ambience(const std::string& preset);
+    struct Ambience {
+        std::vector<std::string> sounds;
+        float min_s = 2, max_s = 10, timer = -1;
+    } ambience;
+    void update_ambience(float dt);
     std::string player_action;
     int player_action_mask = 0;
     bool counter_open = false;       // an enemy's attack can be countered now (set by the brawl)
+    // Who attacks whom now (the brawl's: enemies winding up at Batman, Batman's strike target),
+    // for ActorIsAttacking / ActorIsAttacked; and those Batman killed (NPCIsKilledByMC).
+    std::unordered_set<int> attacking_batman;
+    int batman_target = -1;
+    std::unordered_set<int> killed_by_batman;
     // GrapplingLockTarget(object or waypoint): the grapnel goes there, whatever the view aims at
     // (CActorBaseComponent::SetGrapplingLockTarget); -1 none.
     int grapple_lock = -1;
@@ -142,6 +170,32 @@ public:
     void gadget_stop(float ms);
     bool gadget_on() const { return gadget_.on; }
     std::string hud_state = "HUD";   // SetHudState: the HUD movie's frame (HUD, Binoculars, ...)
+    // StartPipeGame(win, lose, grid, size, skip price, ms, start row, end row) (CHUDDisplay::
+    // StartPipeMinigame): the hacking minigame, minigame.swf in the HUD's Hacking frame, until
+    // it is won or lost (its GAME_PIPE event); then the win or lose function runs, the HUD is
+    // back and the controls are on (CHUDDisplay::WinHack / LoseHack / ResetAfterHack).
+    struct Hack {
+        bool active = false;
+        int serial = 0;                  // counts the games started
+        std::string win, lose, grid;
+        int size = 0, price = 0, ms = 0, start_row = 0, end_row = 0;
+    } hack;
+    void end_hack(bool won);
+    // QTE_EnableControl(object, ms, win, lose) (PlayerComponent::SetQTEParams, CHUDDisplay::
+    // AddButtonToScene): a button over the object for `ms`. Pressed in time, the win function
+    // runs and, on a minigame object (EnableMiniGameObject), Batman's grapnel pulls it
+    // (PullableObjectComponent: its struggle clip for the time it takes, then its fall clip
+    // and its script); missed, the lose function runs.
+    struct ButtonQte {
+        int object = -1;
+        float left = 0;                  // seconds
+        std::string win, lose;
+    } button_qte;
+    int minigame_object = -1;            // EnableMiniGameObject: the object the next QTE pulls
+    bool press_button_qte();
+    float frame_ms = 0;                  // the last update's length (GetFrameTime)
+    // CNpcAIComponent's enemy flag ([1]), or an actor the scripts set on Batman.
+    bool is_enemy(int id) const;
     // CameraFollowObject: a script camera at a point looking at another, moving there from where
     // it was over `ms` (0: a cut), until CameraSwitchToPlayer / EndCinematic.
     void script_camera(const glm::vec3& position, const glm::vec3& target, float ms);
@@ -317,6 +371,7 @@ public:
         bool enabled = true, visible = true, dead = false;
         bool interactive = false, interact_enabled = true;
         float interact_radius = 3;   // CInteractionComponent: metres from the player
+        int interact_target = -1;    // SetInteractionParams: using it enables that object instead of its own script
         bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
         bool targetable = true;       // ActorGrapnelEnable: Batman may leap or grapple at it
         float health = 100;
@@ -332,6 +387,12 @@ public:
         std::vector<EffectSlot> effects;
     };
     Object* object(int id);
+    const Object* object(int id) const {
+        auto it = objects_.find(id);
+        return it == objects_.end() ? nullptr : &it->second;
+    }
+    const std::unordered_map<int, Object>& objects() const { return objects_; }
+    const Value* object_component(const Object& o, int comp) const;   // its own, else its type's
     // Play a state of the actor's state set (one of its clips at random); false if it has none.
     bool actor_state(Object& o, const std::string& state, bool restart = false);
     int object_type(const Object& o) const {
@@ -644,7 +705,6 @@ private:
     };
     std::vector<Cinematic> cinematics_;
     void update_cinematics(float dt);
-    const Value* object_component(const Object& o, int comp) const;
     glm::vec3 look_at_{0}, handover_{0};
     bool have_handover_ = false;
     float look_left_ = 0, look_total_ = 0;
@@ -742,6 +802,12 @@ private:
         float t = 0, length = 0;   // seconds into the move, and its length
     } gadget_;
     void update_gadget(float dt);
+    struct Pull {   // a minigame object on Batman's grapnel: struggling, then falling
+        int object = -1;
+        float left = 0;
+        std::string fall;
+    } pull_;
+    void update_button_qte(float dt);
     struct Slow {
         float factor = 1, from = 1, to = 1, in = 0, hold = 0, out = 0;
         float t = -1;   // ms since set; < 0: steady
@@ -814,5 +880,7 @@ bool find_actor_state(const Gol& gol, int type, const std::string& name, ActorSt
 // last (game/tdkr_api.cpp).
 void register_game_api(LevelLogic& logic);
 void register_tdkr_api(LevelLogic& logic);
+void register_tdkr_sound_api(LevelLogic& logic);   // game/tdkr_sound_api.cpp
+void register_tdkr_minigame_api(LevelLogic& logic);   // game/tdkr_minigame_api.cpp
 
 }  // namespace tdkr

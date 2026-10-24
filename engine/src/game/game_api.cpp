@@ -1477,6 +1477,8 @@ void register_game_api(LevelLogic& logic) {
     logic.runtime_.load("NPC = { PostureStand = 0, PostureCover = 1, PostureCoverFire = 2, PostureMachineGun = 3, "
                         "PostureHiCover = 4, PostureCrouch = 5 }", "NPC constants");
     register_tdkr_api(logic);
+    register_tdkr_sound_api(logic);
+    register_tdkr_minigame_api(logic);
 }
 
 }  // namespace tdkr

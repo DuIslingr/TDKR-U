@@ -72,6 +72,7 @@ struct Options {
     float end_screen = -1;      // headless: draw the end-of-level screen this long after it opened    // headless: draw the level's loading screen, 0 loading, 1 loaded
     bool god = false;           // the player takes no damage
     bool fight_test = false;
+    bool auto_play = false;     // TDKR, headless: Batman goes to each objective marker and uses it (with --fight-test)
     std::string did;            // headless: what the player has done from the start (look,move,attack,counter)    // TDKR, headless: Batman strikes at enemies in reach and counters every attack
     bool list_actors = false;   // print combat targets after the level starts
     std::string mission;        // --mission N|NAME: start this mission (its level and start script)

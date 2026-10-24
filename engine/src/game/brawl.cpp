@@ -15,7 +15,6 @@ namespace tdkr {
 namespace {
 
 constexpr int kSpecial = 0x800, kAttack = 0x4, kHurt = 0x80;   // STATE_TYPE_SPECIAL, _ATTACK, _HURT
-constexpr int kCompNpcAi = 0x0113F791;   // CNpcAIComponent
 constexpr float kStrikeDamage = 25, kCounterDamage = 40, kEnemyDamage = 8;
 constexpr float kCloseIn = 1.3f;        // metres an enemy keeps from Batman to attack
 constexpr float kEnemySpeed = 3.5f;     // m/s closing in
@@ -64,19 +63,7 @@ glm::vec3 Brawl::feet() const { return player_.center - glm::vec3(0, 0, player_.
 float Brawl::yaw_to(const glm::vec3& at) const { return angle_to(feet(), at); }
 
 // Actors that fight: the enemies (the NPC AI component says so) and anyone told to.
-bool Brawl::enemy(int id) const {
-    const LevelLogic::Object* o = logic_.object(id);
-    if (!o || o->dead || !o->enabled || !o->visible || o->index == std::numeric_limits<size_t>::max()) return false;
-    if (logic_.attack_targets.count(id)) return true;
-    // CNpcAIComponent: [0] its behaviour (AI_BEHAVIOR_*), [1] whether it is an enemy (the
-    // mercenaries, snipers and thugs; not the civilians or the police).
-    if (o->index >= scene_.level().objects.size()) return false;
-    const LevelObject& lo = scene_.level().objects[o->index];
-    const Value* ai = nullptr;
-    if (auto it = lo.components.find(kCompNpcAi); it != lo.components.end()) ai = &it->second;
-    else if (auto g = logic_.gol.find(lo.type); g != logic_.gol.end()) ai = resolved_template(g->second, logic_.gol, kCompNpcAi);
-    return ai && ai->size() > 1 && (*ai)[1].i != 0;
-}
+bool Brawl::enemy(int id) const { return logic_.is_enemy(id); }
 
 int Brawl::target(float reach, float ahead) const {
     const glm::vec3 f = feet();
@@ -127,6 +114,7 @@ void Brawl::hit(int id, float damage, const std::string& hurt) {
     if (o->health <= 0) {
         o->health = 0;
         o->dead = true;
+        logic_.killed_by_batman.insert(id);
         f.phase = Fighter::Phase::Down;
         logic_.attack_targets.erase(id);
         if (!actor_state(id, "Enemy_Cross_Death")) actor_state(id, "Combat_death");
@@ -252,6 +240,8 @@ bool Brawl::pull(int id) {
     if (logic_.trace) logic_.log("brawl: grapnel pulls " + std::to_string(id));
     return true;
 }
+
+void Brawl::grapnel_at(const glm::vec3& at) { act("Grapnel_Enemy_Shoot", 0x400000, yaw_to(at), 0.6f); }
 
 int Brawl::batarang_target(const glm::vec3& eye, const glm::vec3& forward) const {
     if (!logic_.controls.batarang || busy() || batarang_flight_ >= 0) return -1;
@@ -398,6 +388,12 @@ void Brawl::counter() {
 
 void Brawl::update(float dt) {
     logic_.counter_open = counter_open();
+    logic_.attacking_batman.clear();
+    for (const auto& [id, f] : fighters_)
+        if (f.phase == Fighter::Phase::Windup) logic_.attacking_batman.insert(id);
+    logic_.batman_target = busy() && (logic_.player_action_mask & kAttack) ? strike_target_ : -1;
+    // In a cinematic, or with Batman hidden (a stand-in plays him), nobody fights.
+    if (logic_.player_hidden || logic_.player_locked()) return;
     // The leap: an arc down onto the victim, then the landing that takes it down.
     if (leap_victim_ >= 0) {
         leap_t_ += dt;
@@ -424,6 +420,7 @@ void Brawl::update(float dt) {
             if (takedown_) {
                 if (LevelLogic::Object* o = logic_.object(strike_target_)) {
                     o->dead = true, o->health = 0;
+                    logic_.killed_by_batman.insert(o->id);
                     std::erase_if(logic_.objective_markers, [&](const LevelLogic::ObjectiveMarker& m) { return m.id == o->id; });
                     logic_.runtime_.send_event("Dead", o->id);
                 }

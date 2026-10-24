@@ -204,6 +204,13 @@ private:
     // Fire the grapnel: at the scripts' locked target if there is one in reach, else at the edge
     // the view aims at.
     bool fire_grapnel(const glm::vec3& eye, const glm::vec3& forward);
+    bool answer_qte();   // a QTE button pressed: true if one was up
+    void auto_play(float dt);   // --auto-play
+    float auto_play_wait = 3.0f;
+    std::vector<glm::vec3> auto_play_path;   // the feet's next positions
+    int auto_play_use = -1;                  // the thing to use at the end of it
+    float fight_test_hack = 0;   // --fight-test: seconds into a hacking game
+    bool hud_pointer = false;    // the HUD (the hacking game) has the mouse pointer
     bool running = true;
     std::chrono::steady_clock::time_point last;
 };

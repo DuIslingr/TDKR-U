@@ -233,6 +233,9 @@ void Game::pad_event(const SDL_Event& e) {
         set_menu(true);
         return;
     }
+    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || e.gbutton.button == SDL_GAMEPAD_BUTTON_WEST) &&
+        answer_qte())
+        return;
     if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
         const float t = float(e.gaxis.value) / 32767.0f;
         if (t > 0.6f && !pad_trigger_held && hero.active() && can_grapple()) fire_grapnel(cam.position, cam.forward());
@@ -404,6 +407,35 @@ void Game::handle_event(const SDL_Event& e) {
         }
         return;
     }
+    // The hacking game takes the pointer: its circles turn when clicked.
+    if (hud_pointer && !(opt.scripts && flash_hud.hacking())) {   // the game over: the mouse looks around again
+        hud_pointer = false;
+        SDL_SetWindowRelativeMouseMode(window, !touch_mode && !menu.open);
+    }
+    if (opt.scripts && flash_hud.hacking()) {
+        if (!hud_pointer) SDL_SetWindowRelativeMouseMode(window, false);
+        hud_pointer = true;
+        swf::Player* p = flash_hud.player();
+        if (p && e.type == SDL_EVENT_MOUSE_MOTION) {
+            const glm::vec2 at = to_pixels(e.motion.x, e.motion.y, false);
+            p->pointer_move(at.x, at.y);
+        } else if (p && (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) && e.button.button == SDL_BUTTON_LEFT) {
+            const glm::vec2 at = to_pixels(e.button.x, e.button.y, false);
+            if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) p->pointer_down(at.x, at.y);
+            else p->pointer_up(at.x, at.y);
+        } else if (p && (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_UP)) {
+            const glm::vec2 at = to_pixels(e.tfinger.x, e.tfinger.y, true);
+            if (e.type == SDL_EVENT_FINGER_DOWN) p->pointer_down(at.x, at.y);
+            else p->pointer_up(at.x, at.y);
+        }
+        return;
+    }
+    // A QTE button (QTE_EnableControl): E, F or a click answers it, whatever the controls.
+    if (opt.scripts && logic.button_qte.object >= 0 &&
+        ((e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && (e.key.key == SDLK_E || e.key.key == SDLK_F)) ||
+         e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_FINGER_DOWN) &&
+        answer_qte())
+        return;
     if (touch_mode) {
         constexpr int64_t kMouseFinger = -1;
         switch (e.type) {

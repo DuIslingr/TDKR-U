@@ -33,7 +33,8 @@ struct Transform {
     glm::vec3 position{0};
     glm::vec3 rotation{0};   // degrees, applied X then Y then Z (Irrlicht setRotationDegrees)
     glm::vec3 scale{1};
-    bool visible = true;     // CComponentBase flag: shown (and enabled) when the level starts
+    bool visible = true;     // CComponentBase flags: shown (enabled and visible) when the level starts
+    bool enabled = true;     // enabled (it updates, can be used), shown or not
 };
 
 struct GolType {

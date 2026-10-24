@@ -73,6 +73,7 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--touch-test") o.touch_test = std::stof(next()), o.touch = true;
         else if (a == "--god") o.god = true;
         else if (a == "--fight-test") o.fight_test = true;
+        else if (a == "--auto-play") o.auto_play = o.fight_test = true;
         else if (a == "--did") o.did = next();
         else if (a == "--list-actors") o.list_actors = true;
         else if (a == "--mission") o.mission = next(), o.level_given = true;

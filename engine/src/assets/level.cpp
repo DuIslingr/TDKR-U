@@ -19,7 +19,8 @@ constexpr size_t kBaseFirst = 1;
 // cutscene rigs, which carry their own Batman).
 Transform base_transform(const Value& v) {
     Transform t = transform_from_values(v, kBaseFirst);
-    t.visible = v[0].i != 0 && v[kBaseFirst + 10].i != 0;
+    t.enabled = v[0].i != 0;
+    t.visible = t.enabled && v[kBaseFirst + 10].i != 0;
     return t;
 }
 

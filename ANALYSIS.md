@@ -308,7 +308,7 @@ guards (strike, counter), the grapnel pull on sniper 900426, the vantage point, 
 `SetQuestCompleted(222)`, the win screen ("The Adventure Begins", 50 XP, 25 WayneTech), and the main story's next
 quest (834). A headless run plays all of it in about 220 game seconds with `--did look,move --fight-test` and a few
 `--exec-at` teleports (and `ActorLookTo(0, ring)` to steer the glide) in place of the player. Still missing: the
-dialog portraits, sounds and music, traffic and the monorail, the snipers' laser sights.
+dialog portraits, traffic and the monorail, the snipers' laser sights.
 
 **Mission 1** (chapter 1.2, quest 834 "From the bar to the Stock Exchange"; `--mission 1`) runs from its scripts to its
 end: the intro (TDKR's cinematic object: script camera keys), the binoculars over Joe's Bar, the police raid and the
@@ -332,6 +332,48 @@ Alfred's call; then `Completed` and the main story's quest 836. What it needed:
   1 sniper, 6 police, 7 pedestrian, ...). The batarang: `SetWeaponAmmo("Batarang_01", n)`, `SetBatarangControlEnable`,
   `Batarang_Throw`. `GetQuestsWithStatus(name)` returns the quest objects in that status. TDKR's effect component
   (`0x2CA13C06`): effect, ?, node, autostart. Batman stays under physics in cinematics (he is seen in them).
+
+**Quest 836 and the Stock Exchange** (chapter 1.3, quest 171 in `StockExchange.lvc`): quest 836's Gotham part ends
+in `RequireLoadLevel("STR_FPS_LEVEL_STOCKEXCHANGE", 701998)` (the quests and the main story carry over); spawn trigger
+702019 enables quest 171. Its scripts play the police briefing through the binoculars, the fights in the hall, the
+search for the hostages (doors kicked open, actors freed with the use button), two consoles hacked to open rooms, a
+fake hostage who fights, Lucius's call, Bane's speech and the statue Batman pulls down on Bane's men; then
+`SetWinScreen('Waynetech', 100, 25)` and `RequireLoadLevel("STR_FPS_LEVEL_GOTHAM", 1900032)`, where quest 836
+completes and the main story moves on to quest 1000. `--auto-play` (with `--fight-test`) plays all of it headless.
+What it needed:
+
+- **The hacking game** (`StartPipeGame(win, lose, grid, size, skip price, ms, start row, end row)`;
+  `CHUDDisplay::StartPipeMinigame`): the HUD goes to its `Hacking` frame, `minigame.swf` loads into `mHackArea` and
+  `miniGame.init(grid, rows, columns, start row, end row, ms)` starts it (the grid string is one digit per circle,
+  row by row). The movie reports `registerInGameEvent("GAME_PIPE", "WIN" | "LOSE")` (its skip button
+  `SKIP_MINIGAME_BUTTON`); `CHUDDisplay::WinHack` / `LoseHack` run the win or lose function, and `ResetAfterHack`
+  empties `mHackArea`, puts the `HUD` frame back and turns the controls on. Its music is `m_hack_minigame`.
+- **The QTE button and the pull** (`EnableMiniGameObject(object, on)`, `QTE_EnableControl(object, ms, win, lose)`;
+  `PlayerComponent::SetQTEParams`, `CHUDDisplay::AddButtonToScene`): a QTE button (`mQTEButtonInstance`) over the
+  object for `ms`; pressed in time, the win function runs and Batman's grapnel pulls the minigame object
+  (`PullableObjectComponent` `0x4891830C`: idle, struggle, fall and back clips, then the struggle's ms): its struggle
+  clip, then its fall clip and its `OnScriptEvent`. Missed, the lose function (which asks again).
+- **Interaction targets** (`SetInteractionParams(object, radius, target, frame)`; `CInteractionComponent::OnInteract`):
+  using an object with a target enables the target (the hostages enable trigger 702971, which reads
+  `GetCurrentInteractionObjectID()`) instead of running its own `OnScriptEvent`. A trigger enabled again starts its
+  run count over (`CTriggerComponent::Enable`).
+- **Enabled is not visible**: `CComponentBase`'s first flag enables an object, the visible flag shows it; the usable
+  planes (`flippedplane.bdae` interactive objects) are enabled and invisible.
+- `NPCGoToWaypointWithNavmesh(actor, waypoint)` (two arguments; at a run), `GetEnemiesInRange(object, radius[, height])`
+  (nearest first, at most 18), `GetFrameTime()` (ms), `NPCSetTarget`, `SpawnObjectNearActor`, `EnableTalkMode` (its
+  radio click). Post effects (`PostProcessingEffectAdd/Remove`: RadialBlur, ShockWave, HeatHaze, ColorCorrection with a
+  16x16x16 LUT from `commons_tex`), Gotham's traffic and monorail, the side missions and achievements are accepted
+  and not done yet. TDKR's `EnableControls` leaves the glide alone (`SetGlideControlEnable` is
+  `CBaseControlScheme::EnableGlideControl`, a design flag of its own).
+
+**Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
+events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
+`SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it
+(`StopCurrentSFXAtObject` stops them), `ShowMessage` also plays the line's voice (the string id without `STR_`),
+`KillMusic` stops the music. `PlayAmbience(preset)` plays the preset's sounds from `BATMAN_TDKR.vxa` at random
+intervals: "voxa", a version string, "data", size, count, then per preset its name, u32 0, u32 ?, f32 min and max
+seconds, two f32, the sound count and its sounds (u32 length, name, u32 0). Reverb presets, wet footsteps and the
+combat music switch are not done yet.
 
 **Controller prompts** (Android 1.1.6, `ShowObjectiveMessage`): with a PowerA pad connected, ids starting
 `STR_TUTORIAL`, `STR_SAVE_LUCIUS_OBJ_6` and `STR_TURBULENCE_THIEF_MINIGAME` get `_POWER_A` inserted after that

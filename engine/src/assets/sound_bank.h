@@ -1,4 +1,4 @@
-// The game's sound design table, sounds_hi/TDKR_VOX_SDD.xml (Gameloft VOX): sounds
+// The game's sound design table, data/sounds.xml (Gameloft VOX VoxSoundPackXML): sounds
 // (file, loop, 3D distances, bank, group), random events over sounds, groups (2D/3D,
 // volume slider) and banks (how many play at once, which one is stolen).
 #pragma once
@@ -16,6 +16,7 @@ struct SoundDef {
     int bank = 0, group = 0, priority = 1;
     bool loop = false;
     float ref_distance = 0, max_distance = 0;   // 3D: full volume within ref, inverse distance beyond
+    float base_gain = 1;
 };
 
 struct SoundEvent {

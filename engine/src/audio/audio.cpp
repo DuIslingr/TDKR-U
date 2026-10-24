@@ -27,7 +27,7 @@ Audio::Audio(const Vfs& vfs, bool device) : vfs_(vfs) {
     SDL_SetHint(SDL_HINT_WAVE_FACT_CHUNK, "ignore");
     // The table of the main data, then any other version's mounted after it (the iOS
     // build's adds sounds this one lacks, such as the shop's).
-    const auto& tables = vfs_.find("TDKR_VOX_SDD.xml");
+    const auto& tables = vfs_.find("sounds.xml");   // VoxSoundPackXML (data/sounds.xml)
     for (size_t i = 0; i < tables.size(); ++i) {
         const Bytes xml = vfs_.read(tables[i]);
         SoundTable t = parse_sound_table(std::string(xml.begin(), xml.end()));
@@ -274,7 +274,7 @@ int Audio::start(const SoundDef& def, const Params& p, const std::string& tag) {
     v.def = &def;
     v.tag = tag;
     v.loop = p.loop < 0 ? def.loop : p.loop != 0;
-    v.gain = p.gain, v.ui = p.ui;
+    v.gain = p.gain * def.base_gain, v.ui = p.ui;
     if (c->interactive()) {   // its first state's playlist, which says what loops
         v.loop = false;
         set_state(v, 0);
@@ -283,6 +283,7 @@ int Audio::start(const SoundDef& def, const Params& p, const std::string& tag) {
     const auto g = table_.groups.find(def.group);
     const std::string slider = g != table_.groups.end() ? g->second.slider : "SFX";
     v.bus = slider == "MUSIC" ? music : slider == "VFX" ? voices : sfx;
+    v.music = slider == "MUSIC";
     v.positional = p.position && g != table_.groups.end() && g->second.positional;
     if (p.position) v.position = *p.position;
     if (p.fade_in_ms > 0) {
@@ -357,6 +358,16 @@ void Audio::stop(const std::string& name, float fade_ms) {
     Lock lock(mutex_);
     for (Voice& v : voices_) {
         if (!((def && v.def == def) || (ev && v.tag == ev->label))) continue;
+        v.stopping = true;
+        v.fade_target = 0;
+        v.fade_step = fade_ms > 0 ? 1.0f / (fade_ms * 0.001f * float(rate_)) : 1.0f;
+    }
+}
+
+void Audio::stop_music(float fade_ms) {
+    Lock lock(mutex_);
+    for (Voice& v : voices_) {
+        if (!v.music) continue;
         v.stopping = true;
         v.fade_target = 0;
         v.fade_step = fade_ms > 0 ? 1.0f / (fade_ms * 0.001f * float(rate_)) : 1.0f;

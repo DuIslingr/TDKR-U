@@ -62,6 +62,10 @@ public:
     void start_story(int quest_id = -1);
     int story_quest() const;   // GetCurrentMainStoryQuestId: -1 when none
     bool story_on() const { return story_on_; }
+    // After a respawn (CLevel::RespawnInit: CQuestManager::InitStoryQuest(true)): a story quest
+    // that failed, or is off, is entered again (its InitQuest enables it afresh). Call with the
+    // level's scripts restarted, after a load with `carry_over` set.
+    void respawned();
 
 private:
     Quest* quest(int id);

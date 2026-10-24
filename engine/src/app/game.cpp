@@ -495,6 +495,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             fs.jump_on = logic.controls.jump;
             fs.attack_on = logic.controls.combat || brawl.can_take_down();
             fs.grapnel_on = logic.controls.grapnel;
+            fs.riding = logic.riding >= 0;
         }
         {
             const glm::vec3 fwd = glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0));
@@ -732,6 +733,7 @@ static glm::vec3 past_edge(const glm::vec3& lock, const glm::vec3& from) {
 // (an enemy: next to it, for --fight-test; something usable: there, and uses it; a place: on
 // it), or else to the nearest usable thing.
 void Game::auto_play(float dt) {
+    if (logic.riding >= 0) return;   // on the Batpod: auto_drive() steers
     // On the way: half a metre a step along the line, through whatever is in between (the
     // triggers on the way fire), then the use.
     if (!auto_play_path.empty()) {
@@ -778,6 +780,93 @@ void Game::auto_play(float dt) {
     }
 }
 
+// The Batpod (EnterBatPod): the stick drives it, Batman sits on it (his batpod clips), and
+// the player, whose position the scripts measure and whose feet the triggers test, rides
+// along; the view swings round behind it.
+bool Game::ride_step(const PlayerInput& in, float dt) {
+    if (!opt.scripts || logic.riding < 0) {
+        if (batpod.object() >= 0) batpod.stop(), hero.stop_riding();
+        return false;
+    }
+    if (batpod.object() != logic.riding) batpod.start(logic, logic.riding);
+    batpod.update(logic, scene.collision(), opt.auto_play ? auto_drive() : in, dt);
+    player.center = batpod.position() + glm::vec3(0, 0, player.radius.z);
+    player.on_ground = true, player.vertical_speed = 0, player.gliding = player.plunging = player.grappling = false;
+    const float st = batpod.steer();
+    const char* clip = std::abs(batpod.speed()) < 1.0f ? "_751_batpod_idle"
+                       : st > 0.4f                     ? "_754_batpod_leanr_c"
+                       : st < -0.4f                    ? "_753_batpod_leanl_c"
+                                                       : "_752_batpod_ride";
+    hero.ride(scene, batpod.position(), batpod.yaw(), clip);
+    player.yaw += std::remainder(batpod.yaw() - player.yaw, 360.0f) * std::min(1.0f, dt * 2.5f);
+    cam.yaw = player.yaw;
+    return true;
+}
+
+PlayerInput Game::auto_drive() {
+    PlayerInput in;
+    const LevelLogic::Object* t = nullptr;
+    for (const LevelLogic::ObjectiveMarker& m : logic.objective_markers)
+        if ((t = logic.object(m.id)) && !t->dead && m.id != logic.riding) break;
+        else t = nullptr;
+    if (!t) return in;
+    // A new target: a place is reached along the trail so far (the tailed van drove there).
+    if (t->id != ride_target && (logic.walking(t->id) || ride_trail.empty())) ride_trail.clear();
+    ride_target = t->id;
+    if (ride_trail.empty() || glm::distance(ride_trail.back(), t->position) > 3.0f) ride_trail.push_back(t->position);
+    const glm::vec3 bike = batpod.position();
+    while (ride_trail.size() > 1 && glm::distance(glm::vec2(ride_trail.front()), glm::vec2(bike)) < 5.0f) ride_trail.pop_front();
+    // The furthest of the next points in sight (the van's straight legs cut through corners).
+    {
+        size_t seen = 0;
+        const glm::vec3 eye = bike + glm::vec3(0, 0, 0.8f);
+        for (size_t i = 0; i < std::min<size_t>(ride_trail.size(), 30); ++i) {
+            float t = 1;
+            if (glm::distance(ride_trail[i], bike) < 80.0f && !scene.collision().raycast(eye, ride_trail[i] + glm::vec3(0, 0, 0.8f), t)) seen = i;
+        }
+        ride_trail.erase(ride_trail.begin(), ride_trail.begin() + long(seen));
+    }
+    const glm::vec2 to(ride_trail.front() - bike);
+    float off = std::remainder(glm::degrees(std::atan2(-to.x, to.y)) - batpod.yaw(), 360.0f);
+    // Feelers ahead: of the headings (relative) whose 12 m are clear, the one nearest the wanted.
+    {
+        const glm::vec3 from = bike + glm::vec3(0, 0, 0.6f);
+        float best = 1e9f, pick = off;
+        for (float rel : {0.0f, -25.0f, 25.0f, -50.0f, 50.0f, -80.0f, 80.0f}) {
+            const float y = glm::radians(batpod.yaw() + std::clamp(off, -60.0f, 60.0f) * (rel == 0 ? 1.0f : 0.0f) + rel);
+            float t = 1;
+            if (scene.collision().raycast(from, from + glm::vec3(-std::sin(y), std::cos(y), 0) * 12.0f, t)) continue;
+            const float d = std::abs(std::remainder(glm::degrees(y) - batpod.yaw() - off, 360.0f));
+            if (d < best) best = d, pick = std::remainder(glm::degrees(y) - batpod.yaw(), 360.0f);
+        }
+        off = pick;
+    }
+    in.right = std::clamp(-off / 30.0f, -1.0f, 1.0f);
+    const float dist = glm::distance(t->position, bike);
+    // Tailing: brake in time to stay over 40 m back (the brakes take v^2 / 2a).
+    const float stopping = batpod.speed() > 0 ? batpod.speed() * batpod.speed() / (2 * (batpod.force + batpod.brake_force) / batpod.mass) : 0.0f;
+    if (logic.walking(t->id)) in.forward = dist - stopping < 45.0f ? -1.0f : dist - stopping < 55.0f ? 0.0f : std::abs(off) > 45.0f ? 0.6f : 1.0f;
+    else in.forward = dist < 6.0f ? -1.0f : std::abs(off) > 45.0f ? 0.6f : 1.0f;
+    // Stuck against something: back up a second, turned the other way.
+    // Three tries without getting anywhere: on to the next point of the trail (a test's shortcut,
+    // logged).
+    ride_stuck = in.forward > 0 && std::abs(batpod.speed()) < 1.0f ? ride_stuck + kPhysicsStep : 0.0f;
+    if (glm::distance(bike, ride_progress) > 8.0f) ride_progress = bike, ride_tries = 0;
+    if (ride_stuck > 1.0f) ride_backup = 1.8f, ride_stuck = 0, ++ride_tries;
+    if (ride_tries >= 3 && ride_trail.size() > 1) {
+        ride_trail.pop_front();
+        const glm::vec3 to = ride_trail.front();
+        std::printf("[auto-play] the Batpod is stuck at (%.1f %.1f %.1f): on to (%.1f %.1f %.1f)\n", bike.x, bike.y, bike.z, to.x, to.y, to.z);
+        batpod.place(logic, to, std::remainder(glm::degrees(std::atan2(-to.x + bike.x, to.y - bike.y)), 360.0f));
+        ride_tries = 0, ride_backup = 0, ride_progress = to;
+    }
+    if (ride_backup > 0) {
+        ride_backup -= kPhysicsStep;
+        in.forward = -1, in.right = in.right > 0 ? -1.0f : 1.0f;
+    }
+    return in;
+}
+
 // A QTE button (QTE_EnableControl) answered: Batman's grapnel at its object.
 bool Game::answer_qte() {
     if (!opt.scripts || logic.button_qte.object < 0) return false;
@@ -788,6 +877,7 @@ bool Game::answer_qte() {
 
 bool Game::fire_grapnel(const glm::vec3& eye, const glm::vec3& forward) {
     if (answer_qte()) return true;
+    if (opt.scripts && logic.riding >= 0) return false;   // not from the Batpod
     if (opt.scripts && hero.active())   // at an enemy: the pull
         if (const int t = brawl.pull_target(eye, forward); t >= 0) return brawl.pull(t);
     glm::vec3 lock;

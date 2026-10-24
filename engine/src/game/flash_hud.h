@@ -40,6 +40,7 @@ public:
         const char* attack = "STRIKE";   // the attack slot's style (STRIKE, TAKEDOWN, COUNTERATTACK)
         bool counter = false;            // the counter button is up (an attack can be countered)
         bool jump_on = true, attack_on = true, grapnel_on = true;   // what the scripts leave enabled
+        bool riding = false;             // on the Batpod: its buttons instead of Batman's
         std::string dialog;              // the line being said (ShowMessage): subtitles in a cinematic
         // Objective markers (ObjectiveAdd): where the object shows on screen (pixels), or the
         // screen edge towards it with the arrow's angle (degrees) when it is off screen.
@@ -115,6 +116,7 @@ private:
     int hack_serial_ = 0, hack_result_ = 0;
     void start_hack(const State::Hack& h);
     bool qte_shown_ = false;
+    bool riding_ = false;
     std::map<std::string, float> left_base_;   // the left group's authored x (twips)
 };
 

@@ -480,7 +480,7 @@ void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && !e.key.repeat && hero.active() && can_grapple())
         fire_grapnel(cam.position, cam.forward());
     // TDKR: strike (left button, X) and counter (right button, Y).
-    if (hero.active() && opt.scripts && !logic.player_locked()) {
+    if (hero.active() && opt.scripts && !logic.player_locked() && logic.riding < 0) {
         const bool strike = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) ||
                             (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_WEST);
         const bool counter = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_RIGHT) ||
@@ -697,7 +697,8 @@ void Game::run_window() {
             for (accumulator += dt; accumulator >= kPhysicsStep; accumulator -= kPhysicsStep) {
                 // During cinematics the player is out of play (the intro's spawn
                 // point may float in the void).
-                if (!(opt.scripts && logic.cinematic_active()) && !seated && !(opt.scripts && logic.limited_step(in.right, kPhysicsStep)))
+                if (ride_step(in, kPhysicsStep)) {
+                } else if (!(opt.scripts && logic.cinematic_active()) && !seated && !(opt.scripts && logic.limited_step(in.right, kPhysicsStep)))
                     player.update(scene.collision(), in, kPhysicsStep);
                 else if (hero.active() && !seated && !(opt.scripts && logic.limited_active()))   // TDKR: Batman is seen in cinematics
                     player.update(scene.collision(), PlayerInput{}, kPhysicsStep);

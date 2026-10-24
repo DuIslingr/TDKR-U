@@ -238,7 +238,8 @@ int Game::run_screenshot() {
         glm::vec3 seat_eye;
         float seat_min = 0, seat_max = 0;
         const bool seated = opt.scripts && logic.seat(seat_eye, seat_min, seat_max);
-        if (seated) player.center = seat_eye - glm::vec3(0, 0, player.eye_height);
+        if (ride_step(pin, kPhysicsStep)) {
+        } else if (seated) player.center = seat_eye - glm::vec3(0, 0, player.eye_height);
         else if (!(opt.scripts && logic.cinematic_active()) && !(opt.scripts && logic.limited_step(pin.right, kPhysicsStep)))
             player.update(scene.collision(), pin, kPhysicsStep);
         else if (hero.active() && !(opt.scripts && logic.limited_active()))   // TDKR: Batman is seen in cinematics; he stands

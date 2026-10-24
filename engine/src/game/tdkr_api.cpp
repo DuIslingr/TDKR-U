@@ -742,6 +742,61 @@ int api_post_effect(lua_State* L) {
     return 0;
 }
 
+// EnterBatPod(object) / ExitBatPod([object]) / IsPlayerOnTheBatOrBatpod().
+int api_enter_batpod(lua_State* L) {
+    ctx(L).mount_batpod(int_arg(L, 1));
+    return 0;
+}
+int api_exit_batpod(lua_State* L) {
+    ctx(L).dismount_batpod();
+    return 0;
+}
+int api_on_batpod(lua_State* L) {
+    lua_pushboolean(L, ctx(L).riding >= 0);
+    return 1;
+}
+// QTE_StartNavigation() / QTE_EndNavigation() / QTE_IsInNavigation(): the chase mode (the
+// interface off while in it: CLevel::EnableInterface).
+int api_qte_navigation(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    c.qte_navigation = lua_tointeger(L, lua_upvalueindex(2)) != 0;
+    c.hud_enabled = !c.qte_navigation;
+    return 0;
+}
+int api_qte_in_navigation(lua_State* L) {
+    lua_pushboolean(L, ctx(L).qte_navigation);
+    return 1;
+}
+// QTE_GrapplingSetTarget(target, waypoint[, ?, function]) (CActorBaseComponent::
+// SetGrapplingTarget): the grapnel's next shot goes to the target.
+int api_qte_grappling_set_target(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (c.object(int_arg(L, 1))) c.grapple_lock = int_arg(L, 1);
+    return 0;
+}
+// StartCombatMusic(): the music gives way to env_music_action_low; its handle.
+// StopCombatMusic(handle).
+int api_start_combat_music(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    int h = -1;
+    if (c.audio) {
+        c.audio->stop_music(500);
+        h = c.audio->play_event("env_music_action_low", Audio::Params{});
+    }
+    lua_pushinteger(L, h);
+    return 1;
+}
+int api_stop_combat_music(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (c.audio && int_arg(L, 1) > 0) c.audio->stop(int_arg(L, 1), 1000);
+    return 0;
+}
+// ActorAttackableEnable(actor, on) (CGameObject::SetAttackable): whether Batman may go for it.
+int api_actor_attackable(lua_State* L) {
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->targetable = bool_arg(L, 2);
+    return 0;
+}
+
 // --- cameras (CCameraMgr) ------------------------------------------------------------------
 
 // PlayCameraAnim(object, clip, loop[, wait]): the view follows the camera animated in the
@@ -1153,6 +1208,27 @@ const Entry kTdkr[] = {
     {"SetAchievementVariable", api_nothing},
     {"GiveAchievement", api_nothing},
     {"SetEnableLight", api_nothing},
+    {"EnterBatPod", api_enter_batpod},
+    {"ExitBatPod", api_exit_batpod},
+    {"IsPlayerOnTheBatOrBatpod", api_on_batpod},
+    {"QTE_StartNavigation", api_qte_navigation, 1},
+    {"QTE_EndNavigation", api_qte_navigation, 0},
+    {"QTE_IsInNavigation", api_qte_in_navigation},
+    {"QTE_GrapplingSetTarget", api_qte_grappling_set_target},
+    {"StartCombatMusic", api_start_combat_music},
+    {"StopCombatMusic", api_stop_combat_music},
+    {"ActorAttackableEnable", api_actor_attackable},
+    // Occluders (portal culling helpers), the scripted global illumination, the cops' AI
+    // switch, the hot spots and the jeep patrols: nothing to do here yet.
+    {"HideOccluder", api_nothing},
+    {"ShowOccluder", api_nothing},
+    {"SetGlobalIlluminationScripted", api_nothing},
+    {"ResetGlobalIllumination", api_nothing},
+    {"DisableCopAI", api_nothing},
+    {"EnableCopAI", api_nothing},
+    {"EnableHotSpotManager", api_nothing},
+    {"Traffic_JeepPatrolSet", api_nothing},
+    {"Traffic_JeepPatrolRanges", api_nothing},
 };
 
 int api_unlock_mission(lua_State* L) { return api_log_mission(L); }

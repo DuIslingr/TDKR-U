@@ -46,7 +46,10 @@ bool StringTable::load(const Vfs& vfs, const std::string& table, const std::stri
             std::string id = utf8(m, p + 4, p + 4 + len);
             p += 4 + len;
             const size_t end = std::min<size_t>(u32(o, 2 + 4 * i), b.size());
-            text_[id] = utf8(b, start, end);
+            // An id listed twice (020_GothamCity's STR_C_STOCKEXCHANGE_TRANZITION8): the first
+            // text that has something in it.
+            std::string text = utf8(b, start, end);
+            if (auto it = text_.find(id); it == text_.end() || it->second.empty()) text_[id] = std::move(text);
             start = end;
         }
         return true;

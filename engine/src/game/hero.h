@@ -49,6 +49,12 @@ public:
     bool act(Scene& scene, const std::string& clip, float yaw);
     bool acting() const { return acting_; }
     void face(float yaw) { facing_ = yaw; }   // turn the body (ActorLookTo(0, ...))
+    // On the Batpod: the body on the bike (one of its batpod clips, made for the bike's origin),
+    // the camera further back and higher; update() leaves the body alone meanwhile.
+    void ride(Scene& scene, const glm::vec3& bike, float yaw, const std::string& clip);
+    void stop_riding() { riding_ = false, have_last_ = false; }
+    bool riding() const { return riding_; }
+    float ride_camera_distance = 6.5f, ride_pivot_height = 1.4f, ride_view_pitch = -10.0f;
     bool active() const { return object_ != kNone; }
     size_t object() const { return object_; }
     const std::string& clip() const { return clip_; }
@@ -64,6 +70,7 @@ private:
     bool was_on_ground_ = true;
     bool was_gliding_ = false, was_grappling_ = false;
     bool acting_ = false;
+    bool riding_ = false;
     uint32_t grapples_seen_ = 0;
     std::vector<GrappleEdge> edges_;
     void show_cape(Scene& scene, bool spread);

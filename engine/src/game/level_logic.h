@@ -194,6 +194,15 @@ public:
     int minigame_object = -1;            // EnableMiniGameObject: the object the next QTE pulls
     bool press_button_qte();
     float frame_ms = 0;                  // the last update's length (GetFrameTime)
+    // EnterBatPod(object) / ExitBatPod() (PlayerComponent::EnterTheBatOrBatPod / ExitTheBatOrBatPod):
+    // the Batpod Batman rides (-1: on foot); the game drives it (game/batpod.h). Mounting takes
+    // the bike's own collision and use button away; getting off puts Batman beside it.
+    int riding = -1;
+    void mount_batpod(int id);
+    void dismount_batpod();
+    // QTE_StartNavigation / QTE_EndNavigation (PlayerComponent::*QTENavigation): the chase mode,
+    // the interface off. (Its runs along waypoints from grapnel target to target are not done.)
+    bool qte_navigation = false;
     // CNpcAIComponent's enemy flag ([1]), or an actor the scripts set on Batman.
     bool is_enemy(int id) const;
     // CameraFollowObject: a script camera at a point looking at another, moving there from where

@@ -160,6 +160,18 @@ void Quests::start_story(int quest_id) {
     story_entered(quest_id >= 0);
 }
 
+void Quests::respawned() {
+    if (!story_on_ || story_index_ < 0 || size_t(story_index_) >= story_.size()) return;
+    Quest* q = quest(story_[size_t(story_index_)].quest);
+    const int st = q ? q->status : Disabled;
+    if (st != Disabled && st != Failed && st != FailedRunning && st != FailedDone && st != Canceled && st != CanceledRunning &&
+        st != CanceledDone)
+        return;
+    if (q) q->status = Disabled, q->ended = false;
+    story_started_ = -1, finished_ = false;
+    story_entered(true);
+}
+
 int Quests::story_quest() const {
     return story_index_ >= 0 && size_t(story_index_) < story_.size() ? story_[size_t(story_index_)].quest : -1;
 }

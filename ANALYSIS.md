@@ -366,6 +366,34 @@ What it needed:
   and not done yet. TDKR's `EnableControls` leaves the glide alone (`SetGlideControlEnable` is
   `CBaseControlScheme::EnableGlideControl`, a design flag of its own).
 
+**Quest 1000, the Batpod tail** (chapter 1.3, Gotham after the Stock Exchange; the main story's
+`Templ18253_3_InitQuest` enables it): Bane escapes in two vans (cinematics 702932, 702933), Lucius sends the Batpod
+(1900022, used: `EnterBatPod`), and the vans drive their waypoint paths (speeding up at 702838 / 702899 and
+702842 / 702903) while `Obj1900068_Running` warns under 35 m and fails the quest under 25 m. At waypoint 702858 the
+van has arrived: trigger 1900274 opens; Batman gets off (`ExitBatPod`), the station cinematic (702966) plays, and
+`RequireLoadLevel("STR_FPS_LEVEL_UNDERGROUND", 700002)` starts quest 838 (quest 170 in `Underground.lvc`). The
+footage's player tails the van on foot across the rooftops instead; both work.
+
+- **The Batpod** (`CBatpodHandleComponent`, component `0x0D1839C4`: `[0]` mass 100, `[3]` 4 m/s backwards, `[6]`
+  the engine's force 1000, `[7]` the brakes' 500; the forward top speed is the upgrades' item 16, not in
+  `Upgrades.bin`, so 40 m/s here): force / mass forward, brakes then a slow reverse, steering on a radius that widens
+  with speed, kept on the ground, sliding along walls (`engine/src/game/batpod.cpp`). Batman sits on it with
+  `batman_anims.bdae`'s `_751_batpod_idle`, `_752_batpod_ride`, `_753/_754_batpod_lean*_c` (made for the bike's
+  origin), the camera further back, and the HUD shows `mCarInterfaceInstance` instead of Batman's buttons
+  (`CHUDDisplay::SetBatpodInterface`). `IsPlayerOnTheBatOrBatpod()` keeps the combat music on while riding
+  (`StartCombatMusic`: the music gives way to `env_music_action_low`; `StopCombatMusic(handle)`).
+- **A failed mission restarts**: `MissionFailedAutoReload` is `CLevel::MissionFailed` with its reload, and
+  `CLevel::RespawnInit` ends in `CQuestManager::InitStoryQuest(true)`: the current story quest is entered again, its
+  `InitQuest` enabling it afresh. Here a respawn keeps the quests and the story, and a story quest that failed (or is
+  off) starts over.
+- **QTE navigation** (`QTE_StartNavigation` / `QTE_EndNavigation` / `QTE_IsInNavigation`,
+  `PlayerComponent::*QTENavigation`): a chase mode with the interface off, in which Batman runs from waypoint to
+  waypoint (`CWayPointObject::GenerateRandomNext`, `CMotionComponent::StartMoveToPosition`) and grapnels between
+  targets the scripts set (`QTE_GrapplingSetTarget(target, waypoint, ...)`). Quest 836 starts it behind the
+  helicopter; here the mode and the grapnel targets are kept, the runs between waypoints are not done yet.
+- String tables can list an id twice (`020_GothamCity`'s `STR_C_STOCKEXCHANGE_TRANZITION8`, the second empty): the
+  first text counts.
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it

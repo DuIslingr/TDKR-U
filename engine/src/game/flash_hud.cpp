@@ -49,7 +49,7 @@ bool FlashHud::start(const std::string& minimap, float minimap_scale, float mini
 void FlashHud::set_up() {
     swf::Player& p = *screen_.player();
     p.goto_and_stop("", "HUD");
-    cinematic_ = false, dialog_.clear();
+    cinematic_ = false, dialog_.clear(), riding_ = false;
     marker_frames_.clear();
     hide_unused();
     // CHUDDisplay::SetMinimapSwf / initMap: the level's map goes into the pivot's dummy clip,
@@ -178,11 +178,20 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         arrow->matrix.set_scale_rotation(1, 1, yaw - glm::radians(state.facing));
         arrow->accept_moves = false;
     }
+    // CHUDDisplay::SetBatpodInterface: on the Batpod its buttons (mCarInterfaceInstance) instead
+    // of Batman's (SetBatmanInterface(false)).
+    if (state.riding != riding_) {
+        riding_ = state.riding;
+        p.set_visible("mCarInterfaceInstance", riding_);
+        for (auto& [slot, last] : buttons_) p.set_visible(slot, !riding_), last = {"", -1};
+    }
     // refreshBatmanButtons / Update: the action slots follow what Batman can do now.
     using M = State::Move;
-    button("bJump", state.move == M::Glide ? "GLIDE" : state.move == M::Plunge ? "PLUNGE" : "JUMP", state.jump_on);
-    button("bAttack", state.attack, state.move == M::Ground && state.attack_on);
-    button("bGrapnel", "GRAPNEL", state.grapple && state.grapnel_on);
+    if (!riding_) {
+        button("bJump", state.move == M::Glide ? "GLIDE" : state.move == M::Plunge ? "PLUNGE" : "JUMP", state.jump_on);
+        button("bAttack", state.attack, state.move == M::Ground && state.attack_on);
+        button("bGrapnel", "GRAPNEL", state.grapple && state.grapnel_on);
+    }
     // CHUDDisplay: the counter button shows while an enemy's attack can be countered.
     p.set_visible("bCounterAttack", state.counter && !state.cinematic);
     screen_.update(dt, width, height);

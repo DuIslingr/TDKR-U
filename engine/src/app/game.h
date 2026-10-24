@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "game/loading_screen.h"
 #include "game/main_menu.h"
 #include "game/pause_menu.h"
+#include "game/batpod.h"
 #include "game/brawl.h"
 #include "game/hero.h"
 #include "game/player.h"
@@ -205,6 +207,17 @@ private:
     // the view aims at.
     bool fire_grapnel(const glm::vec3& eye, const glm::vec3& forward);
     bool answer_qte();   // a QTE button pressed: true if one was up
+    // The Batpod (EnterBatPod): one physics step of the ride; false when Batman is on foot.
+    bool ride_step(const PlayerInput& in, float dt);
+    Batpod batpod;
+    // --auto-play on the Batpod: after the first objective marker, along its trail (an object
+    // on the move: tailed from 40-50 m back).
+    PlayerInput auto_drive();
+    std::deque<glm::vec3> ride_trail;
+    int ride_target = -1;
+    float ride_stuck = 0, ride_backup = 0;   // seconds
+    int ride_tries = 0;                     // back-ups since it last got anywhere
+    glm::vec3 ride_progress{0};
     void auto_play(float dt);   // --auto-play
     float auto_play_wait = 3.0f;
     std::vector<glm::vec3> auto_play_path;   // the feet's next positions

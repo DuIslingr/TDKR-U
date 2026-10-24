@@ -94,8 +94,17 @@ bool Hero::act(Scene& scene, const std::string& clip, float yaw) {
     return true;
 }
 
-void Hero::update(Scene& scene, const Player& player, const PlayerInput& in, float dt) {
+void Hero::ride(Scene& scene, const glm::vec3& bike, float yaw, const std::string& clip) {
     if (!active()) return;
+    riding_ = true;
+    acting_ = false;
+    facing_ = yaw;
+    if (clip != clip_) play(scene, clip, true);
+    scene.set_object_pose(object_, bike, yaw);
+}
+
+void Hero::update(Scene& scene, const Player& player, const PlayerInput& in, float dt) {
+    if (!active() || riding_) return;
     const glm::vec3 feet = feet_of(player);
     const glm::vec2 moved = have_last_ ? glm::vec2(feet - last_feet_) : glm::vec2(0);
     last_feet_ = feet, have_last_ = true;
@@ -189,7 +198,7 @@ void Hero::update(Scene& scene, const Player& player, const PlayerInput& in, flo
 
 float Hero::view_pitch(float pitch) const {
     const float k = glide_blend_ * glide_blend_ * (3 - 2 * glide_blend_);
-    return pitch + glide_view_pitch * k;
+    return pitch + glide_view_pitch * k + (riding_ ? ride_view_pitch : 0.0f);
 }
 
 bool Hero::try_grapple(Player& player, const glm::vec3& eye, const glm::vec3& forward) const {
@@ -232,8 +241,8 @@ bool Hero::grapple_target(const Player& player, const glm::vec3& eye, const glm:
 
 glm::vec3 Hero::camera_position(const Player& player, float yaw, float pitch, const CollisionWorld& world) const {
     const float k = glide_blend_ * glide_blend_ * (3 - 2 * glide_blend_);   // smoothstep
-    const float distance = camera_distance + (glide_camera_distance - camera_distance) * k;
-    const glm::vec3 pivot = feet_of(player) + glm::vec3(0, 0, pivot_height + (glide_pivot_height - pivot_height) * k);
+    const float distance = riding_ ? ride_camera_distance : camera_distance + (glide_camera_distance - camera_distance) * k;
+    const glm::vec3 pivot = feet_of(player) + glm::vec3(0, 0, riding_ ? ride_pivot_height : pivot_height + (glide_pivot_height - pivot_height) * k);
     const float y = glm::radians(yaw), p = glm::radians(pitch);
     const glm::vec3 forward{-std::sin(y) * std::cos(p), std::cos(y) * std::cos(p), std::sin(p)};
     const glm::vec3 right{std::cos(y), std::sin(y), 0};

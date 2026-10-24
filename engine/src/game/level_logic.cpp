@@ -340,6 +340,7 @@ void LevelLogic::start(StartMode mode) {
     win = {};
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
+    riding = -1, qte_navigation = false;
     map_icons.clear();
     level_request = {};
     object_sounds.clear();
@@ -534,12 +535,14 @@ void LevelLogic::respawn_at_checkpoint() {
     }
     // CLevel::RestartLevel: the scripts afresh and the level properties' OnEnter started;
     // then (CLevel::RespawnInit) the objects as loaded, with the checkpoint put back.
+    quests.carry_over = true;   // the quests and the main story stay where they were
     start(StartMode::Respawn);
     if (combat) combat->start(true);
     restoring_ = true;
     runtime_.update(0);
     restoring_ = false;
     restore_checkpoint(*cp);
+    quests.respawned();
 }
 
 void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
@@ -923,6 +926,10 @@ bool LevelLogic::start_object_script(const Object& o, const std::string& event) 
 }
 
 bool LevelLogic::use() {
+    if (riding >= 0) {   // off the Batpod
+        dismount_batpod();
+        return true;
+    }
     // Out of the mounted gun or the mech: its interaction's exit.
     for (int id : {player_gun_, player_mech_}) {
         if (id < 0) continue;
@@ -1903,6 +1910,30 @@ void LevelLogic::end_hack(bool won) {
     if (trace) log(std::string("hack: ") + (won ? "won" : "lost"));
     const std::string& fn = won ? hack.win : hack.lose;
     if (!fn.empty()) start_script(fn, -1);
+}
+
+void LevelLogic::mount_batpod(int id) {
+    Object* o = object(id);
+    if (!o || riding == id) return;
+    if (riding >= 0) dismount_batpod();
+    riding = id;
+    enable(*o, true);
+    o->interact_enabled = false;
+    if (o->index < scene.level().objects.size()) scene.set_object_collision(o->index, false);
+    if (trace) log("on the Batpod " + std::to_string(id));
+}
+
+void LevelLogic::dismount_batpod() {
+    Object* o = object(riding);
+    riding = -1;
+    if (!o) return;
+    // Off to its left, standing (CBatpodHandleComponent::ExitVehicle).
+    const float y = glm::radians(o->yaw);
+    const glm::vec3 left(-std::cos(y), -std::sin(y), 0);
+    player.center = o->position + left * 1.2f + glm::vec3(0, 0, player.radius.z + 0.1f);
+    o->interact_enabled = true;
+    if (o->index < scene.level().objects.size()) scene.set_object_collision(o->index, true);
+    if (trace) log("off the Batpod " + std::to_string(o->id));
 }
 
 bool LevelLogic::press_button_qte() {

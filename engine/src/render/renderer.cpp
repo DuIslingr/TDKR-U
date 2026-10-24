@@ -678,7 +678,15 @@ GpuModel* Renderer::instance_model(const Model& model, const GpuModel& shared) {
 
 void Renderer::update_vertices(GpuModel* model, int32_t first, const Vertex* vertices, size_t count) {
     if (!model || !count) return;
-    vertex_updates_.push_back({model->vertices, uint32_t(first) * uint32_t(sizeof(Vertex)), std::vector<Vertex>(vertices, vertices + count)});
+    const uint32_t offset = uint32_t(first) * uint32_t(sizeof(Vertex));
+    // A newer pose of the same range replaces the one waiting (headless runs draw once, at the
+    // end, and would otherwise pile up every step's).
+    for (auto& u : vertex_updates_)
+        if (u.buffer == model->vertices && u.offset == offset && u.vertices.size() == count) {
+            u.vertices.assign(vertices, vertices + count);
+            return;
+        }
+    vertex_updates_.push_back({model->vertices, offset, std::vector<Vertex>(vertices, vertices + count)});
 }
 
 void Renderer::flush_vertex_updates(SDL_GPUCommandBuffer* cmd) {
@@ -691,6 +699,7 @@ void Renderer::flush_vertex_updates(SDL_GPUCommandBuffer* cmd) {
     SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(device_, &ti);
     if (!tb) fail("vertex update");
     auto* dst = static_cast<uint8_t*>(SDL_MapGPUTransferBuffer(device_, tb, false));
+    if (!dst) fail("vertex update map");
     size_t at = 0;
     for (const auto& u : vertex_updates_) {
         std::memcpy(dst + at, u.vertices.data(), u.vertices.size() * sizeof(Vertex));

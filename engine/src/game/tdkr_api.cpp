@@ -27,6 +27,7 @@ std::string str_arg(lua_State* L, int i) { return lua_isstring(L, i) ? lua_tostr
 bool bool_arg(lua_State* L, int i) { return lua_toboolean(L, i) != 0; }
 constexpr size_t kNoIndex = std::numeric_limits<size_t>::max();
 constexpr int kCompInteraction = 0x34747EBE;   // CInteractionComponent
+constexpr int kCompNpcAi = 0x0113F791;         // CNpcAIComponent (what makes an actor)
 
 // CLevel::FindObjectOrWaypoint's position: the player's feet for 0.
 bool position_of(LevelLogic& c, int id, glm::vec3& out) {
@@ -797,6 +798,117 @@ int api_actor_attackable(lua_State* L) {
     return 0;
 }
 
+// IsDead(actor): what is not an actor (CZonesManager::FindActor: no NPC AI, e.g. the
+// Underground's electric turret) or not there at all counts as dead.
+int api_is_dead(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = lua_isnil(L, 1) ? nullptr : c.object(int_arg(L, 1));
+    lua_pushboolean(L, !o || o->dead || !c.object_component(*o, kCompNpcAi));
+    return 1;
+}
+// ActorIsDetected(actor): an enemy is aware of it (CAwarenessComponent: its target the actor,
+// its level above 0). Here: one fighting it, or (Batman) a sniper aiming at him.
+int api_actor_is_detected(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const int id = int_arg(L, 1);
+    bool seen = id == 0 && (!c.attacking_batman.empty() || !c.snipers.empty());
+    for (const auto& [enemy, target] : c.attack_targets) {
+        const LevelLogic::Object* o = c.object(enemy);
+        if (target == id && o && !o->dead && o->enabled) seen = true;
+    }
+    lua_pushboolean(L, seen);
+    return 1;
+}
+// NPCGoToActorWithNavmesh(actor, target): where the target is now (CNpcAIComponent::
+// NPCGotoPosition). To Batman (0) an enemy comes to fight him.
+int api_npc_go_to_actor(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || o->dead) return 0;
+    if (int_arg(L, 2) == 0) {
+        if (c.is_enemy(o->id)) c.attack_targets[o->id] = 0;
+        else c.walk_to_point(o->id, c.player.center - glm::vec3(0, 0, c.player.radius.z), false);
+    } else if (const LevelLogic::Object* t = c.object(int_arg(L, 2))) {
+        c.walk_to_point(o->id, t->position, false);
+    }
+    return 0;
+}
+// NPCGoToObject(actor, ?, object, run, ?) (DoNPCGoToWaypointOrObject): to an object; to Batman
+// (0) to fight him.
+int api_npc_go_to_object(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || o->dead) return 0;
+    if (int_arg(L, 3) == 0) c.attack_targets[o->id] = 0;
+    else c.walk_to(o->id, int_arg(L, 3), bool_arg(L, 4));
+    return 0;
+}
+// NPCReturnToSavedPosition(actor) (CNpcAIComponent::EndRecordingPath): back where it stood.
+int api_npc_return(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || o->dead) return 0;
+    c.attack_targets.erase(o->id);
+    c.walk_to_point(o->id, o->home, false);
+    return 0;
+}
+// NPCSetEnemyFlag(actor, waypoint, enemy[, ?]) (CNpcAIComponent::SetEnemy).
+int api_npc_set_enemy_flag(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o) return 0;
+    o->enemy = bool_arg(L, 3) ? 1 : 0;
+    if (!o->enemy) c.attack_targets.erase(o->id);
+    return 0;
+}
+int api_set_invincible(lua_State* L) {   // SetInvincible(actor, on): the health component's flag
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->invincible = bool_arg(L, 2);
+    return 0;
+}
+// LinkObject(object, parent (0: Batman), node, dx, dy, dz, ...) / UnlinkObject(object).
+int api_link_object(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    c.link_at(int_arg(L, 1), int_arg(L, 2), str_arg(L, 3),
+              glm::vec3(float(lua_tonumber(L, 4)), float(lua_tonumber(L, 5)), float(lua_tonumber(L, 6))));
+    return 0;
+}
+int api_unlink_object(lua_State* L) {
+    ctx(L).unlink(int_arg(L, 1));
+    return 0;
+}
+// NoiseEvent(object, ?, metres, ?) (CAIController::NoiseRegister): enemies within earshot come.
+int api_noise_event(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    glm::vec3 at;
+    if (!position_of(c, int_arg(L, 1), at)) return 0;
+    const float range = float(lua_tonumber(L, 3));
+    for (const auto& [id, o] : c.objects())
+        if (c.is_enemy(id) && glm::distance(o.position, at) <= range && !c.attack_targets.count(id)) c.attack_targets[id] = 0;
+    return 0;
+}
+// QTE_DisableControl() (PlayerComponent::ResetQTE): the QTE button goes.
+int api_qte_disable(lua_State* L) {
+    ctx(L).button_qte = {};
+    return 0;
+}
+// StartIntroStory(story, callback[, ?]): a storyboard (StoryBoard.xml), then the callback.
+int api_start_intro_story(lua_State* L) {
+    ctx(L).story_request = {str_arg(L, 1), str_arg(L, 2)};
+    return 0;
+}
+// HideObjectNode(object, node) (CGameObject::SetNodeVisible).
+int api_hide_object_node(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (const LevelLogic::Object* o = c.object(int_arg(L, 1)); o && o->index != kNoIndex) c.scene.set_node_visible(o->index, str_arg(L, 2), false);
+    return 0;
+}
+// DisableControlEvent(event) / EnableControlEvent(event) (CPlayerControl::EnableInputEvent):
+// "MoveFast" is the run.
+int api_control_event(lua_State* L) {
+    if (str_arg(L, 1) == "MoveFast") ctx(L).player_rush = lua_tointeger(L, lua_upvalueindex(2)) != 0;
+    return 0;
+}
+
 // --- cameras (CCameraMgr) ------------------------------------------------------------------
 
 // PlayCameraAnim(object, clip, loop[, wait]): the view follows the camera animated in the
@@ -1171,7 +1283,8 @@ const Entry kTdkr[] = {
     {"BIT_AddEvent", api_nothing},
     {"_DesignMessage", api_nothing},
     {"StopTutorialFingerprint", api_nothing},
-    {"EnableControlEvent", api_nothing},
+    {"EnableControlEvent", api_control_event, 1},
+    {"DisableControlEvent", api_control_event, 0},
     {"SetObjectUpdateInCinematicSkip", api_nothing},
     {"SetAlwaysVisible", api_nothing},
     {"SetAlwaysUpdate", api_nothing},
@@ -1208,6 +1321,28 @@ const Entry kTdkr[] = {
     {"SetAchievementVariable", api_nothing},
     {"GiveAchievement", api_nothing},
     {"SetEnableLight", api_nothing},
+    {"IsDead", api_is_dead},
+    {"ActorIsDetected", api_actor_is_detected},
+    {"NPCGoToActorWithNavmesh", api_npc_go_to_actor},
+    {"NPCGoToObject", api_npc_go_to_object},
+    {"NPCReturnToSavedPosition", api_npc_return},
+    {"NPCSetEnemyFlag", api_npc_set_enemy_flag},
+    {"SetInvincible", api_set_invincible},
+    {"LinkObject", api_link_object},
+    {"UnlinkObject", api_unlink_object},
+    {"NoiseEvent", api_noise_event},
+    {"QTE_DisableControl", api_qte_disable},
+    {"StartIntroStory", api_start_intro_story},
+    {"HideObjectNode", api_hide_object_node},
+    // Sound switches (footstep variants), muted state sounds, the awareness cone, the forced
+    // strike target, a boss's hit limit, laser targeting and the electric turrets: not done here.
+    {"AddSoundSwitch", api_nothing},
+    {"NpcStateSoundMute", api_nothing},
+    {"NPCAwareAngleSet", api_nothing},
+    {"SetPlayerTarget", api_nothing},
+    {"NPCSetMaxConsecutiveHitsTaken", api_nothing},
+    {"ActorWeaponEnableTargeting", api_nothing},
+    {"TurretSetActive", api_nothing},
     {"EnterBatPod", api_enter_batpod},
     {"ExitBatPod", api_exit_batpod},
     {"IsPlayerOnTheBatOrBatpod", api_on_batpod},

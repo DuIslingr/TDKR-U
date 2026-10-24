@@ -394,6 +394,31 @@ footage's player tails the van on foot across the rooftops instead; both work.
 - String tables can list an id twice (`020_GothamCity`'s `STR_C_STOCKEXCHANGE_TRANZITION8`, the second empty): the
   first text counts.
 
+**The Underground** (chapter 1.4, main story quest 838; quest 170 in `Underground.lvc`, from spawn 700002): Selina
+escapes onto the tracks (cinematics), the fights on the platforms, three junction boxes hacked (4x4 grids) to move
+the train, Selina caught behind bars and the conversation, the snipers' room whose three lights the batarang breaks,
+the lift (another hack), the machine-gun room's QTE, the tunnels and Lucius's call, the crowbar ambush, then Bane: a
+scripted fight whose beats a timer drives (`underground_KillCounter` += `GetFrameTime()`), quest 170 completed, the win
+screen, the `underground_end` storyboard and `RequireLoadLevel("STR_FPS_LEVEL_THEPIT")`. What it needed:
+
+- `IsDead(id)` is true for what is not an actor with health (`CZonesManager::FindActor`): nothing there, or an object
+  without NPC AI (the scripts test a mistyped id, 40017, and the electric turret 300360).
+- **Breakable things** (`CDestroyableComponent` `0x068D1134`: `[1]` death clip, `[4]` sound, `[5]` effect, `[6]`
+  disabled on death, `[8]` script): the batarang breaks them (the lights have 10 health); the clip and sound play and
+  its `OnScriptEvent` runs (`OnDieEvent`). The death effect is not played yet.
+- **Storyboards** (`StartIntroStory(story, callback, ...)`: `CHUDDisplay::StartStory` over `StoryboardPlayer.swf`):
+  `StoryBoard.xml`'s frames (a texture, its ms, its move: `pan_*`, `zoom_in` / `zoom_out`, an optional caption)
+  shown full screen; the pictures are the top 1024x768 of their 1024x1024 textures. A key or click skips; then the
+  callback runs (`engine/src/game/storyboard.cpp`). Captions are not drawn yet.
+- `ActorIsDetected(actor)` (an enemy whose awareness has it as target), `NPCGoToActorWithNavmesh(actor, target)` (to
+  where the target is; to Batman: a fight), `NPCGoToObject`, `NPCReturnToSavedPosition`, `NPCSetEnemyFlag`,
+  `SetInvincible` (hits leave health alone), `LinkObject(object, parent, node, dx, dy, dz, ...)` /
+  `UnlinkObject` (carried at the parent's node plus the offset), `NoiseEvent(object, ?, metres)` (enemies in earshot
+  come), `QTE_DisableControl`, `HideObjectNode`, `DisableControlEvent("MoveFast")` (no running). Sound switches,
+  muted state sounds, the awareness cone, the forced target, laser targeting and the electric turrets are accepted.
+- Batarangs are inventory: mission 1 gives 10 (`SetWeaponAmmo`) and pickups refill them; a level started on its own
+  has none.
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it

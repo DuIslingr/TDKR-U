@@ -71,7 +71,10 @@ takes down and fires a locked grapnel by itself, and `--exec-at T:LUA` runs a sc
 marker, the nearest usable thing), answers QTE buttons and wins the hacking game: the Stock Exchange plays through
 headless with `--level StockExchange.lvc --exec "TeleportPlayerToZone(701998)" --auto-play`. In the hacking game
 the mouse turns the circles. On the Batpod (quest 1000) W / S (or the left stick) are the throttle and the brakes, A / D steer, and
-E gets off; `--auto-play` drives it after the objective, tailing a moving one from 40-50 m back.
+E gets off; `--auto-play` drives it after the objective, tailing a moving one from 40-50 m back. The Underground plays through
+the same way (`--level Underground.lvc --spawn-at 700002 --exec "StartMainStoryFromQuestId(838)" --exec
+'SetWeaponAmmo("Batarang_01", 10)' --auto-play`); auto-play breaks the objectives' lights with the batarang. A
+storyboard skips on a key or click.
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

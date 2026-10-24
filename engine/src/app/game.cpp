@@ -457,7 +457,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             if (logic.audio) logic.audio->play("m_mission_complete");
         }
         FlashHud::State fs;
-        fs.visible = !menu.open && !death.open && !end_screen.open;
+        fs.visible = !menu.open && !death.open && !end_screen.open && !storyboard.active();
         fs.cinematic = opt.scripts && logic.player_locked();
         if (opt.scripts) fs.frame = logic.hud_state;
         if (opt.scripts) {
@@ -545,6 +545,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             flash_hud.objective(logic.hud_objective.shown, logic.hud_objective.text);
         }
         if (opt.swf.empty()) flash_hud.draw(hud_sprites);
+        if (storyboard.active()) storyboard.draw(hud_sprites, scene, renderer.white(), w, h);
     }
     if (!opt.swf.empty()) {   // --swf: the movie over everything
         if (!swf_view) start_swf_view(w, h);
@@ -729,6 +730,13 @@ static glm::vec3 past_edge(const glm::vec3& lock, const glm::vec3& from) {
     return lock + glm::vec3(d * 1.5f, 0.0f);
 }
 
+// --auto-play's way points keep to the floor under them (within 1.5 m up, 4 m down), so the
+// walk does not pass through the triggers of the floors above and below.
+glm::vec3 Game::on_floor(const glm::vec3& p) const {
+    float z = 0;
+    return scene.collision().ray_down(p + glm::vec3(0, 0, 1.5f), 5.5f, z) ? glm::vec3(p.x, p.y, z) : p;
+}
+
 // --auto-play: every few seconds out of a fight, Batman goes to the first objective marker
 // (an enemy: next to it, for --fight-test; something usable: there, and uses it; a place: on
 // it), or else to the nearest usable thing.
@@ -743,14 +751,30 @@ void Game::auto_play(float dt) {
             std::printf("[auto-play] use %d\n", auto_play_use);
             logic.use();
             auto_play_use = -1;
+            auto_play_wait = 6.0f;   // what it set going (a conversation) plays out first
         }
         return;
     }
     if ((auto_play_wait -= dt) > 0) return;
     auto_play_wait = 3.0f;
     if (!hero.active() || logic.player_locked() || logic.hack.active || logic.button_qte.object >= 0 || brawl.busy() ||
-        !logic.attacking_batman.empty() || player.grappling)
+        !logic.attacking_batman.empty() || player.grappling) {
+        if ((auto_play_held += 3.0f) >= 30.0f) {   // say why, every half minute
+            auto_play_held = 0;
+            std::string who;
+            for (int id : logic.attacking_batman) who += " " + std::to_string(id);
+            std::printf("[auto-play] held: locked %d, hacking %d, qte %d, busy %d, grappling %d, attacked by%s\n", logic.player_locked(),
+                        logic.hack.active, logic.button_qte.object >= 0, brawl.busy(), player.grappling, who.empty() ? " none" : who.c_str());
+        }
         return;
+    }
+    auto_play_held = 0;
+    // The markers changing: every place is worth a visit again.
+    {
+        std::vector<int> ids;
+        for (const LevelLogic::ObjectiveMarker& m : logic.objective_markers) ids.push_back(m.id);
+        if (ids != auto_play_markers) auto_play_markers = ids, auto_play_stale.clear();
+    }
     // The markers, then (none left) the nearest usable thing within 40 m.
     std::vector<LevelLogic::ObjectiveMarker> goals = logic.objective_markers;
     if (goals.empty()) {
@@ -761,20 +785,88 @@ void Game::auto_play(float dt) {
     }
     for (const LevelLogic::ObjectiveMarker& m : goals) {
         LevelLogic::Object* o = logic.object(m.id);
-        if (!o || o->dead || !o->enabled) continue;
-        const bool use = o->interactive && o->interact_enabled;
+        if (!o || o->dead) continue;   // (a marker on a disabled object is still a place to go)
+        if (auto_play_stale[m.id] >= 6 && goals.size() > 1) continue;   // been there, nothing came of it: the next
+        const bool use = o->interactive && o->interact_enabled && o->enabled;
         glm::vec2 back(player.center - o->position);
         back = glm::length(back) > 1e-3f ? glm::normalize(back) : glm::vec2(0, -1);
-        const glm::vec3 to = o->position + glm::vec3(back * (use ? 0.8f : logic.is_enemy(m.id) ? 2.5f : 0.0f), 1.0f);   // a place: on it
+        // Something to break: from 8 m, a batarang.
+        if (logic.destroyable(m.id)) {
+            // In sight within 25 m: from here. Else a spot 6-14 m away on Batman's own floor (or
+            // the light's), with the light in sight from there.
+            const CollisionWorld& world = scene.collision();
+            const glm::vec3 feet_now = player.center - glm::vec3(0, 0, player.radius.z);
+            float t0 = 1;
+            const glm::vec3 eye0 = player.eye(), aim0 = o->position + glm::vec3(0, 0, 0.5f);
+            const bool in_sight = !world.raycast(eye0, aim0, t0) || (1 - t0) * glm::distance(eye0, aim0) < 1.5f;
+            glm::vec3 stand = in_sight && glm::distance(eye0, aim0) < 25.0f ? feet_now : glm::vec3(0);
+            float best = in_sight && glm::distance(eye0, aim0) < 25.0f ? 0.0f : 1e9f;
+            for (int k = 0; k < 24 && best > 0; ++k)
+                for (float r : {6.0f, 10.0f, 14.0f}) {
+                    const float a = glm::radians(15.0f * float(k));
+                    const glm::vec3 above = glm::vec3(o->position.x, o->position.y, std::max(o->position.z, feet_now.z)) +
+                                            glm::vec3(std::cos(a) * r, std::sin(a) * r, 3.0f);
+                    float z = 0, t = 1;
+                    if (!world.ray_down(above, 12.0f, z) || (std::abs(z - feet_now.z) > 1.0f && std::abs(z - o->position.z) > 1.0f)) continue;
+                    // A floor: level all round under it, room to stand above it.
+                    bool floor = true;
+                    for (const glm::vec2 d : {glm::vec2(0.6f, 0), glm::vec2(-0.6f, 0), glm::vec2(0, 0.6f), glm::vec2(0, -0.6f)}) {
+                        float zz = 0;
+                        if (!world.ray_down(above + glm::vec3(d, 0.0f), 12.0f, zz) || std::abs(zz - z) > 0.3f) floor = false;
+                    }
+                    float head = 1;
+                    if (!floor || world.raycast(glm::vec3(above.x, above.y, z + 0.3f), glm::vec3(above.x, above.y, z + 2.0f), head)) continue;
+                    const glm::vec3 feet(above.x, above.y, z), eye = feet + glm::vec3(0, 0, 1.6f);
+                    if (world.raycast(eye, o->position + glm::vec3(0, 0, 0.5f), t) && (1 - t) * glm::distance(eye, o->position) > 1.5f) continue;
+                    if (const float d = glm::distance(feet, player.center); d < best) best = d, stand = feet;
+                }
+            if (best > 1e8f) stand = o->position + glm::vec3(back * 8.0f, 0.0f);
+            if (glm::distance(glm::vec2(stand), glm::vec2(player.center)) > 2.0f) {
+                std::printf("[auto-play] to %d (break) at (%.1f %.1f %.1f)\n", m.id, stand.x, stand.y, stand.z);
+                const glm::vec3 from = player.center - glm::vec3(0, 0, player.radius.z);
+                const glm::vec3 dest = stand + glm::vec3(0, 0, 0.1f);
+                const int n = int(glm::distance(dest, from) / 0.5f);
+                for (int k = 1; k <= n; ++k) auto_play_path.push_back(on_floor(glm::mix(from, dest, float(k) / float(n))));
+                return;
+            }
+            const glm::vec3 eye = player.eye(), dir = glm::normalize(o->position + glm::vec3(0, 0, 0.5f) - eye);
+            const bool thrown = brawl.throw_batarang(eye, dir);
+            std::printf("[auto-play] batarang at %d: %s\n", m.id, thrown ? "thrown" : "no shot");
+            return;
+        }
+        // A place gone to four times with the markers unchanged: nothing more to come of it.
+        if (!use && !logic.is_enemy(m.id) && ++auto_play_stale[m.id] >= 6) std::printf("[auto-play] nothing at %d: on to the next marker\n", m.id);
+        glm::vec3 to = o->position + glm::vec3(back * (use ? 0.8f : logic.is_enemy(m.id) ? 2.5f : 0.0f), 1.0f);   // a place: on it
+        if (float z = 0; !use && !logic.is_enemy(m.id) && auto_play_stale[m.id] >= 3 &&   // (on it did nothing: the floor
+            scene.collision().ray_down(o->position + glm::vec3(back * 1.5f, -0.5f), 10.0f, z))  // below, short of it)
+            to = glm::vec3(o->position.x + back.x * 1.5f, o->position.y + back.y * 1.5f, z + 0.1f);
         hero.face(glm::degrees(std::atan2(back.x, -back.y)));
+        // At a place that has not gone away: the nearest trigger with an OnEnter around it, not
+        // yet walked into (the way there leads through it in the game).
+        if (!use && !logic.is_enemy(m.id) && glm::distance(to, player.center) < 2.0f) {
+            float best = 15;
+            int through = -1;
+            for (const auto& [id, t] : logic.objects())
+                if (t.trigger >= 0 && t.enabled && !auto_play_entered.count(id) &&
+                    logic.runtime().has_function("Obj" + std::to_string(id) + "_OnEnter"))
+                    if (const float d = glm::distance(t.position, o->position); d < best) best = d, through = id;
+            if (through >= 0) {
+                std::printf("[auto-play] through trigger %d\n", through);
+                auto_play_entered.insert(through);
+                to = logic.object(through)->position + glm::vec3(0, 0, 1.0f);
+            } else {
+                auto_play_stale[m.id] += 2;
+            }
+        }
         const glm::vec3 from = player.center - glm::vec3(0, 0, player.radius.z);
         const int n = int(glm::distance(to, from) / 0.5f);
         if (n > 2) std::printf("[auto-play] to %d (%s) at (%.1f %.1f %.1f)\n", m.id, m.text.c_str(), to.x, to.y, to.z);
-        for (int k = 1; k <= n; ++k) auto_play_path.push_back(glm::mix(from, to, float(k) / float(n)));
+        for (int k = 1; k <= n; ++k) auto_play_path.push_back(k == n ? to : on_floor(glm::mix(from, to, float(k) / float(n))));
         auto_play_use = use ? m.id : -1;
         if (auto_play_path.empty() && use) {
             std::printf("[auto-play] use %d\n", m.id);
             logic.use();
+            auto_play_wait = 6.0f;
         }
         return;
     }
@@ -901,6 +993,17 @@ void Game::step_logic(float dt) {
         if (const LevelLogic::Object* sp = r.spawn >= 0 ? logic.object(r.spawn) : nullptr) logic.teleport_player(*sp);
         return;
     }
+    // StartIntroStory: the storyboard over everything, then its callback.
+    if (!logic.story_request.name.empty()) {
+        const LevelLogic::StoryRequest r = std::exchange(logic.story_request, {});
+        std::printf("[script] storyboard %s\n", r.name.c_str());
+        if (storyboard.start(vfs, r.name)) story_callback = r.callback;
+        else if (!r.callback.empty()) logic.start_script(r.callback, -1);
+    }
+    if (storyboard.active() && storyboard.update(dt)) {
+        std::printf("[script] storyboard ended\n");
+        if (!story_callback.empty()) logic.start_script(std::exchange(story_callback, {}), -1);
+    }
     if (hero.active()) player.can_glide = logic.controls.glide;   // SetGlideControlEnable
     if (hero.active()) combat.player_invulnerable = true;   // TDKR: Batman's health is the brawl's, not N.O.V.A. 3's
     if (hero.active()) brawl.update(dt);
@@ -917,8 +1020,10 @@ void Game::step_logic(float dt) {
         player.on_ground && !player.grappling && !brawl.busy()) {
         glm::vec3 lock;
         if (const int t = brawl.pull_target(player.eye(), player.view_forward()); t >= 0) brawl.pull(t);
-        else if (logic.grapple_lock_at(lock) && glm::distance(lock, player.center) > 3) player.grapple_to(past_edge(lock, player.center));
+        else if (logic.grapple_lock_at(lock) && glm::distance(lock, player.center) > 3 && fight_test_lock != logic.grapple_lock)
+            player.grapple_to(past_edge(lock, player.center)), fight_test_lock = logic.grapple_lock;   // once per lock
     }
+    if (logic.grapple_lock < 0) fight_test_lock = -1;
     if (hero.active()) scene.set_object_visible(hero.object(), !logic.player_hidden);
     if (logic.pending_section) {   // LoadLevelSections: reload, keep the player
         const uint32_t section = logic.pending_section;

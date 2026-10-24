@@ -407,6 +407,13 @@ void Game::handle_event(const SDL_Event& e) {
         }
         return;
     }
+    // A storyboard: a key, click or tap skips it (StoryboardPlayer.swf's skip).
+    if (storyboard.active() && !menu.open) {
+        if ((e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && e.key.key != SDLK_ESCAPE) || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+            e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)
+            storyboard.skip();
+        if (!(e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) return;
+    }
     // The hacking game takes the pointer: its circles turn when clicked.
     if (hud_pointer && !(opt.scripts && flash_hud.hacking())) {   // the game over: the mouse looks around again
         hud_pointer = false;

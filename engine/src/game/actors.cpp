@@ -66,12 +66,18 @@ void LevelLogic::walk_to(int id, int waypoint, bool run) {
 
 void LevelLogic::stop_walking(int id) {
     for (Walker& w : walkers_)
-        if (w.id == id) w.target = -1;
+        if (w.id == id) w.target = -1, w.to_point = false;
+}
+
+void LevelLogic::walk_to_point(int id, const glm::vec3& point, bool run) {
+    if (!object(id)) return;
+    Walker& w = walker(id);
+    w.target = -1, w.to_point = true, w.point = point, w.run = run;
 }
 
 bool LevelLogic::walking(int id) const {
     for (const Walker& w : walkers_)
-        if (w.id == id) return w.target >= 0;
+        if (w.id == id) return w.target >= 0 || w.to_point;
     return false;
 }
 
@@ -84,15 +90,19 @@ void LevelLogic::update_walkers(float dt) {
     for (size_t k = 0; k < walkers_.size(); ++k) {
         Walker& w = walkers_[k];
         Object* o = object(w.id);
-        if (!o || w.target < 0 || o->dead) continue;
-        const Object* wp = object(w.target);
-        if (!wp) {
+        if (!o || (w.target < 0 && !w.to_point) || o->dead) continue;
+        const Object* wp = w.to_point ? nullptr : object(w.target);
+        if (!w.to_point && !wp) {
             w.target = -1;
             continue;
         }
-        const glm::vec3 to = wp->position - o->position;
+        const glm::vec3 to = (w.to_point ? w.point : wp->position) - o->position;
         const float dist = glm::length(to), step = (w.run ? w.run_speed : w.walk_speed) * dt;
-        if (dist <= std::max(step, 0.05f)) {   // reached: its OnReach, then the next on the chain
+        if (w.to_point && dist <= std::max(step, 0.05f)) {   // there: it stands
+            o->position = w.point;
+            w.to_point = false;
+            actor_state(*o, "Idle");
+        } else if (dist <= std::max(step, 0.05f)) {   // reached: its OnReach, then the next on the chain
             o->position = wp->position;
             const int reached = w.target;
             w.target = next_waypoint(reached);

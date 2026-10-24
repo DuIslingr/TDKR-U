@@ -36,6 +36,7 @@ constexpr int kCompCinematic = 0x41;      // CCinematicComponent: length ms, ...
 constexpr int kCompCinematicTdkr = 0x17AC851F;
 constexpr int kCompPullable = 0x4891830C;   // PullableObjectComponent: idle, struggle, fall, back clips, struggle ms, ...
 constexpr int kCompNpcAi = 0x0113F791;     // CNpcAIComponent: behaviour, enemy, ...
+constexpr int kCompDestroyable = 0x068D1134;   // CDestroyableComponent
 constexpr int kCompPath = 0x15;            // CPathComponent: id, ?, first waypoint, last waypoint, ?
 constexpr int kCompMotionOnPath = 0x16;    // CMotionOnPathComponent: node, path id, max speed, accel, brake, loop
 
@@ -177,6 +178,7 @@ void LevelLogic::load_objects() {
             obj.position = tf->position;
             obj.yaw = tf->rotation.z;
             obj.enabled = tf->enabled;   // an enabled, invisible object (TDKR's usable planes) can be used
+            obj.home = tf->position;
             obj.visible = tf->visible;
         }
         if (const Value* d = comp(kCompDoor); d && d->size() >= 1) {
@@ -340,6 +342,7 @@ void LevelLogic::start(StartMode mode) {
     win = {};
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
+    story_request = {};
     riding = -1, qte_navigation = false;
     map_icons.clear();
     level_request = {};
@@ -453,6 +456,19 @@ bool LevelLogic::link(int id, int target) {
     return true;
 }
 
+bool LevelLogic::link_at(int id, int target, const std::string& node, const glm::vec3& offset) {
+    const Object* o = object(id);
+    const Object* t = object(target);
+    constexpr size_t kNone = std::numeric_limits<size_t>::max();
+    if (!o || !t || o->index == kNone || t->index == kNone || id == target) return false;
+    unlink(id);
+    Link l;
+    l.id = id, l.target = target, l.node = node;
+    l.local = glm::translate(glm::mat4(1), offset);
+    links_.push_back(l);
+    return true;
+}
+
 void LevelLogic::unlink(int id) {
     for (const Link& l : links_)
         if (l.id == id && l.held && combat) combat->npc_order(id, "imobile", 0, false);
@@ -466,7 +482,7 @@ void LevelLogic::update_links() {
         if (!o || !t) continue;
         const bool actor = combat && combat->is_actor(l.id);
         if (actor && !l.held) l.held = combat->npc_order(l.id, "imobile", 0, true);
-        const glm::mat4 m = scene.object_matrix(t->index);
+        const glm::mat4 m = scene.object_matrix(t->index, l.node);
         if (m == l.last) continue;
         l.last = m;
         const glm::mat4 placed = m * l.local;
@@ -644,6 +660,7 @@ LevelLogic::Object& LevelLogic::add_object(int id, size_t index, const std::stri
     o.type = type;
     o.position = position;
     o.yaw = yaw;
+    o.home = position;
     o.enabled = o.visible = false;
     if (index < scene.level().objects.size()) read_effects(o, scene.level().objects[index]);
     ++stats_.objects;
@@ -1976,9 +1993,32 @@ void LevelLogic::update_button_qte(float dt) {
     }
 }
 
+bool LevelLogic::destroyable(int id) const {
+    const Object* o = object(id);
+    return o && !o->dead && o->enabled && o->visible && object_component(*o, kCompDestroyable);
+}
+
+void LevelLogic::destroy(int id) {
+    Object* obj = object(id);
+    const Value* d = obj ? object_component(*obj, kCompDestroyable) : nullptr;
+    if (!d || obj->dead) return;
+    Object& o = *obj;
+    o.dead = true, o.health = 0;
+    if (d->size() > 1 && !(*d)[1].s.empty() && o.index < scene.level().objects.size()) scene.play_clip(o.index, (*d)[1].s, false);
+    if (d->size() > 4 && !(*d)[4].s.empty() && audio) {
+        Audio::Params p;
+        p.position = &o.position;
+        if (audio->play((*d)[4].s, p) < 0) audio->play_event((*d)[4].s, p);
+    }
+    std::erase_if(objective_markers, [&](const ObjectiveMarker& m) { return m.id == o.id; });
+    if (trace) log("destroyed " + std::to_string(o.id));
+    start_object_script(o, "OnScriptEvent");
+}
+
 bool LevelLogic::is_enemy(int id) const {
     const Object* o = object(id);
     if (!o || o->dead || !o->enabled || !o->visible || o->index >= scene.level().objects.size()) return false;
+    if (o->enemy >= 0) return o->enemy != 0;   // NPCSetEnemyFlag
     if (attack_targets.count(id)) return true;
     // CNpcAIComponent: [0] its behaviour (AI_BEHAVIOR_*), [1] whether it is an enemy (the
     // mercenaries, snipers and thugs; not the civilians or the police).

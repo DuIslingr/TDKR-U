@@ -8,6 +8,8 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "app/camera.h"
@@ -34,6 +36,7 @@
 #include "game/save_game.h"
 #include "game/scene.h"
 #include "game/settings.h"
+#include "game/storyboard.h"
 #include "game/shop.h"
 #include "game/touch_controls.h"
 #include "game/viewmodel.h"
@@ -210,6 +213,8 @@ private:
     // The Batpod (EnterBatPod): one physics step of the ride; false when Batman is on foot.
     bool ride_step(const PlayerInput& in, float dt);
     Batpod batpod;
+    Storyboard storyboard;   // StartIntroStory
+    std::string story_callback;
     // --auto-play on the Batpod: after the first objective marker, along its trail (an object
     // on the move: tailed from 40-50 m back).
     PlayerInput auto_drive();
@@ -219,10 +224,16 @@ private:
     int ride_tries = 0;                     // back-ups since it last got anywhere
     glm::vec3 ride_progress{0};
     void auto_play(float dt);   // --auto-play
+    glm::vec3 on_floor(const glm::vec3& p) const;
     float auto_play_wait = 3.0f;
+    float auto_play_held = 0;   // seconds it has waited for a fight, a cinematic, ...
     std::vector<glm::vec3> auto_play_path;   // the feet's next positions
     int auto_play_use = -1;                  // the thing to use at the end of it
+    std::unordered_set<int> auto_play_entered;   // triggers walked into to get a place marker to go
+    std::unordered_map<int, int> auto_play_stale;   // place markers stood on with nothing happening
+    std::vector<int> auto_play_markers;   // the markers when it last looked
     float fight_test_hack = 0;   // --fight-test: seconds into a hacking game
+    int fight_test_lock = -1;    // --fight-test: the grapnel lock it last flew to
     bool hud_pointer = false;    // the HUD (the hacking game) has the mouse pointer
     bool running = true;
     std::chrono::steady_clock::time_point last;

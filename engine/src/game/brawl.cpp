@@ -109,7 +109,8 @@ void Brawl::act(const std::string& state, int mask, float yaw, float seconds) {
 void Brawl::hit(int id, float damage, const std::string& hurt) {
     LevelLogic::Object* o = logic_.object(id);
     if (!o || o->dead) return;
-    o->health -= damage;
+    if (!o->invincible) o->health -= damage;   // SetInvincible: hurt, not harmed
+    else if (logic_.trace) logic_.log("brawl: " + std::to_string(id) + " is invincible");
     Fighter& f = fighter(id);
     if (o->health <= 0) {
         o->health = 0;
@@ -249,13 +250,16 @@ int Brawl::batarang_target(const glm::vec3& eye, const glm::vec3& forward) const
     int best = -1;
     float best_score = 1e30f;
     for (const auto& [id, o] : logic_.objects_) {
-        if (!enemy(id)) continue;
-        const glm::vec3 at = o.position + glm::vec3(0, 0, 1.2f);
+        const bool thing = !enemy(id) && logic_.destroyable(id);   // a light to break
+        if (!enemy(id) && !thing) continue;
+        const glm::vec3 at = o.position + glm::vec3(0, 0, thing ? 0.5f : 1.2f);
         const glm::vec3 d = at - eye;
         const float dist = glm::length(d);
         if (dist > 30 || dist < 1) continue;
         const float dot = glm::dot(d / dist, forward);
-        if (dot < std::cos(glm::radians(30.0f)) || !in_sight(eye, at)) continue;
+        float t = 1;   // (a thing's own collision may stop the ray just short of it)
+        const bool seen = thing ? !scene_.collision().raycast(eye, at, t) || (1 - t) * dist < 1.5f : in_sight(eye, at);
+        if (dot < std::cos(glm::radians(30.0f)) || !seen) continue;
         const float score = (1.1f - dot) * dist;   // the most nearly aimed at, then the nearest
         if (score < best_score) best_score = score, best = id;
     }
@@ -418,7 +422,7 @@ void Brawl::update(float dt) {
         strike_impact_ -= dt;
         if (strike_impact_ < 0 && strike_target_ >= 0) {
             if (takedown_) {
-                if (LevelLogic::Object* o = logic_.object(strike_target_)) {
+                if (LevelLogic::Object* o = logic_.object(strike_target_); o && !o->invincible) {
                     o->dead = true, o->health = 0;
                     logic_.killed_by_batman.insert(o->id);
                     std::erase_if(logic_.objective_markers, [&](const LevelLogic::ObjectiveMarker& m) { return m.id == o->id; });
@@ -491,7 +495,8 @@ void Brawl::update(float dt) {
     if (batarang_flight_ >= 0) {   // the batarang lands: a heavy hit
         batarang_flight_ -= dt;
         if (batarang_flight_ < 0) {
-            hit(batarang_target_, 50, "Enemy_Hurt_02_Cross");
+            if (LevelLogic::Object* o = logic_.object(batarang_target_); o && !enemy(o->id) && logic_.destroyable(o->id)) logic_.destroy(o->id);
+            else hit(batarang_target_, 50, "Enemy_Hurt_02_Cross");
             batarang_target_ = -1;
         }
     }
@@ -524,7 +529,9 @@ void Brawl::update(float dt) {
         if (counter_open()) counter();
         auto_timer_ -= dt;
         if (auto_timer_ <= 0 && !busy() && (target(5.0f, 2.0f) >= 0 || can_take_down())) strike(), auto_timer_ = 0.5f;
-        if (auto_timer_ <= 0 && throw_batarang(player_.eye(), player_.view_forward())) auto_timer_ = 1.0f;
+        // (keeping three for what the objectives ask to break)
+        if (auto_timer_ <= 0 && logic_.weapon_ammo["Batarang_01"] > 3 && throw_batarang(player_.eye(), player_.view_forward()))
+            auto_timer_ = 1.0f;
     }
 }
 

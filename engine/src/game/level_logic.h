@@ -162,6 +162,16 @@ public:
     void stop_walking(int id);
     void set_actor_speed(int id, float speed, bool run);
     bool walking(int id) const;
+    // NPCGoToActorWithNavmesh / NPCReturnToSavedPosition: to a point (where an actor was), no
+    // OnReach there.
+    void walk_to_point(int id, const glm::vec3& point, bool run);
+    // LinkObject(object, parent, node, dx, dy, dz, ...) (CGameObject::LinkToObject): carried at the
+    // parent's node (or origin) plus the offset, until UnlinkObject.
+    bool link_at(int id, int target, const std::string& node, const glm::vec3& offset);
+    // StartIntroStory(story, callback, ...): the storyboard the game plays, then the callback.
+    struct StoryRequest {
+        std::string name, callback;
+    } story_request;
     // The binoculars in a cinematic (PlayerComponent::StartGadgetModeCinematic / GadgetZoomTarget
     // Cinematic / StopGadgetModeCinematic): the view from Batman's eye; each target makes the camera
     // look at it and move `zoom` of the way towards it over `ms`, eased. Seen in night vision.
@@ -205,6 +215,11 @@ public:
     bool qte_navigation = false;
     // CNpcAIComponent's enemy flag ([1]), or an actor the scripts set on Batman.
     bool is_enemy(int id) const;
+    // CDestroyableComponent (0x068D1134: [1] death clip, [4] sound, [5] effect, [6] disabled on
+    // death, [8] its script): breakable things (the Underground's lights), broken by the
+    // batarang; breaking plays the clip and the sound and runs its OnScriptEvent (OnDieEvent).
+    bool destroyable(int id) const;
+    void destroy(int id);
     // CameraFollowObject: a script camera at a point looking at another, moving there from where
     // it was over `ms` (0: a cut), until CameraSwitchToPlayer / EndCinematic.
     void script_camera(const glm::vec3& position, const glm::vec3& target, float ms);
@@ -383,6 +398,9 @@ public:
         int interact_target = -1;    // SetInteractionParams: using it enables that object instead of its own script
         bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
         bool targetable = true;       // ActorGrapnelEnable: Batman may leap or grapple at it
+        bool invincible = false;      // SetInvincible: hits leave its health alone
+        int enemy = -1;               // NPCSetEnemyFlag: 1 / 0 overrides its NPC AI's enemy flag (-1: as loaded)
+        glm::vec3 home{0};            // where it was placed (NPCReturnToSavedPosition)
         float health = 100;
         std::string state;
         int trigger = -1, door = -1;
@@ -728,6 +746,8 @@ private:
     struct Walker {
         int id = 0, target = -1;
         bool run = false;
+        bool to_point = false;       // a point instead of a waypoint
+        glm::vec3 point{0};
         float walk_speed = 1.5f, run_speed = 4.5f;
     };
     std::vector<Walker> walkers_;
@@ -771,6 +791,7 @@ private:
         glm::mat4 local{1};          // the object in the target's frame
         glm::mat4 last{0};           // the target's transform when last carried
         bool held = false;           // a linked NPC told to hold its place
+        std::string node;            // TDKR's links: at this node of the target (empty: its origin)
     };
     std::vector<Link> links_;
     void update_links();

@@ -235,7 +235,7 @@ void Game::pad_event(const SDL_Event& e) {
     }
     if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
         const float t = float(e.gaxis.value) / 32767.0f;
-        if (t > 0.6f && !pad_trigger_held && hero.active() && can_grapple()) hero.try_grapple(player, cam.position, cam.forward());
+        if (t > 0.6f && !pad_trigger_held && hero.active() && can_grapple()) fire_grapnel(cam.position, cam.forward());
         pad_trigger_held = t > (pad_trigger_held ? 0.3f : 0.6f);
     }
 }
@@ -438,16 +438,15 @@ void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_G && !e.key.repeat && logic.controls.items) combat_in.grenade = true;
     // TDKR: F fires the grapnel at the edge the view aims at.
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && !e.key.repeat && hero.active() && can_grapple())
-        hero.try_grapple(player, cam.position, cam.forward());
-    // TDKR: strike (left button, X / square) and counter (right button, Y / triangle). There is no
-    // melee yet; the tutorial only needs to see them (HasPlayerAttacked, HasPlayerCounterd).
+        fire_grapnel(cam.position, cam.forward());
+    // TDKR: strike (left button, X) and counter (right button, Y).
     if (hero.active() && opt.scripts && !logic.player_locked()) {
         const bool strike = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) ||
                             (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_WEST);
         const bool counter = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_RIGHT) ||
                              (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH);
-        if (strike && logic.controls.combat) logic.player_did.attack = true;
-        if (counter && logic.controls.counter) logic.player_did.counter = true;
+        if (strike) brawl.strike();
+        if (counter) brawl.counter();
     }
     // Grenades or mines on the grenade button (the original's swipe), and the
     // detonation of the mines placed.
@@ -648,6 +647,7 @@ void Game::run_window() {
                 cam.pitch = glm::clamp(cam.pitch, -30.0f, 35.0f);
             }
             if (opt.scripts) logic.limited_view_input(cam.yaw, cam.pitch, dt);   // limited control: within its limits
+            if (brawl.busy()) in.forward = in.right = 0, in.jump = in.run = false;   // mid-strike
             player.yaw = cam.yaw;
             player.pitch = cam.pitch;
             for (accumulator += dt; accumulator >= kPhysicsStep; accumulator -= kPhysicsStep) {

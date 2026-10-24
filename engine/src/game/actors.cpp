@@ -1,5 +1,6 @@
 // Actors moving on their own: TDKR's waypoint goals (LevelLogic::walk_to).
 #include <cmath>
+#include <vector>
 #include <limits>
 
 #include "game/level_logic.h"
@@ -11,22 +12,32 @@ namespace {
 
 constexpr int kCompStateSet = 0x5441A117;   // CStateSetComponent: [[name, type mask, ?, loop, ..., [27] clips], ...]
 
-// The first clip of a state in the type's or its parents' state sets ("" if none).
-std::string state_clip_of(const Gol& gol, int type, const std::string& name, bool& loop, int depth = 0) {
-    auto g = gol.find(type);
-    if (g == gol.end() || depth > 8) return "";
-    if (auto t = g->second.templates.find(kCompStateSet); t != g->second.templates.end() && t->second.size() > 0)
-        for (const Value& s : t->second[0].list)
-            if (s.size() >= 28 && s[0].s == name && s[27].size() > 0 && s[27][0].size() > 0) {
-                loop = s[3].i != 0;
-                return s[27][0][0].s;
-            }
-    for (int p : g->second.parents)
-        if (std::string c = state_clip_of(gol, p, name, loop, depth + 1); !c.empty()) return c;
-    return "";
-}
-
 }  // namespace
+
+bool find_actor_state(const Gol& gol, int type, const std::string& name, ActorState& out) {
+    // Breadth by depth: the type's own set, then its parents' in order (and theirs).
+    std::vector<int> level{type};
+    for (int depth = 0; depth < 8 && !level.empty(); ++depth) {
+        std::vector<int> next;
+        for (int t : level) {
+            auto g = gol.find(t);
+            if (g == gol.end()) continue;
+            if (auto st = g->second.templates.find(kCompStateSet); st != g->second.templates.end() && st->second.size() > 0)
+                for (const Value& s : st->second[0].list) {
+                    if (s.size() < 28 || s[0].s != name) continue;
+                    out.mask = s[1].i;
+                    out.loop = s[3].i != 0;
+                    out.clips.clear();
+                    for (const Value& clip : s[27].list)
+                        if (clip.size() > 0 && clip[0].type == Value::String) out.clips.push_back(clip[0].s);
+                    return !out.clips.empty();
+                }
+            next.insert(next.end(), g->second.parents.begin(), g->second.parents.end());
+        }
+        level = std::move(next);
+    }
+    return false;
+}
 
 LevelLogic::Walker& LevelLogic::walker(int id) {
     for (Walker& w : walkers_)
@@ -35,13 +46,14 @@ LevelLogic::Walker& LevelLogic::walker(int id) {
     return walkers_.back();
 }
 
-void LevelLogic::actor_state(Object& o, const std::string& state) {
-    if (o.state == state || o.index >= scene.level().objects.size()) return;
-    bool loop = true;
-    const std::string clip = state_clip_of(gol, scene.level().objects[o.index].type, state, loop);
-    if (clip.empty()) return;
+bool LevelLogic::actor_state(Object& o, const std::string& state, bool restart) {
+    if ((o.state == state && !restart) || o.index >= scene.level().objects.size()) return o.state == state;
+    ActorState st;
+    if (!find_actor_state(gol, object_type(o), state, st)) return false;
     o.state = state;
-    scene.play_clip(o.index, clip, loop);
+    static uint32_t pick = 0;
+    scene.play_clip(o.index, st.clips[(pick++) % st.clips.size()], st.loop);
+    return true;
 }
 
 void LevelLogic::walk_to(int id, int waypoint, bool run) {

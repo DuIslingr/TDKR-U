@@ -21,8 +21,6 @@ namespace tdkr {
 
 namespace {
 
-constexpr int kCompStateSet = 0x5441A117;   // CStateSetComponent: [[name, type mask, ?, loop, ..., [27] clips], ...]
-
 LevelLogic& ctx(lua_State* L) { return *static_cast<LevelLogic*>(lua_touserdata(L, lua_upvalueindex(1))); }
 int int_arg(lua_State* L, int i) { return int(lua_tointeger(L, i)); }
 std::string str_arg(lua_State* L, int i) { return lua_isstring(L, i) ? lua_tostring(L, i) : ""; }
@@ -41,33 +39,8 @@ bool position_of(LevelLogic& c, int id, glm::vec3& out) {
     return true;
 }
 
-// A state of an actor type's state set (the type's and its parents' CStateSetComponent
-// templates, nearest first): its type mask (STATE_TYPE_*), whether it loops, its clips.
-struct ActorState {
-    int mask = 0;
-    bool loop = true;
-    std::vector<std::string> clips;
-};
-bool find_state(const Gol& gol, int type, const std::string& name, ActorState& out, int depth = 0) {
-    auto g = gol.find(type);
-    if (g == gol.end() || depth > 8) return false;
-    if (auto t = g->second.templates.find(kCompStateSet); t != g->second.templates.end() && t->second.size() > 0)
-        for (const Value& s : t->second[0].list) {
-            if (s.size() < 28 || s[0].s != name) continue;
-            out.mask = s[1].i;
-            out.loop = s[3].i != 0;
-            out.clips.clear();
-            for (const Value& clip : s[27].list)
-                if (clip.size() > 0 && clip[0].type == Value::String) out.clips.push_back(clip[0].s);
-            return true;
-        }
-    for (int p : g->second.parents)
-        if (find_state(gol, p, name, out, depth + 1)) return true;
-    return false;
-}
-int object_type(LevelLogic& c, const LevelLogic::Object& o) {
-    return o.index < c.scene.level().objects.size() ? c.scene.level().objects[o.index].type : -1;
-}
+bool find_state(const Gol& gol, int type, const std::string& name, ActorState& out) { return find_actor_state(gol, type, name, out); }
+int object_type(LevelLogic& c, const LevelLogic::Object& o) { return c.object_type(o); }
 
 std::mt19937& rng() {
     static std::mt19937 r{std::random_device{}()};
@@ -153,8 +126,11 @@ int api_set_control(lua_State* L) {
     ctx(L).controls.*Field = bool_arg(L, 1);
     return 0;
 }
+// IsCounterAttackControlEnabled: the counter button is up (CHUDDisplay::IsUIButtonEnabled(5, 7):
+// the scripts allow it and an enemy's attack can be countered now).
 int api_is_counter_enabled(lua_State* L) {
-    lua_pushboolean(L, ctx(L).controls.counter);
+    LevelLogic& c = ctx(L);
+    lua_pushboolean(L, c.controls.counter && c.counter_open);
     return 1;
 }
 // IgnoreControls(direction bits, on): the stick no longer pushes the player that way.
@@ -381,7 +357,7 @@ int api_actor_get_state(lua_State* L) {
     LevelLogic& c = ctx(L);
     const int id = int_arg(L, 1);
     if (id == 0) {
-        lua_pushstring(L, player_state_name(c.player, c.player_speed).c_str());
+        lua_pushstring(L, (c.player_action.empty() ? player_state_name(c.player, c.player_speed) : c.player_action).c_str());
         return 1;
     }
     const LevelLogic::Object* o = c.object(id);
@@ -394,7 +370,7 @@ int api_actor_is_in_state_type(lua_State* L) {
     const int id = int_arg(L, 1), mask = int_arg(L, 2);
     int now = 0;
     if (id == 0) {
-        now = player_state_mask(c.player, c.player_speed);
+        now = c.player_action.empty() ? player_state_mask(c.player, c.player_speed) : c.player_action_mask;
     } else if (const LevelLogic::Object* o = c.object(id)) {
         ActorState st;
         if (!o->state.empty() && find_state(c.gol, object_type(c, *o), o->state, st)) now = st.mask;
@@ -465,6 +441,17 @@ int api_kill_actor(lua_State* L) {
     c.runtime_.send_event("Dead", o->id);
     return 0;
 }
+// GrapplingLockTarget(target, ...): the grapnel's next shot goes to that object or waypoint.
+int api_grappling_lock_target(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    c.grapple_lock = c.object(int_arg(L, 1)) ? int_arg(L, 1) : -1;
+    return 0;
+}
+// ActorGrapnelEnable(actor, on): CGameObject::SetTargetable.
+int api_actor_grapnel_enable(lua_State* L) {
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->targetable = bool_arg(L, 2);
+    return 0;
+}
 int api_set_actor_health(lua_State* L) {
     if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1)); o && !o->dead) o->health = float(lua_tonumber(L, 2));
     return 0;
@@ -478,6 +465,26 @@ int api_npc_go_to_waypoint(lua_State* L) {
 // SetActorSpeedWalk / SetActorSpeedRun(actor, metres per second).
 int api_set_actor_speed(lua_State* L) {
     ctx(L).set_actor_speed(int_arg(L, 1), float(lua_tonumber(L, 2)), lua_tointeger(L, lua_upvalueindex(2)) != 0);
+    return 0;
+}
+
+// NPCAttackTarget(actor, target): the actor fights the target (0: Batman) (CAwarenessComponent::
+// SetCurrentTarget, CNpcAIComponent::StartCatchEnemy); not the dead or those mid-takedown.
+int api_npc_attack_target(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || o->dead || lua_isnil(L, 2) || int_arg(L, 2) < 0) return 0;
+    c.attack_targets[o->id] = int_arg(L, 2);
+    return 0;
+}
+// NPCSetStance(actor, waypoint, "Aggressive" | "Passive" | "Coward" | "StandGround" | "Mission"):
+// an aggressive actor goes for Batman, a passive one stops.
+int api_npc_set_stance(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const std::string stance = str_arg(L, 3);
+    if (!c.object(int_arg(L, 1))) return 0;
+    if (stance == "Aggressive") c.attack_targets[int_arg(L, 1)] = 0;
+    else c.attack_targets.erase(int_arg(L, 1));
     return 0;
 }
 
@@ -642,6 +649,7 @@ const Entry kTdkr[] = {
     {"SetGrapnelControlEnable", api_set_control<&LevelLogic::Controls::grapnel>},
     {"SetCounterAttackControlEnable", api_set_control<&LevelLogic::Controls::counter>},
     {"SetGadgetWheelControlEnable", api_set_control<&LevelLogic::Controls::gadgets>},
+    {"SetSilentKillControlEnable", api_set_control<&LevelLogic::Controls::silent>},
     {"IsCounterAttackControlEnabled", api_is_counter_enabled},
     {"IgnoreControls", api_ignore_controls},
     {"EnableControlGlow", api_enable_control_glow},
@@ -685,11 +693,19 @@ const Entry kTdkr[] = {
     {"SpawnObject", api_spawn_object},
     {"KillActor", api_kill_actor},
     {"SetActorHealth", api_set_actor_health},
+    {"ActorGrapnelEnable", api_actor_grapnel_enable},
+    {"GrapplingLockTarget", api_grappling_lock_target},
     {"PlayCameraAnim", api_play_camera_anim},
     {"CameraLookAt", api_camera_look_at},
     {"CameraSwitchToPlayer", api_camera_to_player, 0},
     {"CameraSwitchToPlayerResetOrientation", api_camera_to_player, 1},
     {"EndCinematic", api_end_cinematic},
+    {"NPCAttackTarget", api_npc_attack_target},
+    {"NPCSetStance", api_npc_set_stance},
+    {"NPCSetAIBehavior", api_nothing},
+    {"NPCCombatSet", api_nothing},
+    {"SetObjectSlowMotion", api_nothing},
+    {"ResetObjectSlowMotion", api_nothing},
     {"NPCGoToWaypoint", api_npc_go_to_waypoint},
     {"NPCGoToWaypointWithNavmesh", api_npc_go_to_waypoint},
     {"SetActorSpeedWalk", api_set_actor_speed, 0},

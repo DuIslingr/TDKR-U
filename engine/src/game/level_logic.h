@@ -69,7 +69,7 @@ public:
         // TDKR (CLevel::Set<Kind>ControlEnable): strikes, the grapnel, the counter button, the
         // gadget wheel. `ignore`: IgnoreControls' directions (IGNORE_CONTROLS_UP 1, DOWN 2,
         // LEFT 4, RIGHT 8) the stick does not push the player.
-        bool combat = true, grapnel = true, counter = true, gadgets = true;
+        bool combat = true, grapnel = true, counter = true, gadgets = true, silent = true;
         int ignore = 0;
     } controls;
     // EnableControls(on): every control at once, and the HUD's buttons with them.
@@ -81,6 +81,21 @@ public:
     struct PlayerDid {
         bool look = false, move = false, attack = false, counter = false;
     } player_did;
+    // Fighting (game/brawl.h): actors told to attack (NPCAttackTarget: the target's id, 0 for
+    // Batman), and what Batman is doing in a fight (his action state and its STATE_TYPE mask,
+    // for ActorGetState / ActorIsInStateType).
+    std::unordered_map<int, int> attack_targets;
+    std::string player_action;
+    int player_action_mask = 0;
+    bool counter_open = false;       // an enemy's attack can be countered now (set by the brawl)
+    // GrapplingLockTarget(object or waypoint): the grapnel goes there, whatever the view aims at
+    // (CActorBaseComponent::SetGrapplingLockTarget); -1 none.
+    int grapple_lock = -1;
+    bool grapple_lock_at(glm::vec3& feet) {
+        const Object* o = grapple_lock >= 0 ? object(grapple_lock) : nullptr;
+        if (o) feet = o->position;
+        return o != nullptr;
+    }
     // The quests and the main story (game/quests.h).
     Quests quests{*this};
     // NextMission(zone): the current mission zone (CZonesManager +0x4c); its Obj<zone>_Init runs.
@@ -268,6 +283,7 @@ public:
         bool interactive = false, interact_enabled = true;
         float interact_radius = 3;   // CInteractionComponent: metres from the player
         bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
+        bool targetable = true;       // ActorGrapnelEnable: Batman may leap or grapple at it
         float health = 100;
         std::string state;
         int trigger = -1, door = -1;
@@ -281,6 +297,11 @@ public:
         std::vector<EffectSlot> effects;
     };
     Object* object(int id);
+    // Play a state of the actor's state set (one of its clips at random); false if it has none.
+    bool actor_state(Object& o, const std::string& state, bool restart = false);
+    int object_type(const Object& o) const {
+        return o.index < scene.level().objects.size() ? scene.level().objects[o.index].type : -1;
+    }
     // The player as an object for StartEffect(0, n) / StopEffect(0, n): its type's effects.
     Object& player_object() { return player_object_; }
     // Register an object created at runtime (spawned enemies); it starts disabled.
@@ -595,7 +616,6 @@ private:
     std::vector<Walker> walkers_;
     Walker& walker(int id);
     void update_walkers(float dt);
-    void actor_state(Object& o, const std::string& state);
     struct Elevator {
         int id = 0, type = 0;
         size_t index = 0;
@@ -717,6 +737,15 @@ private:
     Stats stats_;
     glm::vec3 last_player_{0};
 };
+
+// A state of an actor type's state set (CStateSetComponent: the type's and its parents'
+// templates, nearest first): its STATE_TYPE_* mask, whether it loops, its clips.
+struct ActorState {
+    int mask = 0;
+    bool loop = true;
+    std::vector<std::string> clips;
+};
+bool find_actor_state(const Gol& gol, int type, const std::string& name, ActorState& out);
 
 // Register the game's script functions with the runtime (game/game_api.cpp), TDKR's own
 // last (game/tdkr_api.cpp).

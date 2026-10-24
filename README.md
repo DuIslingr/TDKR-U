@@ -61,7 +61,9 @@ B goes back. With a pad connected (or `--gamepad`), tutorial prompts name its bu
 `--mission N|NAME` starts a mission as the menus do (its level, then its start script); `--list-missions` lists them.
 The level scripts run on the game's own script API (`engine/src/game/tdkr_api.cpp`; `--trace-scripts` logs what they
 start and, headless, counts the calls to natives not implemented yet). `--touch-test SECONDS` swipes and walks at
-the end of a headless run, which also satisfies the tutorial's look / move checks.
+the end of a headless run; `--did look,move` marks those done from the start, `--fight-test` strikes, counters,
+takes down and fires a locked grapnel by itself, and `--exec-at T:LUA` runs a script line at T seconds (e.g.
+`--exec-at "75:ObjectSetPosition(0,-478.7,-970.5,26.2)"` to stand somewhere).
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

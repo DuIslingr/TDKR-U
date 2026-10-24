@@ -1,5 +1,7 @@
 #include "game/flash_hud.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 
 #include "core/vfs.h"
@@ -34,6 +36,7 @@ void FlashHud::set_up() {
     swf::Player& p = *screen_.player();
     p.goto_and_stop("", "HUD");
     cinematic_ = false, dialog_.clear();
+    marker_frames_.clear();
     hide_unused();
     // CHUDDisplay::SetMinimapSwf / initMap: the level's map goes into the pivot's dummy clip,
     // the pivot scaled by the level's zoom about the minimap centre.
@@ -105,6 +108,7 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         grapple_shown_ = state.grapple;
     }
     if (state.cinematic != cinematic_) cinematic(state.cinematic);
+    update_markers(state.cinematic || !state.visible ? std::vector<State::Marker>{} : state.markers);
     if (state.dialog != dialog_) dialog(state.dialog);
     // CHUDDisplay::updateMap: the map moves under the centre (y up in the world is up on the
     // map), the pivot turns with the camera, the arrow shows Batman's facing against it.
@@ -126,10 +130,56 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     }
     // refreshBatmanButtons / Update: the action slots follow what Batman can do now.
     using M = State::Move;
-    button("bJump", state.move == M::Glide ? "GLIDE" : state.move == M::Plunge ? "PLUNGE" : "JUMP", true);
-    button("bAttack", state.attack, state.move == M::Ground);
-    button("bGrapnel", "GRAPNEL", state.grapple);
+    button("bJump", state.move == M::Glide ? "GLIDE" : state.move == M::Plunge ? "PLUNGE" : "JUMP", state.jump_on);
+    button("bAttack", state.attack, state.move == M::Ground && state.attack_on);
+    button("bGrapnel", "GRAPNEL", state.grapple && state.grapnel_on);
+    // CHUDDisplay: the counter button shows while an enemy's attack can be countered.
+    p.set_visible("bCounterAttack", state.counter && !state.cinematic);
     screen_.update(dt, width, height);
+}
+
+void FlashHud::update_markers(const std::vector<State::Marker>& markers) {
+    swf::Player& p = *screen_.player();
+    swf::Instance* icon = p.find("ObjectiveBtn");
+    if (!icon) return;
+    auto clip_name = [](int id) { return "objectiveMarker" + std::to_string(id); };
+    // Gone markers lose their icons.
+    for (auto it = marker_frames_.begin(); it != marker_frames_.end();) {
+        const bool kept = std::any_of(markers.begin(), markers.end(), [&](const State::Marker& m) { return m.id == it->first; });
+        if (!kept) {
+            if (swf::Instance* c = p.find(clip_name(it->first))) c->remove_self();
+            it = marker_frames_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    int depth = 20000;
+    for (const State::Marker& m : markers) {
+        const std::string name = clip_name(m.id);
+        swf::Instance* c = p.find(name);
+        if (!c) {
+            icon->duplicate(name, depth + int(marker_frames_.size()));
+            c = p.find(name);
+            if (!c) continue;
+        }
+        std::string kind = m.kind.empty() ? "objective" : m.kind;
+        kind[0] = char(std::tolower(static_cast<unsigned char>(kind[0])));   // "Objective" -> "objective"
+        if (c->find_label(kind) < 0) kind = "objective";
+        const std::string frame = m.on_screen ? kind : kind + "_arrow";
+        if (marker_frames_[m.id] != frame) {
+            p.goto_and_stop(name, frame);
+            marker_frames_[m.id] = frame;
+        }
+        const glm::vec2 at = (m.at - p.offset()) / p.scale() * 20.0f;
+        c->matrix = swf::Matrix{};
+        if (!m.on_screen) c->matrix.set_scale_rotation(1, 1, glm::radians(m.angle));
+        c->matrix.tx = at.x, c->matrix.ty = at.y;
+        c->accept_moves = false;
+        c->visible = true;
+        char text[32];
+        std::snprintf(text, sizeof text, "%dm", int(m.distance + 0.5f));
+        p.set_text(name + ".DistanceToObjectiveText.tf", text);
+    }
 }
 
 void FlashHud::cinematic(bool on) {

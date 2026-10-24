@@ -64,6 +64,7 @@ void Hero::start(Scene& scene, Player& player) {
     // object, for cinematics); the player's Batman replaces them.
     scene.hide_models(model);
     object_ = kNone;
+    acting_ = false;
     if (to_lower(level).find("l_menu") != std::string::npos) return;   // the menus' backdrop has no player
     object_ = scene.spawn_model(model, false, animations, kIdle);
     clip_ = kIdle;
@@ -83,6 +84,14 @@ void Hero::show_cape(Scene& scene, bool spread) {
 void Hero::play(Scene& scene, const std::string& clip, bool loop) {
     if (clip == clip_) return;
     if (scene.play_clip(object_, clip, loop)) clip_ = clip;
+}
+
+bool Hero::act(Scene& scene, const std::string& clip, float yaw) {
+    if (!active() || !scene.play_clip(object_, clip, false)) return false;
+    clip_ = clip;
+    facing_ = yaw;
+    acting_ = true;
+    return true;
 }
 
 void Hero::update(Scene& scene, const Player& player, const PlayerInput& in, float dt) {
@@ -141,6 +150,14 @@ void Hero::update(Scene& scene, const Player& player, const PlayerInput& in, flo
             scene.set_object_pose(object_, feet, facing_);
             return;
         }
+    }
+    // An action plays to its end where it began.
+    if (acting_) {
+        if (!player.gliding && !player.grappling && !scene.clip_finished(object_)) {
+            scene.set_object_pose(object_, feet, facing_);
+            return;
+        }
+        acting_ = false;
     }
     // Face the direction of travel (the input's, relative to the view), turning at turn_rate.
     if (in.forward != 0 || in.right != 0) {

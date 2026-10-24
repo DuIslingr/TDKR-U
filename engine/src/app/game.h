@@ -26,6 +26,7 @@
 #include "game/loading_screen.h"
 #include "game/main_menu.h"
 #include "game/pause_menu.h"
+#include "game/brawl.h"
 #include "game/hero.h"
 #include "game/player.h"
 #include "game/save_game.h"
@@ -132,6 +133,7 @@ private:
     Player player;
     Hero hero;                                 // TDKR: Batman in third person and the follow camera
     LevelLogic logic;
+    Brawl brawl{logic, scene, player, hero};   // TDKR: Batman's fights
     std::unique_ptr<Audio> audio;
     std::vector<float> rendered;               // --sound-render
     Combat combat;
@@ -198,6 +200,9 @@ private:
     float pad_axis(SDL_GamepadAxis axis) const;   // -1..1, with a dead zone
     // The grapnel may fire: no script has it off (SetGrapnelControlEnable) and no cinematic runs.
     bool can_grapple() const { return !opt.scripts || (logic.controls.grapnel && !logic.player_locked()); }
+    // Fire the grapnel: at the scripts' locked target if there is one in reach, else at the edge
+    // the view aims at.
+    bool fire_grapnel(const glm::vec3& eye, const glm::vec3& forward);
     bool running = true;
     std::chrono::steady_clock::time_point last;
 };

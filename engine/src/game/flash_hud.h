@@ -37,7 +37,19 @@ public:
         float camera_yaw = 0, facing = 0;   // degrees about Z (the map turns with the camera)
         enum class Move { Ground, Air, Glide, Plunge } move = Move::Ground;   // the jump slot's style
         const char* attack = "STRIKE";   // the attack slot's style (STRIKE, TAKEDOWN, COUNTERATTACK)
+        bool counter = false;            // the counter button is up (an attack can be countered)
+        bool jump_on = true, attack_on = true, grapnel_on = true;   // what the scripts leave enabled
         std::string dialog;              // the line being said (ShowMessage): subtitles in a cinematic
+        // Objective markers (ObjectiveAdd): where the object shows on screen (pixels), or the
+        // screen edge towards it with the arrow's angle (degrees) when it is off screen.
+        struct Marker {
+            int id = 0;
+            std::string kind;            // talk, kill, follow, objective, sideObjective, ...
+            glm::vec2 at{0};
+            bool on_screen = true;
+            float angle = 0, distance = 0;
+        };
+        std::vector<Marker> markers;
     };
     void update(float dt, const State& state, int width, int height);
     // The objective popup (objectiveMessage_popin): show with text, or hide.
@@ -56,6 +68,10 @@ private:
     // openDialog / closeDialog), or the cinematic subtitle.
     void dialog(const std::string& text);
     bool cinematic_ = false;
+    // CHUDDisplay::AddObjectiveToScene / UpdateObjectivesPosition: one copy of the
+    // ObjectiveBtn icon (hudAS.mNPCIcon) per marker, on the frame of its kind.
+    void update_markers(const std::vector<State::Marker>& markers);
+    std::map<int, std::string> marker_frames_;   // marker id -> the frame its icon shows
     std::string dialog_;
     // CHUDDisplay::SetButtonStyle: the slot's button switches style and (dis)ables, once per change.
     void button(const std::string& slot, const std::string& style, bool enabled);

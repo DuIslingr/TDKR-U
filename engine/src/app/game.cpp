@@ -186,6 +186,8 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
     menu.touch = logic.input == InputScheme::Touch;
     if (opt.scripts) {
         logic.start();
+        brawl.reset();
+        brawl.auto_fight = opt.fight_test;
         const auto& ls = logic.stats();
         std::printf("scripts: %zu chunks (%zu with errors), %zu objects, %zu triggers, %zu doors, %zu usable\n",
                     ls.chunks, ls.chunk_errors, ls.objects, ls.triggers, ls.doors, ls.interactive);
@@ -453,19 +455,52 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         fs.facing = hero.facing();
         using HM = FlashHud::State::Move;
         fs.move = player.plunging ? HM::Plunge : player.gliding ? HM::Glide : player.on_ground ? HM::Ground : HM::Air;
+        if (opt.scripts) {
+            fs.attack = brawl.can_take_down() ? "TAKEDOWN" : "STRIKE";
+            fs.counter = logic.controls.counter && brawl.counter_open();
+            fs.jump_on = logic.controls.jump;
+            fs.attack_on = logic.controls.combat || brawl.can_take_down();
+            fs.grapnel_on = logic.controls.grapnel;
+        }
         {
             const glm::vec3 fwd = glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0));
             fs.camera_yaw = glm::degrees(std::atan2(-fwd.x, fwd.y));
         }
         glm::vec3 point, landing;
         const glm::vec3 forward = glm::normalize(glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0)));
-        if (hero.grapple_target(player, f.camera, forward, point, landing)) {
+        // A target the scripts locked the grapnel onto is marked wherever the view aims.
+        glm::vec3 lock;
+        const bool locked = opt.scripts && logic.grapple_lock_at(lock) && logic.controls.grapnel;
+        if (locked) point = lock + glm::vec3(0, 0, 0.5f);
+        if (locked || hero.grapple_target(player, f.camera, forward, point, landing)) {
             const glm::vec4 c = f.proj * f.view * glm::vec4(point, 1);
             if (c.w > 1e-3f) {
                 fs.grapple = true;
                 fs.grapple_at = glm::vec2((c.x / c.w * 0.5f + 0.5f) * float(w), (0.5f - c.y / c.w * 0.5f) * float(h));
             }
         }
+        // Objective markers above their objects (CHUDDisplay::UpdateObjectivesPosition); off
+        // screen (or behind), pinned to the screen's edge, the arrow pointing their way.
+        if (opt.scripts)
+            for (const LevelLogic::ObjectiveMarker& om : logic.objective_markers) {
+                const LevelLogic::Object* o = logic.object(om.id);
+                if (!o || o->dead || !o->visible) continue;
+                const glm::vec3 at = o->position + glm::vec3(0, 0, 1.9f);   // over the head (an actor is 1.8 m tall)
+                FlashHud::State::Marker m;
+                m.id = om.id, m.kind = om.text;
+                m.distance = glm::distance(at, player.center);
+                const glm::vec4 c = f.proj * f.view * glm::vec4(at, 1);
+                const glm::vec2 half(float(w) * 0.5f, float(h) * 0.5f);
+                glm::vec2 ndc = c.w > 1e-3f ? glm::vec2(c.x, c.y) / c.w : glm::vec2(c.x, c.y) * -1.0f;
+                m.on_screen = c.w > 1e-3f && std::abs(ndc.x) < 0.92f && std::abs(ndc.y) < 0.88f;
+                if (!m.on_screen) {
+                    if (glm::length(ndc) < 1e-4f) ndc = glm::vec2(0, -1);
+                    ndc /= std::max(std::abs(ndc.x) / 0.92f, std::abs(ndc.y) / 0.88f);   // onto the edge
+                    m.angle = glm::degrees(std::atan2(-ndc.y * half.y, ndc.x * half.x));
+                }
+                m.at = glm::vec2((ndc.x * 0.5f + 0.5f) * float(w), (0.5f - ndc.y * 0.5f) * float(h));
+                fs.markers.push_back(m);
+            }
         const float hud_dt = flash_hud_clock < 0 ? 0.0f : std::clamp(clock - flash_hud_clock, 0.0f, 0.25f);
         flash_hud_clock = clock;
         flash_hud.update(hud_dt, fs, w, h);
@@ -617,6 +652,7 @@ void Game::load_level(const std::string& level) {
     player.spawn(scene.start_position, scene.start_yaw);
     hero.start(scene, player);
     logic.start();
+    brawl.reset();
     combat.start();
     combat.campaign_loadout(opt.level);
     shop.apply_owned(combat, settings);
@@ -637,6 +673,7 @@ void Game::resume(const SaveGame& g) {
         player.spawn(scene.start_position, scene.start_yaw);
         hero.start(scene, player);
         logic.respawn_at_checkpoint();
+        brawl.reset();
         shop.apply_owned(combat, settings);
         viewmodel.start();
         hud.start();
@@ -649,9 +686,32 @@ void Game::resume(const SaveGame& g) {
 }
 
 // Level logic at a fixed step, so triggers and doors see every position.
+// A locked target is an edge: the pull ends with the climb over it, a step beyond.
+static glm::vec3 past_edge(const glm::vec3& lock, const glm::vec3& from) {
+    glm::vec2 d(lock - from);
+    if (glm::length(d) > 1e-3f) d = glm::normalize(d);
+    return lock + glm::vec3(d * 1.5f, 0.0f);
+}
+
+bool Game::fire_grapnel(const glm::vec3& eye, const glm::vec3& forward) {
+    glm::vec3 lock;
+    if (opt.scripts && logic.grapple_lock_at(lock) && !player.grappling && glm::distance(lock, player.center) < hero.grapple_range * 1.5f) {
+        player.grapple_to(past_edge(lock, player.center));
+        return true;
+    }
+    return hero.try_grapple(player, eye, forward);
+}
+
 void Game::step_logic(float dt) {
     if (!opt.scripts) return;
     logic.update(dt);
+    if (hero.active()) brawl.update(dt);
+    // --fight-test also fires the grapnel when the scripts have locked it onto a target.
+    if (opt.fight_test && hero.active() && logic.grapple_lock >= 0 && logic.controls.grapnel && !logic.player_locked() &&
+        player.on_ground && !player.grappling && !brawl.busy()) {
+        glm::vec3 lock;
+        if (logic.grapple_lock_at(lock) && glm::distance(lock, player.center) > 3) player.grapple_to(past_edge(lock, player.center));
+    }
     if (hero.active()) scene.set_object_visible(hero.object(), !logic.player_hidden);
     if (logic.pending_section) {   // LoadLevelSections: reload, keep the player
         const uint32_t section = logic.pending_section;

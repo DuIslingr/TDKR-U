@@ -71,6 +71,8 @@ struct Options {
     float death_screen = -1;    // headless: draw the death screen this long after it opened
     float end_screen = -1;      // headless: draw the end-of-level screen this long after it opened    // headless: draw the level's loading screen, 0 loading, 1 loaded
     bool god = false;           // the player takes no damage
+    bool fight_test = false;
+    std::string did;            // headless: what the player has done from the start (look,move,attack,counter)    // TDKR, headless: Batman strikes at enemies in reach and counters every attack
     bool list_actors = false;   // print combat targets after the level starts
     std::string mission;        // --mission N|NAME: start this mission (its level and start script)
     bool list_missions = false; // print the missions (index, name, level, chapter)
@@ -90,6 +92,7 @@ struct Options {
     float every = 0;          // headless: also save a frame every this many seconds of the run
     std::string spawn_at;
     std::vector<std::string> exec;
+    std::vector<std::pair<float, std::string>> exec_at;   // --exec-at T:LUA: run at T seconds into a headless run
     std::vector<std::string> hide_models;
     bool zones = true;
     int section = 1;

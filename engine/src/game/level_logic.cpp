@@ -321,6 +321,7 @@ void LevelLogic::start(StartMode mode) {
     if (mode != StartMode::Section) quests.load(scene.level(), gol);
     mission_zone = -1;
     walkers_.clear();
+    attack_targets.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
     player_did = {};
     play_time = 0, player_speed = 0, last_interaction = -1, camera_anim = -1, weather = false, player_hidden = false;
     last_player_ = player.center;
@@ -592,7 +593,8 @@ void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
 }
 
 void LevelLogic::enable_controls(bool on) {
-    controls.move = controls.rotate = controls.jump = controls.combat = controls.grapnel = controls.counter = controls.gadgets = on;
+    controls.move = controls.rotate = controls.jump = controls.combat = controls.grapnel = controls.counter = controls.gadgets =
+        controls.silent = on;
     controls.shoot = controls.aim = controls.rush = on;
     hud_enabled = on;
 }

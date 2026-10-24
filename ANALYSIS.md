@@ -272,12 +272,28 @@ TDKR's own natives are in `engine/src/game/tdkr_api.cpp`; the constants (`STATE_
 - **Cameras**: `PlayCameraAnim(object, clip, loop[, wait])` makes the object's animated camera the view
   (`CCameraMgr::SetMaxCamera`) until `EndCinematic` / `CameraSwitchToPlayer`.
 
+- **Fights** (`engine/src/game/brawl.cpp`, a simplification of CMeleeComponent / CNpcAIComponent): the state sets
+  carry everything they need. Batman's light strikes are `Batman_Attack_LS*`, his counters
+  `Combat_Attack_0x_<Jab|Cross|Kick>Counter` against the enemy's `Enemy_Hurt_0x_*Counter`, the enemy attacks
+  `Enemy_Attack_01_Jab` .., their hurts `Enemy_Hurt_01_Jab` .., death `Enemy_Cross_Death`; the silent takedown is
+  `Silent_Takedown_Choke_Attacker` / `_Victim` (mask 0x800, STATE_TYPE_SPECIAL, which the tutorial tests), the leap
+  from above `Gargoyle_Jump_Fall_On_Enemy_Start` .. `Gargoyle_Jump_Land_On_Enemy` / `Silent_Takedown_From_Gargoyle`.
+  `NPCAttackTarget(enemy, 0)` (or stance "Aggressive") sets an enemy on Batman. `IsCounterAttackControlEnabled` is
+  `CHUDDisplay::IsUIButtonEnabled(5, 7)`: the scripts allow the counter *and* an attack can be countered now (the
+  tutorial freezes time on it). `HasPlayerAttacked` is a strike, not a takedown. `ActorGrapnelEnable` is
+  `SetTargetable`; `GrapplingLockTarget(wp)` sends the next grapnel shot to a waypoint.
+- **Objective markers** (`ObjectiveAdd(object, kind)`): one copy of the HUD's `ObjectiveBtn` (`hudAS.mNPCIcon`) per
+  object, on the frame of its kind (`kill`, `objective`, `follow`, `talk`, `sideObjective`, ...; `<kind>_arrow` at the
+  screen's edge when off screen) with the distance in `DistanceToObjectiveText`.
+
 **The tutorial** (mission 0) now runs from its scripts: trigger 900161 enables quest 222; its `InitQuest` hides
 Batman for the stand-in on the gargoyle (900281) and enables 900207, whose `Always` spawns the street's NPCs and
 traffic and plays camera 900283 under Alfred's lines (subtitles in the `mCinematicHUD` bar); `EndCinematic`, the
-limo drives off along its waypoints, `SetQuestAccepted(222)`, and `_Running` steps through the prompts (look around,
-move to the checkpoint, ...). Still missing on that path: melee and the enemies' AI (the snipers stand still), the
-objective markers over objects, the dialog portraits, sounds and music, traffic and the monorail.
+limo drives off along its waypoints, `SetQuestAccepted(222)`, and `_Running` steps through the prompts: look around,
+the checkpoints, the silent takedown on sniper 900510, the leap onto 900592, the grapnel to the next roof, the two
+guards (strike, counter), the grapnel sniper, up to the vantage point for the glide. A headless run plays it with
+`--did look,move --fight-test` and a few `--exec-at` teleports in place of walking. Still missing on that path: the
+snipers' shooting, the grapnel pull on an enemy, the dialog portraits, sounds and music, traffic and the monorail.
 
 **Controller prompts** (Android 1.1.6, `ShowObjectiveMessage`): with a PowerA pad connected, ids starting
 `STR_TUTORIAL`, `STR_SAVE_LUCIUS_OBJ_6` and `STR_TURBULENCE_THIEF_MINIGAME` get `_POWER_A` inserted after that

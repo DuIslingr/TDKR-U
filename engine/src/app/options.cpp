@@ -32,6 +32,12 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--every") o.every = std::stof(next());
         else if (a == "--spawn-at") o.spawn_at = next();
         else if (a == "--exec") o.exec.push_back(next());
+        else if (a == "--exec-at") {
+            const std::string v = next();
+            const size_t colon = v.find(':');
+            if (colon == std::string::npos) throw std::runtime_error("--exec-at needs T:LUA");
+            o.exec_at.push_back({std::stof(v.substr(0, colon)), v.substr(colon + 1)});
+        }
         else if (a == "--effect") o.effects.push_back(next());
         else if (a == "--sound-check") o.sound_check = true;
         else if (a == "--touch") o.touch = true;
@@ -66,6 +72,8 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--end-screen") o.end_screen = std::stof(next());
         else if (a == "--touch-test") o.touch_test = std::stof(next()), o.touch = true;
         else if (a == "--god") o.god = true;
+        else if (a == "--fight-test") o.fight_test = true;
+        else if (a == "--did") o.did = next();
         else if (a == "--list-actors") o.list_actors = true;
         else if (a == "--mission") o.mission = next(), o.level_given = true;
         else if (a == "--list-missions") o.list_missions = true;

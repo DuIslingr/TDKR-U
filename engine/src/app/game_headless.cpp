@@ -226,6 +226,12 @@ int Game::run_screenshot() {
             if (opt.scripts && o.look.x != 0) logic.player_did.look = true;   // the tutorial's checks
             if (opt.scripts && (o.forward != 0 || o.right != 0)) logic.player_did.move = true;
         }
+        if (opt.scripts && !opt.did.empty()) {   // --did: the tutorial's checks see these done
+            logic.player_did.look = logic.player_did.look || opt.did.find("look") != std::string::npos;
+            logic.player_did.move = logic.player_did.move || opt.did.find("move") != std::string::npos;
+        }
+        for (const auto& [at, code] : opt.exec_at)   // --exec-at: scripted steps of a test run
+            if (opt.scripts && t <= at && t + kPhysicsStep > at) logic.exec(code);
         if (opt.scripts) logic.advance_real_time(kPhysicsStep);   // QTE bookkeeping (headless keeps full speed)
         if (float ly, lp; opt.scripts && logic.look_target(ly, lp)) player.yaw = ly, player.pitch = lp;   // PlayerLookTo
         if (opt.scripts) player.eye_height = logic.in_mech() ? 7.4f : 0.75f;
@@ -336,6 +342,10 @@ int Game::run_screenshot() {
         if (!save_wav(rendered, logic.audio->rate(), opt.sound_render)) throw std::runtime_error("cannot write " + opt.sound_render);
         std::printf("wrote %s (%.1f s of sound)\n", opt.sound_render.c_str(), double(rendered.size() / 2) / logic.audio->rate());
     }
+    if (opt.trace_scripts)
+        for (const LevelLogic::ObjectiveMarker& m : logic.objective_markers)
+            if (const LevelLogic::Object* o = logic.object(m.id))
+                std::printf("marker: %d %s %s at (%.1f %.1f %.1f)\n", m.id, m.text.c_str(), o->type.c_str(), o->position.x, o->position.y, o->position.z);
     if (opt.trace_scripts && hero.active())
         std::printf("hero: at (%.1f %.1f %.1f), %s\n", player.center.x, player.center.y, player.center.z,
                     logic.player_hidden ? (scene.object_hidden(hero.object()) ? "hidden" : "hidden by script but drawn") : "shown");

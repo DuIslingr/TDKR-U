@@ -44,6 +44,10 @@ public:
     float grapple_range = 50.0f, grapple_cone = 25.0f, grapple_inset = 0.7f;
     size_t grapple_edges() const { return edges_.size(); }
 
+    // An action (a strike, a counter, a takedown, a hurt): its clip plays once instead of the
+    // movement's, Batman facing `yaw`. False if the body has no such clip.
+    bool act(Scene& scene, const std::string& clip, float yaw);
+    bool acting() const { return acting_; }
     bool active() const { return object_ != kNone; }
     size_t object() const { return object_; }
     const std::string& clip() const { return clip_; }
@@ -58,6 +62,7 @@ private:
     bool have_last_ = false;
     bool was_on_ground_ = true;
     bool was_gliding_ = false, was_grappling_ = false;
+    bool acting_ = false;
     uint32_t grapples_seen_ = 0;
     std::vector<GrappleEdge> edges_;
     void show_cape(Scene& scene, bool spread);

@@ -310,6 +310,29 @@ quest (834). A headless run plays all of it in about 220 game seconds with `--di
 `--exec-at` teleports (and `ActorLookTo(0, ring)` to steer the glide) in place of the player. Still missing: the
 dialog portraits, sounds and music, traffic and the monorail, the snipers' laser sights.
 
+**Mission 1** (chapter 1.2, quest 834 "From the bar to the Stock Exchange"; `--mission 1`) runs from its scripts to its
+end: the intro (TDKR's cinematic object: script camera keys), the binoculars over Joe's Bar, the police raid and the
+explosions, the street fight, the batarang lesson, the thug Selina kicks down, the conversation in the alley, the cop,
+Alfred's call; then `Completed` and the main story's quest 836. What it needed:
+
+- **Cinematic objects** (`CCinematicComponent` `0x17AC851F`): `[0]` length ms, `[2]` speed, `[6]` script tracks
+  (`Obj<id>_<track>_<n>_OnScriptEvent`), `[7]` camera tracks (`'Linear'`: `[ms, end, position, target]` relative to the
+  object, interpolated between keys; `CCinematicComponent::UpdateCamera`), `[8]` per-object clips
+  (`[clip, start, speed, loop, length]`). `StartCinematicObject` returns `2, length` without waiting;
+  `PlayAnimation(object, clip, wait, loop)` waits only when asked.
+- **The binoculars** (`SetHudState('Binoculars')`, `StartGadgetZoom`, `GadgetZoomTarget(target, k, ms, ms, ?, dx, dy, dz)`,
+  `StopGadgetZoom(ms)`; `PlayerComponent::*GadgetModeCinematic`): the camera starts at Batman's eye, looks at each
+  target and moves `k` of the way towards it over `ms`, seen through the HUD's `Binoculars` frame (`BinocularsHudMC`,
+  stretched across the screen) in night vision (a green-tinted grey).
+- **Conversation shots** (`CameraFollowObject(camera, node, dx, dy, dz, ?, target, node, dx, dy, dz, ?, ms)`): the
+  camera at an object 1.6 m up plus the offset (the scripts' eye-level dummies carry -1.6), looking at another plus its
+  offset, cut (`ms` 0) or panned. `IsActorLookingAt(a, b, angle)` passes `angle` to `cosf` as it is (radians).
+- `Enable()` / `Disable()` without an object act on the script's own; `KillActor(actor, state)` plays that death
+  state; enemies are those whose NPC AI component (`0x0113F791`) has `[1]` set (behaviour `[0]`: 0 ranged, 2 melee,
+  1 sniper, 6 police, 7 pedestrian, ...). The batarang: `SetWeaponAmmo("Batarang_01", n)`, `SetBatarangControlEnable`,
+  `Batarang_Throw`. `GetQuestsWithStatus(name)` returns the quest objects in that status. TDKR's effect component
+  (`0x2CA13C06`): effect, ?, node, autostart. Batman stays under physics in cinematics (he is seen in them).
+
 **Controller prompts** (Android 1.1.6, `ShowObjectiveMessage`): with a PowerA pad connected, ids starting
 `STR_TUTORIAL`, `STR_SAVE_LUCIUS_OBJ_6` and `STR_TURBULENCE_THIEF_MINIGAME` get `_POWER_A` inserted after that
 prefix (an Xperia Play gets `_XPERIA`, or `_XPERIA_JP` in Japan). The PowerA layout is the Xbox one: A jump /

@@ -58,7 +58,8 @@ forward first, `--grapple-test SECONDS` to fire the grapnel after 1 s). In the w
 Batman, Shift to sprint, Space to jump (again in the air to glide; while gliding W dives, Shift+W plunges), F to grapple,
 E to use, the left / right buttons to strike / counter (the tutorial checks for them; there is no melee yet).
 A gamepad works too, laid out like the Android build's PowerA pad: left stick moves, right stick looks, A jumps / glides,
-left stick click sprints, right trigger grapples, X strikes, Y counters, Start pauses; in the menus the D-pad or left stick moves, A selects,
+left stick click sprints, right trigger grapples, X strikes, Y counters, B throws the batarang (Q on the keyboard),
+Start pauses; in the menus the D-pad or left stick moves, A selects,
 B goes back. With a pad connected (or `--gamepad`), tutorial prompts name its buttons.
 `--mission N|NAME` starts a mission as the menus do (its level, then its start script); `--list-missions` lists them.
 The level scripts run on the game's own script API (`engine/src/game/tdkr_api.cpp`; `--trace-scripts` logs what they

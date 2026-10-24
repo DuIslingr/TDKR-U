@@ -50,6 +50,7 @@ public:
             float angle = 0, distance = 0;
         };
         std::vector<Marker> markers;
+        std::string frame = "HUD";       // SetHudState: the movie's frame (HUD, Binoculars, ...)
     };
     void update(float dt, const State& state, int width, int height);
     // The objective popup (objectiveMessage_popin): show with text, or hide.
@@ -77,6 +78,10 @@ private:
     void dialog(const std::string& text);
     bool cinematic_ = false;
     bool win_open_ = false;
+    // CHUDDisplay::SetHudState: another of the movie's frames instead of the HUD (the binoculars'
+    // visor); back on "HUD" the HUD is set up again.
+    void set_frame(const std::string& frame);
+    std::string frame_ = "HUD";
     // CHUDDisplay::AddObjectiveToScene / UpdateObjectivesPosition: one copy of the
     // ObjectiveBtn icon (hudAS.mNPCIcon) per marker, on the frame of its kind.
     void update_markers(const std::vector<State::Marker>& markers);

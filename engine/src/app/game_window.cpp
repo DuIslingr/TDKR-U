@@ -455,6 +455,10 @@ void Game::handle_event(const SDL_Event& e) {
                              (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH);
         if (strike) brawl.strike();
         if (counter) brawl.counter();
+        // The batarang: Q, or B on a pad.
+        if ((e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_Q && !e.key.repeat) ||
+            (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_EAST))
+            brawl.throw_batarang(cam.position, cam.forward());
     }
     // Grenades or mines on the grenade button (the original's swipe), and the
     // detonation of the mines placed.
@@ -463,7 +467,7 @@ void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT)
         fire_held = true, logic.qte_press("fire"), logic.limited_tap();
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_TAB && !e.key.repeat && logic.controls.powers) combat.cycle_power();
-    if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_Q && !e.key.repeat) {
+    if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_Q && !e.key.repeat && !hero.active()) {   // (TDKR: the batarang)
         if (!logic.qte_press("repel") && logic.controls.powers) combat_in.power = true;
     }
     if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && e.button.button == SDL_BUTTON_LEFT) fire_held = false;
@@ -663,6 +667,8 @@ void Game::run_window() {
                 // point may float in the void).
                 if (!(opt.scripts && logic.cinematic_active()) && !seated && !(opt.scripts && logic.limited_step(in.right, kPhysicsStep)))
                     player.update(scene.collision(), in, kPhysicsStep);
+                else if (hero.active() && !seated && !(opt.scripts && logic.limited_active()))   // TDKR: Batman is seen in cinematics
+                    player.update(scene.collision(), PlayerInput{}, kPhysicsStep);
                 hero.update(scene, player, in, kPhysicsStep);
                 step_logic(kPhysicsStep);
             }

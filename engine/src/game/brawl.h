@@ -54,6 +54,11 @@ public:
     // at (within 40 m, a few degrees, in sight); -1 none.
     int pull_target(const glm::vec3& eye, const glm::vec3& forward) const;
     bool pull(int id);   // fire the grapnel at it
+    // The batarang (Batman_05_Batarang: Batarang_Throw) at the enemy the view aims at (or the
+    // nearest ahead), within 30 m and in sight, if the scripts allow it and there is ammo
+    // ("Batarang_01"); it lands a moment later for a heavy hit.
+    int batarang_target(const glm::vec3& eye, const glm::vec3& forward) const;
+    bool throw_batarang(const glm::vec3& eye, const glm::vec3& forward);
     float batman_health = 100;
     bool auto_fight = false;   // headless tests: strike at enemies in reach, counter every attack
 
@@ -97,6 +102,8 @@ private:
     float leap_t_ = 0, leap_len_ = 0;
     int leap_victim_ = -1;
     int combo_ = 0;
+    int batarang_target_ = -1;
+    float batarang_flight_ = -1;   // seconds until it lands
     struct Pull {
         int id = -1;
         glm::vec3 from{0}, to{0};

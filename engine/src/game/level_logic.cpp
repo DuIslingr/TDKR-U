@@ -25,9 +25,14 @@ constexpr int kCompInteractive = 0x34747EBE;   // CInteractionComponent: radius,
 constexpr int kCompDoor = 0x61;           // CDoorAIComponent
 constexpr int kCompEffects = 0x92;        // CEffectsComponent: [[effect, node, autostart, ...], ...]
 constexpr int kCompEffectBuiltIn = 0xAE;  // CEffectBuiltInComponent: effect, ?, node, autostart, ?
+constexpr int kCompEffectTdkr = 0x2CA13C06;   // TDKR's CEffectComponent: effect ("None": none), ?, node, autostart, ...
 constexpr int kCompBuiltinBox = 0x729EC572;        // CBoxNodeComponent: width, depth, height
 constexpr int kCompBuiltinCylinder = 0x749126C3;   // CCylinderNodeComponent: radius, height
 constexpr int kCompCinematic = 0x41;      // CCinematicComponent: length ms, ..., [11] script event tracks, [13] object clips
+// TDKR's CCinematicComponent: [0] length ms, [1] ?, [2] speed, [3] ?, [4] [5] ?, [6] script tracks
+// ([[[start, end, script], ...]]), [7] camera tracks ([[type, [[ms, end ms, position, target], ...]]],
+// relative to the object), [8] object clips ([[object, [[clip, start, speed, loop, length]], ...]]).
+constexpr int kCompCinematicTdkr = 0x17AC851F;
 constexpr int kCompPath = 0x15;            // CPathComponent: id, ?, first waypoint, last waypoint, ?
 constexpr int kCompMotionOnPath = 0x16;    // CMotionOnPathComponent: node, path id, max speed, accel, brake, loop
 
@@ -209,7 +214,9 @@ void LevelLogic::read_effects(Object& obj, const LevelObject& o) {
         return resolved_template(g->second, gol, c);
     };
     auto str = [](const Value& v) { return v.type == Value::String ? v.s : std::string(); };
-    if (const Value* b = comp(kCompEffectBuiltIn); b && b->size() >= 4) {
+    if (const Value* t = comp(kCompEffectTdkr); t && t->size() >= 4) {
+        if (str((*t)[0]) != "None" && !str((*t)[0]).empty()) obj.effects.push_back({str((*t)[0]), str((*t)[2]), (*t)[3].i != 0});
+    } else if (const Value* b = comp(kCompEffectBuiltIn); b && b->size() >= 4) {
         obj.effects.push_back({str((*b)[0]), str((*b)[2]), (*b)[3].i != 0});
     } else if (const Value* l = comp(kCompEffects); l && l->size() >= 1) {
         for (const Value& e : (*l)[0].list)
@@ -326,6 +333,8 @@ void LevelLogic::start(StartMode mode) {
     player_did = {};
     play_time = 0, player_speed = 0, last_interaction = -1, camera_anim = -1, weather = false, player_hidden = false;
     win = {};
+    gadget_ = {}, hud_state = "HUD", script_cam_ = {};
+    map_icons.clear();
     last_player_ = player.center;
     control_glow.clear();
     for (auto& [id, o] : objects_)   // vehicles (CComponentVehicleCar) and their parts
@@ -596,7 +605,7 @@ void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
 
 void LevelLogic::enable_controls(bool on) {
     controls.move = controls.rotate = controls.jump = controls.combat = controls.grapnel = controls.counter = controls.gadgets =
-        controls.silent = on;
+        controls.silent = controls.batarang = on;
     controls.shoot = controls.aim = controls.rush = on;
     hud_enabled = on;
 }
@@ -969,6 +978,36 @@ void collect_events(const Value& v, std::vector<std::pair<float, std::string>>& 
 bool LevelLogic::start_cinematic(int id) {
     Object* o = object(id);
     if (!o) return false;
+    if (const Value* t = object_component(*o, kCompCinematicTdkr); t && t->size() >= 9) {
+        const Value& c = *t;
+        end_cinematic(id);
+        Cinematic cin;
+        cin.id = id, cin.index = o->index;
+        cin.duration = c[0].as_float();
+        cin.was_visible = o->visible;
+        cin.origin = o->position;
+        collect_events(c[6], cin.events);
+        std::sort(cin.events.begin(), cin.events.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (const Value& track : c[7].list)
+            if (track.size() >= 2)
+                for (const Value& k : track[1].list)
+                    if (k.size() >= 8)
+                        cin.camera.push_back({k[0].as_float(), {k[2].as_float(), k[3].as_float(), k[4].as_float()},
+                                              {k[5].as_float(), k[6].as_float(), k[7].as_float()}});
+        std::sort(cin.camera.begin(), cin.camera.end(), [](const auto& a, const auto& b) { return a.ms < b.ms; });
+        if (!o->enabled) enable(*o, true);
+        for (const Value& e : c[8].list) {   // each object's first clip (the tracks hold one)
+            if (e.size() < 2 || e[1].size() == 0 || e[1][0].size() < 4) continue;
+            Object* obj = object(e[0].i);
+            if (!obj || obj->index == std::numeric_limits<size_t>::max() || obj == o) continue;   // (the placeholder's own idle)
+            if (!obj->visible) show(*obj, true);
+            scene.play_clip(obj->index, e[1][0][0].s, e[1][0][3].i != 0);
+        }
+        if (trace) log("cinematic " + std::to_string(id) + " for " + std::to_string(int(cin.duration)) + " ms, " +
+                       std::to_string(cin.events.size()) + " events, " + std::to_string(cin.camera.size()) + " camera keys");
+        cinematics_.push_back(std::move(cin));
+        return true;
+    }
     const Value* c = object_component(*o, kCompCinematic);
     if (!c || c->size() < 1) return false;
     end_cinematic(id);
@@ -1029,7 +1068,87 @@ void LevelLogic::update_cinematics(float dt) {
     }
 }
 
+void LevelLogic::script_camera(const glm::vec3& position, const glm::vec3& target, float ms) {
+    ScriptCam& c = script_cam_;
+    if (c.on && ms > 0) {   // from where it is now
+        const float k = c.length > 0 ? std::min(c.t / c.length, 1.0f) : 1.0f, e = k * k * (3 - 2 * k);
+        c.from_position = glm::mix(c.from_position, c.to_position, e), c.from_target = glm::mix(c.from_target, c.to_target, e);
+    } else {
+        c.from_position = position, c.from_target = target;
+    }
+    c.to_position = position, c.to_target = target;
+    c.t = 0, c.length = ms / 1000.0f, c.on = true;
+}
+
+void LevelLogic::gadget_start() {
+    gadget_ = {};
+    gadget_.on = true;
+    gadget_.eye = player.eye();
+    gadget_.position = gadget_.from_position = gadget_.to_position = gadget_.eye;
+    gadget_.target = gadget_.from_target = gadget_.to_target = gadget_.eye + player.view_forward();
+    gray_effect(300, glm::vec3(0.35f, 1.0f, 0.45f), false);   // night vision
+}
+
+void LevelLogic::gadget_target(const glm::vec3& target, float zoom, float ms) {
+    if (!gadget_.on) gadget_start();
+    Gadget& g = gadget_;
+    g.from_position = g.position, g.from_target = g.target;
+    g.to_target = target;
+    g.to_position = g.eye + (target - g.eye) * std::clamp(zoom, 0.0f, 0.95f);
+    g.t = 0, g.length = std::max(ms, 1.0f) / 1000.0f;
+}
+
+void LevelLogic::gadget_stop(float ms) {
+    if (!gadget_.on) return;
+    gadget_.on = false;
+    gray_effect(ms, glm::vec3(0.35f, 1.0f, 0.45f), true);
+}
+
+void LevelLogic::update_gadget(float dt) {
+    Gadget& g = gadget_;
+    if (!g.on) return;
+    g.t = std::min(g.t + dt, g.length);
+    const float k = g.length > 0 ? g.t / g.length : 1.0f, e = k * k * (3 - 2 * k);
+    g.position = glm::mix(g.from_position, g.to_position, e);
+    g.target = glm::mix(g.from_target, g.to_target, e);
+}
+
 bool LevelLogic::cinematic_view(Scene::CameraView& out) const {
+    if (script_cam_.on) {
+        const ScriptCam& c = script_cam_;
+        const float k = c.length > 0 ? std::min(c.t / c.length, 1.0f) : 1.0f, e = k * k * (3 - 2 * k);
+        out.position = glm::mix(c.from_position, c.to_position, e);
+        const glm::vec3 d = glm::mix(c.from_target, c.to_target, e) - out.position;
+        out.forward = glm::length(d) > 1e-4f ? glm::normalize(d) : glm::vec3(0, 1, 0);
+        out.up = glm::vec3(0, 0, 1);
+        out.fov = glm::radians(55.0f);
+        return true;
+    }
+    if (gadget_.on) {   // the binoculars
+        out.position = gadget_.position;
+        const glm::vec3 d = gadget_.target - gadget_.position;
+        out.forward = glm::length(d) > 1e-4f ? glm::normalize(d) : glm::vec3(0, 1, 0);
+        out.up = glm::vec3(0, 0, 1);
+        out.fov = glm::radians(50.0f);
+        return true;
+    }
+    for (auto it = cinematics_.rbegin(); it != cinematics_.rend(); ++it) {   // TDKR's script cameras
+        const auto& keys = it->camera;
+        if (keys.empty()) continue;
+        size_t k = 0;
+        while (k + 1 < keys.size() && keys[k + 1].ms <= it->time) ++k;
+        glm::vec3 p = keys[k].position, t = keys[k].target;
+        if (k + 1 < keys.size() && it->time > keys[k].ms) {   // between two keys: linear
+            const float f = std::clamp((it->time - keys[k].ms) / std::max(keys[k + 1].ms - keys[k].ms, 1.0f), 0.0f, 1.0f);
+            p = glm::mix(p, keys[k + 1].position, f), t = glm::mix(t, keys[k + 1].target, f);
+        }
+        out.position = it->origin + p;
+        const glm::vec3 d = t - p;
+        out.forward = glm::length(d) > 1e-4f ? glm::normalize(d) : glm::vec3(0, 1, 0);
+        out.up = glm::vec3(0, 0, 1);
+        out.fov = glm::radians(60.0f);
+        return true;
+    }
     if (camera_anim >= 0)
         if (auto it = objects_.find(camera_anim); it != objects_.end() && scene.camera_view(it->second.index, out)) return true;
     for (auto it = cinematics_.rbegin(); it != cinematics_.rend(); ++it)
@@ -1646,6 +1765,8 @@ void LevelLogic::update(float dt) {
     for (auto& m : messages_) m.seconds_left -= dt;
     while (!messages_.empty() && messages_.front().seconds_left <= 0) messages_.pop_front();
     quests.update(dt);
+    update_gadget(dt);
+    if (script_cam_.on) script_cam_.t += dt;
     update_walkers(dt);
     update_triggers();
     update_doors(dt);

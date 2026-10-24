@@ -119,6 +119,22 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         screen_.update(dt, width, height);
         return;
     }
+    if (state.frame != frame_) set_frame(state.frame);
+    if (frame_ != "HUD") {   // another frame: its own clips, and the subtitles
+        // The visor covers the stage; stretched across the whole screen (x' = x * k + left).
+        if (swf::Instance* visor = p.find("BinocularsHudMC"); visor && p.scale() > 0) {
+            const float stage = float(width) - 2 * p.offset().x;
+            const float k = stage > 0 ? float(width) / stage : 1.0f, left = -p.offset().x / p.scale() * 20.0f;
+            auto [base, added] = left_base_.try_emplace("BinocularsHudMC", visor->matrix.tx);
+            visor->matrix.a = k;
+            visor->matrix.tx = base->second * k + left;
+            visor->accept_moves = false;
+        }
+        if (state.cinematic != cinematic_) cinematic(state.cinematic);
+        if (state.dialog != dialog_) dialog(state.dialog);
+        screen_.update(dt, width, height);
+        return;
+    }
     if (state.cinematic != cinematic_) cinematic(state.cinematic);
     update_markers(state.cinematic || !state.visible ? std::vector<State::Marker>{} : state.markers);
     if (state.dialog != dialog_) dialog(state.dialog);
@@ -171,6 +187,21 @@ void FlashHud::checkpoint_message(const std::string& text) {
     p->set_visible("CheckpointMessageInstance", true);
     p->invoke("CheckpointMessageInstance.CheckpointText", "setText", {swf::Value(text)});
     p->goto_and_play("CheckpointMessageInstance", "Anim");
+}
+
+void FlashHud::set_frame(const std::string& frame) {
+    swf::Player* p = screen_.player();
+    if (!p) return;
+    frame_ = frame;
+    if (frame == "HUD") {
+        for (auto& [slot, last] : buttons_) last = {"", -1};
+        set_up();
+        width_ = height_ = 0;
+        return;
+    }
+    p->goto_and_stop("", frame);
+    // The binoculars in a cinematic: the visor alone, not its zoom slider and controls.
+    for (const char* hidden : {"sZoom", "zoomInterface", "analyzer"}) p->set_visible(hidden, false);
 }
 
 void FlashHud::close_win() {

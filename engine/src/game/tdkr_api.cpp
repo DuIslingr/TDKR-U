@@ -66,6 +66,26 @@ int api_is_quest(lua_State* L) {
     lua_pushboolean(L, st == A || st == B || st == C);
     return 1;
 }
+// GetQuestsWithStatus("enabled" | "active" | "completed" | "failed" | "canceled"): the quest objects
+// in that status (2, 3, 7, 4, 9), as values.
+int api_get_quests_with_status(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const std::string name = str_arg(L, 1);
+    const int status = name == "enabled" ? Quests::Initialising : name == "active" ? Quests::Running : name == "completed" ? Quests::Completed
+                     : name == "failed" ? Quests::Failed : name == "canceled" ? Quests::Canceled : Quests::Disabled;
+    int n = 0;
+    for (const Quests::Quest& q : c.quests.all())
+        if (q.status == status) lua_pushinteger(L, q.object), ++n;
+    return n;
+}
+int api_add_map_icon(lua_State* L) {   // AddGenericObjectOnMap(object, icon, ...)
+    ctx(L).map_icons[int_arg(L, 1)] = str_arg(L, 2);
+    return 0;
+}
+int api_remove_map_icon(lua_State* L) {   // RemoveGenericObjectFromMap(object)
+    ctx(L).map_icons.erase(int_arg(L, 1));
+    return 0;
+}
 int api_enable_main_story(lua_State* L) {
     ctx(L).quests.start_story();
     return 0;
@@ -298,6 +318,29 @@ int api_get_global_var(lua_State* L) {   // -9999 when unknown
 
 // --- objects -------------------------------------------------------------------------------
 
+// Enable / Disable(object): without one, the script's own object (CLuaScriptManager's current).
+int api_enable_object(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    int id = int_arg(L, 1);
+    if (lua_gettop(L) == 0) {
+        lua_getglobal(L, "CurrentActor");
+        id = int(lua_tointeger(L, -1));
+        lua_pop(L, 1);
+    }
+    if (LevelLogic::Object* o = c.object(id)) c.enable(*o, lua_tointeger(L, lua_upvalueindex(2)) != 0);
+    return 0;
+}
+// SetWeaponAmmo(weapon, count) / GetWeaponAmmo(weapon) (the player's inventory).
+int api_set_weapon_ammo(lua_State* L) {
+    ctx(L).weapon_ammo[str_arg(L, 1)] = int_arg(L, 2);
+    return 0;
+}
+int api_get_weapon_ammo(lua_State* L) {
+    const auto& a = ctx(L).weapon_ammo;
+    auto it = a.find(str_arg(L, 1));
+    lua_pushinteger(L, it == a.end() ? 0 : it->second);
+    return 1;
+}
 // ShowObject / HideObject: 0 is Batman.
 int api_show_object(lua_State* L) {
     LevelLogic& c = ctx(L);
@@ -400,6 +443,24 @@ int api_actor_is_in_state_type(lua_State* L) {
     lua_pushboolean(L, (now & mask) != 0);
     return 1;
 }
+// IsActorLookingAt(actor, target, angle) (CGameObject::IsLookingAt): the actor's facing and the way to
+// the target, flat, are closer than cos(angle). (The game passes the number to cosf as it is.)
+int api_is_actor_looking_at(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    glm::vec3 from, to;
+    if (!position_of(c, int_arg(L, 1), from) || !position_of(c, int_arg(L, 2), to)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    float yaw = c.player.yaw;
+    if (int_arg(L, 1) != 0)
+        if (const LevelLogic::Object* o = c.object(int_arg(L, 1))) yaw = o->yaw;
+    const glm::vec2 facing(-std::sin(glm::radians(yaw)), std::cos(glm::radians(yaw)));
+    glm::vec2 d(to - from);
+    d = glm::length(d) > 1e-4f ? glm::normalize(d) : glm::vec2(0);
+    lua_pushboolean(L, glm::dot(facing, d) > std::cos(float(lua_tonumber(L, 3))));
+    return 1;
+}
 // ActorLookTo(actor, target): the actor turns to face the target (CGameObject::LookAt).
 int api_actor_look_to(lua_State* L) {
     LevelLogic& c = ctx(L);
@@ -407,7 +468,7 @@ int api_actor_look_to(lua_State* L) {
     if (!position_of(c, int_arg(L, 2), at)) return 0;
     if (int_arg(L, 1) == 0) {
         const glm::vec3 d = at - c.player.center;
-        c.player.yaw = glm::degrees(std::atan2(-d.x, d.y));
+        c.player.yaw = c.face_request = glm::degrees(std::atan2(-d.x, d.y));
         return 0;
     }
     LevelLogic::Object* o = c.object(int_arg(L, 1));
@@ -456,9 +517,10 @@ int api_kill_actor(lua_State* L) {
     if (!o || o->dead) return 0;
     o->dead = true;
     o->health = 0;
-    ActorState st;
-    if (o->index != kNoIndex && find_state(c.gol, object_type(c, *o), "Combat_death", st) && !st.clips.empty())
-        c.scene.play_clip(o->index, st.clips[0], false);
+    // Its death: the state named, else its type's death states.
+    const std::string named = lua_gettop(L) >= 2 ? str_arg(L, 2) : "";
+    for (const std::string& state : {named, std::string("Enemy_Cross_Death"), std::string("Combat_death"), std::string("Death")})
+        if (!state.empty() && c.actor_state(*o, state, true)) break;
     std::erase_if(c.objective_markers, [&](const LevelLogic::ObjectiveMarker& m) { return m.id == o->id; });
     c.runtime_.send_event("Dead", o->id);
     return 0;
@@ -563,11 +625,91 @@ int api_camera_look_at(lua_State* L) {
     c.player_look_to(at, std::max(ms, 1.0f) / 1000.0f);   // the view turns there, then is the player's again
     return 0;
 }
+// CameraFollowObject(camera, node, dx, dy, dz, ?, target, node, dx, dy, dz, ?, ms): the view from a
+// point (an object, usually a camera dummy, plus the offset) at another; over ms from the last (0: a cut).
+int api_camera_follow_object(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    glm::vec3 from, to;
+    if (!position_of(c, int_arg(L, 1), from) || !position_of(c, int_arg(L, 7), to)) return 0;
+    const glm::vec3 a(float(lua_tonumber(L, 3)), float(lua_tonumber(L, 4)), float(lua_tonumber(L, 5)));
+    const glm::vec3 b(float(lua_tonumber(L, 9)), float(lua_tonumber(L, 10)), float(lua_tonumber(L, 11)));
+    // The camera's point is 1.6 m up (the scripts take that off for their eye-level dummies: -1.6);
+    // the point looked at is as given.
+    c.script_camera(from + a + glm::vec3(0, 0, 1.6f), to + b,
+                    float(lua_tonumber(L, 13)));
+    return 0;
+}
+
 // CameraSwitchToPlayer / CameraSwitchToPlayerResetOrientation([ms]): the player's camera again.
 int api_camera_to_player(lua_State* L) {
     LevelLogic& c = ctx(L);
     c.camera_anim = -1;
+    c.script_camera_off();
     c.camera_to_player(lua_tointeger(L, lua_upvalueindex(2)) == 0);
+    return 0;
+}
+
+// StartCinematicObject(object[, skippable]): its tracks start (it does not wait; it returns 2
+// and its length, as the game's does).
+int api_start_cinematic_object(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (!c.start_cinematic(int_arg(L, 1))) {
+        c.log("StartCinematicObject: no cinematic " + std::to_string(int_arg(L, 1)));
+        return 0;
+    }
+    lua_pushinteger(L, 2);
+    lua_pushinteger(L, lua_Integer(c.cinematic_length(int_arg(L, 1))));
+    return 2;
+}
+int api_end_cinematic_object(lua_State* L) {
+    ctx(L).end_cinematic(int_arg(L, 1));
+    return 0;
+}
+// PlayAnimation(object, clip[, wait, loop]): the object's clip; with `wait` the script waits for it.
+int api_play_animation(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o || o->index == kNoIndex) return 0;
+    Scene::ClipState cs;
+    if (c.scene.play_clip(o->index, str_arg(L, 2), bool_arg(L, 4)) && bool_arg(L, 3) && c.scene.clip_state(o->index, cs)) {
+        lua_pushinteger(L, 2);
+        lua_pushinteger(L, lua_Integer(cs.length));
+        return lua_yield(L, 2);
+    }
+    return 0;
+}
+
+// The binoculars: StartGadgetZoom(), GadgetZoomTarget(object, zoom, ms, ms, ?, dx, dy, dz[, ?, node]),
+// StopGadgetZoom(ms). The point looked at is the object's (an actor's head), plus the offset.
+int api_start_gadget_zoom(lua_State* L) {
+    ctx(L).gadget_start();
+    return 0;
+}
+int api_gadget_zoom_target(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o) return 0;
+    ActorState st;
+    const bool actor = find_state(c.gol, object_type(c, *o), "Idle", st);
+    const glm::vec3 offset(float(lua_tonumber(L, 6)), float(lua_tonumber(L, 7)), float(lua_tonumber(L, 8)));
+    c.gadget_target(o->position + glm::vec3(0, 0, actor ? 1.6f : 0.0f) + offset, float(lua_tonumber(L, 2)), float(lua_tonumber(L, 3)));
+    return 0;
+}
+int api_stop_gadget_zoom(lua_State* L) {
+    ctx(L).gadget_stop(float(lua_tonumber(L, 1)));
+    return 0;
+}
+int api_camera_set_fov(lua_State* L) {   // CameraSetFOV(degrees, ms)
+    ctx(L).set_fov(float(lua_tonumber(L, 1)), float(lua_tonumber(L, 2)));
+    return 0;
+}
+int api_set_hud_state(lua_State* L) {   // SetHudState(frame)
+    ctx(L).hud_state = str_arg(L, 1);
+    return 0;
+}
+// CameraShake(type, amount, ms) (CGameCamera::ShakeCamera).
+int api_camera_shake(lua_State* L) {
+    ctx(L).shake(float(lua_tonumber(L, 3)), std::min(float(lua_tonumber(L, 2)), 3.0f));
     return 0;
 }
 
@@ -577,6 +719,7 @@ int api_end_cinematic(lua_State* L) {
     LevelLogic& c = ctx(L);
     c.cinematic_mode = false;
     c.camera_anim = -1;
+    c.script_camera_off();
     c.camera_to_player(false);
     return 0;
 }
@@ -682,6 +825,9 @@ const Entry kTdkr[] = {
     {"SetQuestAccepted", api_set_quest<Quests::Accepted>},
     {"SetQuestCanceled", api_set_quest<Quests::Canceled>},
     {"GetQuestStatus", api_get_quest_status},
+    {"GetQuestsWithStatus", api_get_quests_with_status},
+    {"AddGenericObjectOnMap", api_add_map_icon},
+    {"RemoveGenericObjectFromMap", api_remove_map_icon},
     {"IsQuestDisabled", api_is_quest<Quests::Disabled>},
     {"IsQuestEnabled", api_is_quest<Quests::Enabled, Quests::Initialising>},
     {"IsQuestRunning", api_is_quest<Quests::Running, Quests::Accepted>},
@@ -733,6 +879,11 @@ const Entry kTdkr[] = {
     {"SetGlobalVar", api_set_global_var},
     {"GetGlobalVar", api_get_global_var},
     {"RegisterGlobalVar", api_register_global_var},
+    {"Enable", api_enable_object, 1},
+    {"Disable", api_enable_object, 0},
+    {"SetWeaponAmmo", api_set_weapon_ammo},
+    {"GetWeaponAmmo", api_get_weapon_ammo},
+    {"SetBatarangControlEnable", api_set_control<&LevelLogic::Controls::batarang>},
     {"ShowObject", api_show_object, 1},
     {"HideObject", api_show_object, 0},
     {"EnableShowObject", api_enable_show, 1},
@@ -745,6 +896,7 @@ const Entry kTdkr[] = {
     {"ActorGetState", api_actor_get_state},
     {"ActorIsInStateType", api_actor_is_in_state_type},
     {"ActorLookTo", api_actor_look_to},
+    {"IsActorLookingAt", api_is_actor_looking_at},
     {"SpawnObject", api_spawn_object},
     {"KillActor", api_kill_actor},
     {"SetActorHealth", api_set_actor_health},
@@ -760,9 +912,22 @@ const Entry kTdkr[] = {
     {"GrapplingLockTarget", api_grappling_lock_target},
     {"PlayCameraAnim", api_play_camera_anim},
     {"CameraLookAt", api_camera_look_at},
+    {"CameraFollowObject", api_camera_follow_object},
     {"CameraSwitchToPlayer", api_camera_to_player, 0},
     {"CameraSwitchToPlayerResetOrientation", api_camera_to_player, 1},
     {"EndCinematic", api_end_cinematic},
+    {"StartGadgetZoom", api_start_gadget_zoom},
+    {"GadgetZoomTarget", api_gadget_zoom_target},
+    {"StopGadgetZoom", api_stop_gadget_zoom},
+    {"SetHudState", api_set_hud_state},
+    {"CameraSetFOV", api_camera_set_fov},
+    // Texture preloads (EngineFunction_1), level-of-detail and collision hints, the dialog's talk
+    // mode: nothing to do here.
+    {"EngineFunction_1", api_nothing},
+    {"SetForceBestLOD", api_nothing},
+    {"EnableActorCollision", api_nothing},
+    {"EnableTalkMode", api_nothing},
+    {"CameraShake", api_camera_shake},
     {"NPCAttackTarget", api_npc_attack_target},
     {"NPCSetStance", api_npc_set_stance},
     {"NPCSetAIBehavior", api_nothing},
@@ -772,6 +937,11 @@ const Entry kTdkr[] = {
     {"ResetAllIgnoredControls", api_reset_ignored_controls},
     {"QTE_AutoGrapnel", api_auto_grapnel},
     {"NPCGoToWaypoint", api_npc_go_to_waypoint},
+    {"NPCGoToPath", api_npc_go_to_waypoint},   // (a path is the chain from its first waypoint)
+    {"StartCinematicObject", api_start_cinematic_object},
+    {"EndCinematicObject", api_end_cinematic_object},
+    {"PlayAnimation", api_play_animation},
+    {"ActorPlayWeaponAnimation", api_nothing},
     {"NPCGoToWaypointWithNavmesh", api_npc_go_to_waypoint},
     {"SetActorSpeedWalk", api_set_actor_speed, 0},
     {"SetActorSpeedRun", api_set_actor_speed, 1},

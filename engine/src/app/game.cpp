@@ -1,5 +1,7 @@
 #include "app/game.h"
 
+#include <cmath>
+
 #include "swf/steps.h"
 
 #include <cstdio>
@@ -456,6 +458,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         FlashHud::State fs;
         fs.visible = !menu.open && !death.open && !end_screen.open;
         fs.cinematic = opt.scripts && logic.player_locked();
+        if (opt.scripts) fs.frame = logic.hud_state;
         // Spoken lines go to the dialog box; "Progress Saved" is the checkpoint notice.
         if (opt.scripts)
             for (const LevelLogic::Message& m : logic.messages())
@@ -727,6 +730,10 @@ void Game::step_logic(float dt) {
     if (!opt.scripts) return;
     logic.update(dt);
     if (hero.active()) brawl.update(dt);
+    if (!std::isnan(logic.face_request)) {   // ActorLookTo(0, ...)
+        hero.face(logic.face_request);
+        logic.face_request = NAN;
+    }
     // --fight-test also fires the grapnel when the scripts have locked it onto a target (an enemy: the pull).
     if (opt.fight_test && hero.active() && logic.grapple_lock >= 0 && logic.controls.grapnel && !logic.player_locked() &&
         player.on_ground && !player.grappling && !brawl.busy()) {

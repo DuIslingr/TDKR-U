@@ -48,6 +48,7 @@ public:
     // movement's, Batman facing `yaw`. False if the body has no such clip.
     bool act(Scene& scene, const std::string& clip, float yaw);
     bool acting() const { return acting_; }
+    void face(float yaw) { facing_ = yaw; }   // turn the body (ActorLookTo(0, ...))
     bool active() const { return object_ != kNone; }
     size_t object() const { return object_; }
     const std::string& clip() const { return clip_; }

@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <string>
 #include <unordered_map>
@@ -69,7 +70,7 @@ public:
         // TDKR (CLevel::Set<Kind>ControlEnable): strikes, the grapnel, the counter button, the
         // gadget wheel. `ignore`: IgnoreControls' directions (IGNORE_CONTROLS_UP 1, DOWN 2,
         // LEFT 4, RIGHT 8) the stick does not push the player.
-        bool combat = true, grapnel = true, counter = true, gadgets = true, silent = true;
+        bool combat = true, grapnel = true, counter = true, gadgets = true, silent = true, batarang = true;
         int ignore = 0;
     } controls;
     // EnableControls(on): every control at once, and the HUD's buttons with them.
@@ -87,6 +88,9 @@ public:
     std::unordered_map<int, int> attack_targets;
     // NPCSetSniper(actor, waypoint, stand ground, sweep): snipers sweeping around a point.
     std::unordered_map<int, int> snipers;   // actor -> the waypoint it watches
+    std::map<std::string, int> weapon_ammo;   // SetWeaponAmmo / GetWeaponAmmo, by weapon name ("Batarang_01")
+    // AddGenericObjectOnMap(object, icon, ?): icons on the minimap (not drawn yet).
+    std::map<int, std::string> map_icons;
     std::string player_action;
     int player_action_mask = 0;
     bool counter_open = false;       // an enemy's attack can be countered now (set by the brawl)
@@ -111,6 +115,7 @@ public:
     int last_interaction = -1;       // the object last used (GetCurrentInteractionObjectID)
     bool weather = false;            // the weather effect (rain) is on
     bool player_hidden = false;      // HideObject(0): Batman is not drawn (a cinematic stand-in plays him)
+    float face_request = NAN;        // ActorLookTo(0, ...): the body's new heading (degrees), for the game
     // SetWinScreen(title, xp, wayne tech, ...): the mission's end screen, for the game to show
     // (the title is the last completed quest's, CQuestManager::GetCurrentMissionWinScreen).
     struct WinScreen {
@@ -129,6 +134,18 @@ public:
     void stop_walking(int id);
     void set_actor_speed(int id, float speed, bool run);
     bool walking(int id) const;
+    // The binoculars in a cinematic (PlayerComponent::StartGadgetModeCinematic / GadgetZoomTarget
+    // Cinematic / StopGadgetModeCinematic): the view from Batman's eye; each target makes the camera
+    // look at it and move `zoom` of the way towards it over `ms`, eased. Seen in night vision.
+    void gadget_start();
+    void gadget_target(const glm::vec3& target, float zoom, float ms);
+    void gadget_stop(float ms);
+    bool gadget_on() const { return gadget_.on; }
+    std::string hud_state = "HUD";   // SetHudState: the HUD movie's frame (HUD, Binoculars, ...)
+    // CameraFollowObject: a script camera at a point looking at another, moving there from where
+    // it was over `ms` (0: a cut), until CameraSwitchToPlayer / EndCinematic.
+    void script_camera(const glm::vec3& position, const glm::vec3& target, float ms);
+    void script_camera_off() { script_cam_.on = false; }
     // PlayCameraAnim: the object whose animated camera holds the view (CCameraMgr's max
     // camera) until CameraSwitchToPlayer; -1 none.
     int camera_anim = -1;
@@ -362,6 +379,11 @@ public:
     // control away and give it back.
     bool start_cinematic(int id);
     void end_cinematic(int id);
+    float cinematic_length(int id) const {   // ms, 0 if it is not playing
+        for (const Cinematic& c : cinematics_)
+            if (c.id == id) return c.duration;
+        return 0;
+    }
     bool cinematic_view(Scene::CameraView& out) const;
     bool player_locked() const;      // no player control (a cinematic is running)
     // The zone of the cinematic holding the view (kNone if none): the view belongs there.
@@ -611,6 +633,14 @@ private:
         size_t next = 0;
         bool was_visible = true;
         bool ending = false;   // past its length: ends next update (its last events run first)
+        // TDKR's script camera (CCinematicComponent::UpdateCamera): keys of a position and a
+        // point looked at, relative to the cinematic object, interpolated by time.
+        struct CamKey {
+            float ms = 0;
+            glm::vec3 position{0}, target{0};
+        };
+        std::vector<CamKey> camera;
+        glm::vec3 origin{0};
     };
     std::vector<Cinematic> cinematics_;
     void update_cinematics(float dt);
@@ -701,6 +731,17 @@ private:
     } heat_;
     void update_heat_haze(float dt);
     float time_factor_ = 1, time_factor_left_ = 0;
+    struct ScriptCam {
+        bool on = false;
+        glm::vec3 from_position{0}, from_target{0}, to_position{0}, to_target{0};
+        float t = 0, length = 0;
+    } script_cam_;
+    struct Gadget {
+        bool on = false;
+        glm::vec3 eye{0}, position{0}, target{0}, from_position{0}, from_target{0}, to_position{0}, to_target{0};
+        float t = 0, length = 0;   // seconds into the move, and its length
+    } gadget_;
+    void update_gadget(float dt);
     struct Slow {
         float factor = 1, from = 1, to = 1, in = 0, hold = 0, out = 0;
         float t = -1;   // ms since set; < 0: steady

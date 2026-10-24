@@ -15,6 +15,7 @@ namespace tdkr {
 namespace {
 
 constexpr int kSpecial = 0x800, kAttack = 0x4, kHurt = 0x80;   // STATE_TYPE_SPECIAL, _ATTACK, _HURT
+constexpr int kCompNpcAi = 0x0113F791;   // CNpcAIComponent
 constexpr float kStrikeDamage = 25, kCounterDamage = 40, kEnemyDamage = 8;
 constexpr float kCloseIn = 1.3f;        // metres an enemy keeps from Batman to attack
 constexpr float kEnemySpeed = 3.5f;     // m/s closing in
@@ -62,13 +63,19 @@ Brawl::Fighter& Brawl::fighter(int id) { return fighters_[id]; }
 glm::vec3 Brawl::feet() const { return player_.center - glm::vec3(0, 0, player_.radius.z); }
 float Brawl::yaw_to(const glm::vec3& at) const { return angle_to(feet(), at); }
 
-// Actors that fight: the enemy types (they have the melee hurt states) and anyone told to.
+// Actors that fight: the enemies (the NPC AI component says so) and anyone told to.
 bool Brawl::enemy(int id) const {
     const LevelLogic::Object* o = logic_.object(id);
     if (!o || o->dead || !o->enabled || !o->visible || o->index == std::numeric_limits<size_t>::max()) return false;
     if (logic_.attack_targets.count(id)) return true;
-    ActorState st;
-    return find_actor_state(logic_.gol, logic_.object_type(*o), "Enemy_Hurt_01_Jab", st);
+    // CNpcAIComponent: [0] its behaviour (AI_BEHAVIOR_*), [1] whether it is an enemy (the
+    // mercenaries, snipers and thugs; not the civilians or the police).
+    if (o->index >= scene_.level().objects.size()) return false;
+    const LevelObject& lo = scene_.level().objects[o->index];
+    const Value* ai = nullptr;
+    if (auto it = lo.components.find(kCompNpcAi); it != lo.components.end()) ai = &it->second;
+    else if (auto g = logic_.gol.find(lo.type); g != logic_.gol.end()) ai = resolved_template(g->second, logic_.gol, kCompNpcAi);
+    return ai && ai->size() > 1 && (*ai)[1].i != 0;
 }
 
 int Brawl::target(float reach, float ahead) const {
@@ -246,6 +253,37 @@ bool Brawl::pull(int id) {
     return true;
 }
 
+int Brawl::batarang_target(const glm::vec3& eye, const glm::vec3& forward) const {
+    if (!logic_.controls.batarang || busy() || batarang_flight_ >= 0) return -1;
+    if (auto it = logic_.weapon_ammo.find("Batarang_01"); it == logic_.weapon_ammo.end() || it->second <= 0) return -1;
+    int best = -1;
+    float best_score = 1e30f;
+    for (const auto& [id, o] : logic_.objects_) {
+        if (!enemy(id)) continue;
+        const glm::vec3 at = o.position + glm::vec3(0, 0, 1.2f);
+        const glm::vec3 d = at - eye;
+        const float dist = glm::length(d);
+        if (dist > 30 || dist < 1) continue;
+        const float dot = glm::dot(d / dist, forward);
+        if (dot < std::cos(glm::radians(30.0f)) || !in_sight(eye, at)) continue;
+        const float score = (1.1f - dot) * dist;   // the most nearly aimed at, then the nearest
+        if (score < best_score) best_score = score, best = id;
+    }
+    return best;
+}
+
+bool Brawl::throw_batarang(const glm::vec3& eye, const glm::vec3& forward) {
+    const int t = batarang_target(eye, forward);
+    if (t < 0) return false;
+    const LevelLogic::Object& o = *logic_.object(t);
+    --logic_.weapon_ammo["Batarang_01"];
+    act("Batarang_Throw", 0x800000, yaw_to(o.position), 0.5f);
+    batarang_target_ = t;
+    batarang_flight_ = 0.25f + glm::distance(o.position, feet()) / 30.0f;
+    if (logic_.trace) logic_.log("brawl: batarang at " + std::to_string(t));
+    return true;
+}
+
 bool Brawl::can_take_down() const {
     if (leap_target() >= 0) return true;
     if (!logic_.controls.silent) return false;
@@ -254,7 +292,7 @@ bool Brawl::can_take_down() const {
 }
 
 int Brawl::leap_target() const {
-    if (!player_.on_ground || busy()) return -1;
+    if (!player_.on_ground || busy() || !(logic_.controls.silent || logic_.controls.combat)) return -1;
     const glm::vec3 f = feet();
     const float yaw = glm::radians(player_.yaw);   // where the view looks (the scripts turn it there)
     const glm::vec2 forward(-std::sin(yaw), std::cos(yaw));
@@ -453,6 +491,13 @@ void Brawl::update(float dt) {
         if (o->index != std::numeric_limits<size_t>::max()) scene_.set_object_pose(o->index, o->position, o->yaw);
     }
     update_snipers(dt);
+    if (batarang_flight_ >= 0) {   // the batarang lands: a heavy hit
+        batarang_flight_ -= dt;
+        if (batarang_flight_ < 0) {
+            hit(batarang_target_, 50, "Enemy_Hurt_02_Cross");
+            batarang_target_ = -1;
+        }
+    }
     // A pulled enemy flies to Batman's feet, lies there a moment, then gets up to fight.
     if (pull_.id >= 0) {
         LevelLogic::Object* o = logic_.object(pull_.id);
@@ -482,6 +527,7 @@ void Brawl::update(float dt) {
         if (counter_open()) counter();
         auto_timer_ -= dt;
         if (auto_timer_ <= 0 && !busy() && (target(5.0f, 2.0f) >= 0 || can_take_down())) strike(), auto_timer_ = 0.5f;
+        if (auto_timer_ <= 0 && throw_batarang(player_.eye(), player_.view_forward())) auto_timer_ = 1.0f;
     }
 }
 

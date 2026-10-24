@@ -241,6 +241,8 @@ int Game::run_screenshot() {
         if (seated) player.center = seat_eye - glm::vec3(0, 0, player.eye_height);
         else if (!(opt.scripts && logic.cinematic_active()) && !(opt.scripts && logic.limited_step(pin.right, kPhysicsStep)))
             player.update(scene.collision(), pin, kPhysicsStep);
+        else if (hero.active() && !(opt.scripts && logic.limited_active()))   // TDKR: Batman is seen in cinematics; he stands
+            player.update(scene.collision(), PlayerInput{}, kPhysicsStep);
         hero.update(scene, player, pin, kPhysicsStep);
         if (opt.scripts) logic.limited_view_input(player.yaw, player.pitch, kPhysicsStep);
         step_logic(kPhysicsStep);

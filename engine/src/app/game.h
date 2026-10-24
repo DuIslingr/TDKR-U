@@ -146,6 +146,7 @@ private:
     FlashHud flash_hud;            // TDKR's HUD (BatmanHUD.swf) once Batman is playable
     std::string flash_hud_level;   // the level it was set up for
     float flash_hud_clock = -1;
+    int flash_hud_checkpoint = -1;   // the checkpoint whose notice it showed
     int flash_hud_objective = 0;               // the last hud_objective serial shown
     // TDKR's menus from its Flash movies (title, main menu, chapters, pause); the N.O.V.A. 3
     // menus remain for data without them.

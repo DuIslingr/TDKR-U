@@ -85,6 +85,8 @@ public:
     // Batman), and what Batman is doing in a fight (his action state and its STATE_TYPE mask,
     // for ActorGetState / ActorIsInStateType).
     std::unordered_map<int, int> attack_targets;
+    // NPCSetSniper(actor, waypoint, stand ground, sweep): snipers sweeping around a point.
+    std::unordered_map<int, int> snipers;   // actor -> the waypoint it watches
     std::string player_action;
     int player_action_mask = 0;
     bool counter_open = false;       // an enemy's attack can be countered now (set by the brawl)
@@ -109,6 +111,14 @@ public:
     int last_interaction = -1;       // the object last used (GetCurrentInteractionObjectID)
     bool weather = false;            // the weather effect (rain) is on
     bool player_hidden = false;      // HideObject(0): Batman is not drawn (a cinematic stand-in plays him)
+    // SetWinScreen(title, xp, wayne tech, ...): the mission's end screen, for the game to show
+    // (the title is the last completed quest's, CQuestManager::GetCurrentMissionWinScreen).
+    struct WinScreen {
+        bool pending = false;
+        std::string title;
+        int xp = 0, coins = 0;
+    } win;
+    int xp = 0, wayne_tech = 0;      // CInventory: what the player has earned (AddXP, AddWayneTech, the win screens)
     int next_spawn_id = 2000000000;  // ids for SpawnObject's actors
     // NPCGoToWaypoint(actor, ?, waypoint[, run]) (CNpcAIComponent's waypoint goal, without a
     // nav mesh yet): the actor heads straight for the waypoint at its walk or run speed
@@ -147,7 +157,15 @@ public:
     // StartBulletTime(ms, factor): the game runs `factor` times as fast for `ms` of real
     // time (Application's time factor and its duration). Advance with real time.
     void bullet_time(float ms, float factor) { time_factor_ = factor, time_factor_left_ = ms / 1000.0f; }
-    float time_scale() const { return time_factor_left_ > 0 ? time_factor_ : 1.0f; }
+    float time_scale() const { return time_factor_left_ > 0 ? time_factor_ : slow_.factor; }
+    // TDKR's CSlowMotion (SetSlowMotion(factor, in ms, hold ms, out ms)): the game's speed ramps
+    // to `factor` over `in`, holds it for `hold`, and ramps back to 1 over `out`, in real time
+    // (all three 0: it stays). ResetSlowMotion(ms) ramps back to 1 now.
+    void slow_motion(float factor, float in_ms, float hold_ms, float out_ms) {
+        slow_ = {slow_.factor, slow_.factor, factor, std::max(in_ms, 0.0f), std::max(hold_ms, 0.0f), std::max(out_ms, 0.0f), 0};
+        if (in_ms <= 0 && hold_ms <= 0 && out_ms <= 0) slow_.factor = factor, slow_.t = -1;
+    }
+    void reset_slow_motion(float ms) { slow_ = {slow_.factor, slow_.factor, 1, std::max(ms, 0.0f), 0, 0, 0}; }
     void advance_real_time(float dt);
     // Quick-time events (CQTEManager): QTEAddSlowTime(factor, ms) queues ramps of the time
     // factor (over game time; the last usually freezes the game), QTEStart(kind) waits for
@@ -683,6 +701,10 @@ private:
     } heat_;
     void update_heat_haze(float dt);
     float time_factor_ = 1, time_factor_left_ = 0;
+    struct Slow {
+        float factor = 1, from = 1, to = 1, in = 0, hold = 0, out = 0;
+        float t = -1;   // ms since set; < 0: steady
+    } slow_;
     float fov_from_ = 70, fov_to_ = 70, fov_len_ = 0, fov_t_ = 0;
     struct Vehicle {
         int id = 0;

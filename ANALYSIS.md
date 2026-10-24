@@ -282,6 +282,18 @@ TDKR's own natives are in `engine/src/game/tdkr_api.cpp`; the constants (`STATE_
   `CHUDDisplay::IsUIButtonEnabled(5, 7)`: the scripts allow the counter *and* an attack can be countered now (the
   tutorial freezes time on it). `HasPlayerAttacked` is a strike, not a takedown. `ActorGrapnelEnable` is
   `SetTargetable`; `GrapplingLockTarget(wp)` sends the next grapnel shot to a waypoint.
+- **Snipers** (`NPCSetSniper(actor, watched, stand, sweep)`, CSniperComponent's sweep / aim / attack, simplified):
+  `Sniper_Aim_Sweep` around the watched point, `Sniper_Aim_Idle` once Batman is in a few degrees of the aim and in
+  sight, `Sniper_Shoot` after a moment, `Sniper_Reload`. **The grapnel pull**: at an enemy (aimed at, or locked with
+  `GrapplingLockTarget(enemy, true)`) it plays `Grapnel_Enemy_Shoot` and `Enemy_Grapnel_Loopable_Pull_Start / _Fly /
+  _Land`, then `Enemy_Grapnel_Pulled_Down_Floor_Idle` and `_Get_Up`, and the enemy fights.
+- **Slow motion** (`SetSlowMotion(factor, in, hold, out)`, CSlowMotion::Set / Update): ramp to the factor over `in` ms,
+  hold, ramp back over `out` (all 0: it stays); `ResetSlowMotion(ms)` ramps back; `ResetObjectSlowMotion(0, ms)` is
+  Batman's, which is the game's. The tutorial freezes time (factor 0) while it teaches the counter.
+- **The win screen** (`SetWinScreen(title, xp, wayne tech, ...)`): the HUD's `WinScreen` frame (`mWinScreen`: the
+  completed quest's title in `headerText.textB`, `t_xp`, `t_wayneTech`, `missionTime`), `m_mission_complete`, and the
+  button's `CONTINUE_FROM_WIN`. `CHUDDisplay::SetWinScreen` also calls `setScores` / `setTitle`, which this movie
+  does not define. Checkpoints show `CheckpointMessageInstance` (`FPS_GAME_SAVED`).
 - **Objective markers** (`ObjectiveAdd(object, kind)`): one copy of the HUD's `ObjectiveBtn` (`hudAS.mNPCIcon`) per
   object, on the frame of its kind (`kill`, `objective`, `follow`, `talk`, `sideObjective`, ...; `<kind>_arrow` at the
   screen's edge when off screen) with the distance in `DistanceToObjectiveText`.
@@ -291,9 +303,12 @@ Batman for the stand-in on the gargoyle (900281) and enables 900207, whose `Alwa
 traffic and plays camera 900283 under Alfred's lines (subtitles in the `mCinematicHUD` bar); `EndCinematic`, the
 limo drives off along its waypoints, `SetQuestAccepted(222)`, and `_Running` steps through the prompts: look around,
 the checkpoints, the silent takedown on sniper 900510, the leap onto 900592, the grapnel to the next roof, the two
-guards (strike, counter), the grapnel sniper, up to the vantage point for the glide. A headless run plays it with
-`--did look,move --fight-test` and a few `--exec-at` teleports in place of walking. Still missing on that path: the
-snipers' shooting, the grapnel pull on an enemy, the dialog portraits, sounds and music, traffic and the monorail.
+guards (strike, counter), the grapnel pull on sniper 900426, the vantage point, the glide through the rings
+(900519 → 900526 → 900607 → 900608), `QTE_AutoGrapnel(900586)` onto the last roof, trigger 900618's
+`SetQuestCompleted(222)`, the win screen ("The Adventure Begins", 50 XP, 25 WayneTech), and the main story's next
+quest (834). A headless run plays all of it in about 220 game seconds with `--did look,move --fight-test` and a few
+`--exec-at` teleports (and `ActorLookTo(0, ring)` to steer the glide) in place of the player. Still missing: the
+dialog portraits, sounds and music, traffic and the monorail, the snipers' laser sights.
 
 **Controller prompts** (Android 1.1.6, `ShowObjectiveMessage`): with a PowerA pad connected, ids starting
 `STR_TUTORIAL`, `STR_SAVE_LUCIUS_OBJ_6` and `STR_TURBULENCE_THIEF_MINIGAME` get `_POWER_A` inserted after that

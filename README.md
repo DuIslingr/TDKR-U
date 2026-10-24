@@ -46,7 +46,9 @@ extract --per-archive -o work/extracted/data work/data/data/*.gla work/data/text
 the same way from `work/data_ios` (the IPA's `Payload/TDKR.app`) and `work/extracted/data_ios`; pass
 `--data work/data_ios` to the engine.
 To preview a model: `python3 tools/bdae2gltf.py MODEL.bdae -o out.glb --data work/extracted/data`.
-To check the levels: `python3 tools/lvc.py work/extracted/data/game_config/*.lvc`; to preview one:
+To read a level's scripts: `python3 tools/level_scripts.py work/extracted/data/game_config/GothamCity.lvc` (each
+chunk under its object; `--gol gol.bin` for the object library's). To check the levels:
+`python3 tools/lvc.py work/extracted/data/game_config/*.lvc`; to preview one:
 `python3 tools/level2gltf.py work/extracted/data/game_config/Stadion.lvc -o stadion.glb` (Gotham adds its streamed city;
 `tools/streaming.py` exports just that).
 

@@ -19,6 +19,14 @@ FlashHud::~FlashHud() = default;
 
 bool FlashHud::start(const std::string& minimap, float minimap_scale, float minimap_zoom) {
     minimap_ = minimap, minimap_scale_ = minimap_scale, minimap_zoom_ = minimap_zoom;
+    // The HUD's own events: the win screen's button.
+    screen_.on_native = [this](const std::string& name, swf::CallArgs& a) {
+        if ((name == "registerInGameEvent" || name == "registerInGameEventExtended") && a.size() > 0 &&
+            a[0].type == swf::Value::String && a[0].s == "CONTINUE_FROM_WIN")
+            close_win();
+        return swf::Value();
+    };
+    win_open_ = false;
     if (!screen_.load("BatmanHUD.swf", width_, height_)) return false;   // 0: the movie's size until the first update
     width_ = height_ = 0;   // the next update sets the viewport and the screen alignment
     left_base_.clear();
@@ -107,6 +115,10 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         }
         grapple_shown_ = state.grapple;
     }
+    if (win_open_) {   // the win screen alone
+        screen_.update(dt, width, height);
+        return;
+    }
     if (state.cinematic != cinematic_) cinematic(state.cinematic);
     update_markers(state.cinematic || !state.visible ? std::vector<State::Marker>{} : state.markers);
     if (state.dialog != dialog_) dialog(state.dialog);
@@ -136,6 +148,43 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     // CHUDDisplay: the counter button shows while an enemy's attack can be countered.
     p.set_visible("bCounterAttack", state.counter && !state.cinematic);
     screen_.update(dt, width, height);
+}
+
+void FlashHud::win_screen(const std::string& title, int xp, int coins, float seconds) {
+    swf::Player* p = screen_.player();
+    if (!p) return;
+    p->goto_and_stop("", "WinScreen");
+    p->set_text("mWinScreen.headerText.textB", title);
+    p->set_text("mWinScreen.t_xp", std::to_string(xp));
+    p->set_text("mWinScreen.t_wayneTech", std::to_string(coins));
+    char time[16];
+    std::snprintf(time, sizeof time, "%d:%02d", int(seconds) / 60, int(seconds) % 60);
+    p->set_text("mWinScreen.missionTime", time);
+    p->set_text("mWinScreen.timeText", "");   // (the movie would show "undefined")
+    p->set_visible("bBack", true);
+    win_open_ = true;
+}
+
+void FlashHud::checkpoint_message(const std::string& text) {
+    swf::Player* p = screen_.player();
+    if (!p || win_open_) return;
+    p->set_visible("CheckpointMessageInstance", true);
+    p->invoke("CheckpointMessageInstance.CheckpointText", "setText", {swf::Value(text)});
+    p->goto_and_play("CheckpointMessageInstance", "Anim");
+}
+
+void FlashHud::close_win() {
+    if (!win_open_ || !screen_.player()) return;
+    win_open_ = false;
+    for (auto& [slot, last] : buttons_) last = {"", -1};
+    set_up();
+    width_ = height_ = 0;   // the next update lays the HUD out again
+}
+
+void FlashHud::press_continue() {
+    if (swf::Player* p = screen_.player(); p && win_open_)
+        if (swf::Instance* b = p->find("bBack")) p->press(b);
+    close_win();
 }
 
 void FlashHud::update_markers(const std::vector<State::Marker>& markers) {

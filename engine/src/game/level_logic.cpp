@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 
@@ -321,9 +322,10 @@ void LevelLogic::start(StartMode mode) {
     if (mode != StartMode::Section) quests.load(scene.level(), gol);
     mission_zone = -1;
     walkers_.clear();
-    attack_targets.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
+    attack_targets.clear(), snipers.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
     player_did = {};
     play_time = 0, player_speed = 0, last_interaction = -1, camera_anim = -1, weather = false, player_hidden = false;
+    win = {};
     last_player_ = player.center;
     control_glow.clear();
     for (auto& [id, o] : objects_)   // vehicles (CComponentVehicleCar) and their parts
@@ -331,7 +333,7 @@ void LevelLogic::start(StartMode mode) {
     if (!keep_player) {
         fov_from_ = fov_to_ = 70, fov_len_ = fov_t_ = 0;
         player_vehicle_ = player_gun_ = player_mech_ = -1;
-        qte_ = Qte{}, time_factor_ = 1, time_factor_left_ = 0;
+        qte_ = Qte{}, time_factor_ = 1, time_factor_left_ = 0, slow_ = Slow{};
         zfar = 8000, move_sensitivity = 1, look_sensitivity = 1, player_rush = true, fall_damage = true, jetpack_unlocked = false;
         motion_blur = false;
         player.jetpack = false;
@@ -781,7 +783,11 @@ void LevelLogic::update_triggers() {
         }
         const bool was = t.inside;
         t.inside = in;
-        if (trace && in != was) log((in ? "enter trigger " : "leave trigger ") + std::to_string(id));
+        if (trace && in != was) {
+            char at[64];
+            std::snprintf(at, sizeof at, " at (%.1f %.1f %.1f)", player.center.x, player.center.y, player.center.z);
+            log((in ? "enter trigger " : "leave trigger ") + std::to_string(id) + at);
+        }
         if (in && !was) act("OnEnter");
         if (!in && was) act("OnExit");
         if (!o.enabled) continue;
@@ -1424,6 +1430,15 @@ void LevelLogic::update_grading(float dt) {
 }
 
 void LevelLogic::advance_real_time(float dt) {
+    // CSlowMotion::Update.
+    if (slow_.t >= 0) {
+        Slow& s = slow_;
+        s.t += dt * 1000.0f;
+        if (s.t < s.in) s.factor = s.from + (s.to - s.from) * s.t / s.in;
+        else if (s.t < s.in + s.hold) s.factor = s.to;
+        else if (s.out > 0 && s.t < s.in + s.hold + s.out) s.factor = s.to + (1 - s.to) * (s.t - s.in - s.hold) / s.out;
+        else s.factor = s.to == 1 || s.out > 0 || s.hold > 0 ? 1.0f : s.to, s.t = -1;
+    }
     // CQTEManager::Update: each ramp moves the factor towards its target over its game
     // time; while one runs the factor holds.
     float step = dt * 1000.0f * time_scale();

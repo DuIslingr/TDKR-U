@@ -296,6 +296,14 @@ void Game::handle_event(const SDL_Event& e) {
         front_action(front_end.take_action());
         return;
     }
+    if (flash_hud.win_open() && !menu.open) {   // the win screen: its button continues
+        const bool go = (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
+                         (e.key.key == SDLK_RETURN || e.key.key == SDLK_SPACE || e.key.key == SDLK_E)) ||
+                        (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) ||
+                        (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH);
+        if (go) flash_hud.press_continue();
+        return;
+    }
     if (main_menu.open && !menu.open) {   // the main menu takes every input
         using K = MainMenu::Key;
         using P = MainMenu::Pointer;
@@ -550,7 +558,7 @@ void Game::run_window() {
             death.update(raw_dt);
             if (death.music_due() && logic.audio) logic.audio->play("m_mission_failed");
         }
-        if (menu.open) dt = 0;   // paused
+        if (menu.open || flash_hud.win_open()) dt = 0;   // paused
         if (opt.scripts) {   // bullet time: the game runs slower for a while of real time
             logic.advance_real_time(dt);
             dt *= logic.time_scale();

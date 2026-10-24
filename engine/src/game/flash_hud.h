@@ -55,6 +55,14 @@ public:
     // The objective popup (objectiveMessage_popin): show with text, or hide.
     void objective(bool shown, const std::string& text);
     void run(float seconds);   // play the movie on (headless screenshots)
+    // CHUDDisplay::SetWinScreen: the mission's end (the HUD's WinScreen frame: its title, the XP
+    // and WayneTech won, the time taken) until its button (CONTINUE_FROM_WIN) or close_win().
+    void win_screen(const std::string& title, int xp, int coins, float seconds);
+    // The checkpoint notice (CheckpointMessageInstance: its text, then its Anim).
+    void checkpoint_message(const std::string& text);
+    bool win_open() const { return win_open_; }
+    void close_win();
+    void press_continue();   // the win screen's button, from the keyboard or a pad
     void draw(ParticleList& out);
     swf::Player* player() { return screen_.player(); }
 
@@ -68,6 +76,7 @@ private:
     // openDialog / closeDialog), or the cinematic subtitle.
     void dialog(const std::string& text);
     bool cinematic_ = false;
+    bool win_open_ = false;
     // CHUDDisplay::AddObjectiveToScene / UpdateObjectivesPosition: one copy of the
     // ObjectiveBtn icon (hudAS.mNPCIcon) per marker, on the frame of its kind.
     void update_markers(const std::vector<State::Marker>& markers);

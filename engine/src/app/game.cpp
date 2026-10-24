@@ -152,7 +152,8 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
     logic.skip_intro = opt.skip_intro;
     logic.log = [this](const std::string& line) {
         if (line.rfind("print: ", 0) == 0 && !opt.trace_scripts) return;   // scripts print a lot
-        std::printf("[script] %s\n", line.c_str());
+        if (opt.trace_scripts) std::printf("[script %7.2f] %s\n", logic.play_time, line.c_str());   // game seconds into the level
+        else std::printf("[script] %s\n", line.c_str());
     };
     std::printf("zones: %zu zones, %zu portals\n", scene.zones().zones().size(), scene.zones().portals().size());
     combat.log = [](const std::string& line) { std::printf("[combat] %s\n", line.c_str()); };
@@ -447,10 +448,28 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             flash_hud_level = opt.level;
             flash_hud.start(scene.minimap, scene.minimap_scale, scene.minimap_zoom);
         }
+        if (opt.scripts && logic.win.pending) {   // SetWinScreen: the mission's end
+            logic.win.pending = false;
+            flash_hud.win_screen(logic.win.title, logic.win.xp, logic.win.coins, float(logic.play_time));
+            if (logic.audio) logic.audio->play("m_mission_complete");
+        }
         FlashHud::State fs;
         fs.visible = !menu.open && !death.open && !end_screen.open;
         fs.cinematic = opt.scripts && logic.player_locked();
-        if (opt.scripts && !logic.messages().empty()) fs.dialog = logic.messages().front().text;
+        // Spoken lines go to the dialog box; "Progress Saved" is the checkpoint notice.
+        if (opt.scripts)
+            for (const LevelLogic::Message& m : logic.messages())
+                if (m.id != "FPS_GAME_SAVED") {
+                    fs.dialog = m.text;
+                    break;
+                }
+        if (opt.scripts && logic.checkpoint() != flash_hud_checkpoint) {
+            flash_hud_checkpoint = logic.checkpoint();
+            if (flash_hud_checkpoint >= 0) {
+                const std::string t = logic.strings.find("FPS_GAME_SAVED");
+                flash_hud.checkpoint_message(t.empty() ? "Progress Saved" : t);
+            }
+        }
         fs.position = glm::vec2(player.center);
         fs.facing = hero.facing();
         using HM = FlashHud::State::Move;
@@ -694,6 +713,8 @@ static glm::vec3 past_edge(const glm::vec3& lock, const glm::vec3& from) {
 }
 
 bool Game::fire_grapnel(const glm::vec3& eye, const glm::vec3& forward) {
+    if (opt.scripts && hero.active())   // at an enemy: the pull
+        if (const int t = brawl.pull_target(eye, forward); t >= 0) return brawl.pull(t);
     glm::vec3 lock;
     if (opt.scripts && logic.grapple_lock_at(lock) && !player.grappling && glm::distance(lock, player.center) < hero.grapple_range * 1.5f) {
         player.grapple_to(past_edge(lock, player.center));
@@ -706,11 +727,12 @@ void Game::step_logic(float dt) {
     if (!opt.scripts) return;
     logic.update(dt);
     if (hero.active()) brawl.update(dt);
-    // --fight-test also fires the grapnel when the scripts have locked it onto a target.
+    // --fight-test also fires the grapnel when the scripts have locked it onto a target (an enemy: the pull).
     if (opt.fight_test && hero.active() && logic.grapple_lock >= 0 && logic.controls.grapnel && !logic.player_locked() &&
         player.on_ground && !player.grappling && !brawl.busy()) {
         glm::vec3 lock;
-        if (logic.grapple_lock_at(lock) && glm::distance(lock, player.center) > 3) player.grapple_to(past_edge(lock, player.center));
+        if (const int t = brawl.pull_target(player.eye(), player.view_forward()); t >= 0) brawl.pull(t);
+        else if (logic.grapple_lock_at(lock) && glm::distance(lock, player.center) > 3) player.grapple_to(past_edge(lock, player.center));
     }
     if (hero.active()) scene.set_object_visible(hero.object(), !logic.player_hidden);
     if (logic.pending_section) {   // LoadLevelSections: reload, keep the player

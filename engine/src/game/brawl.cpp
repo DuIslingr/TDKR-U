@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 #include "game/hero.h"
@@ -50,6 +51,7 @@ float angle_to(const glm::vec3& from, const glm::vec3& to) {
 
 void Brawl::reset() {
     fighters_.clear();
+    snipers_.clear();
     action_left_ = 0, strike_target_ = -1, strike_impact_ = -1, takedown_ = false, combo_ = 0;
     batman_health = 100;
     logic_.player_action.clear(), logic_.player_action_mask = 0;
@@ -132,6 +134,116 @@ void Brawl::hit(int id, float damage, const std::string& hurt) {
     f.cooldown = std::max(f.cooldown, 1.2f);
     // Hit, an onlooker joins the fight.
     if (!logic_.attack_targets.count(id)) logic_.attack_targets[id] = 0;
+}
+
+void Brawl::hurt_batman(float damage, const std::string& state) {
+    batman_health = std::max(batman_health - damage, 0.0f);
+    if (player_.on_ground && !player_.gliding && !player_.grappling) act(state, kHurt, hero_.facing(), 0.5f);
+    if (batman_health <= 0) {
+        if (logic_.trace) logic_.log("brawl: Batman is down");
+        logic_.respawn_player();
+        batman_health = 100;
+    }
+}
+
+bool Brawl::in_sight(const glm::vec3& from, const glm::vec3& to) const {
+    float t = 1;
+    return !scene_.collision().raycast(from, to, t);
+}
+
+// CSniperComponent, simplified: sweep, lock on, aim, shoot, reload.
+void Brawl::update_snipers(float dt) {
+    constexpr float kRange = 70, kCone = 7, kSweepWidth = 35, kSweepSpeed = 18, kAimTime = 1.6f, kReload = 2.2f;
+    constexpr float kTurn = 50;   // degrees per second while aiming (Attack_Update)
+    const glm::vec3 chest = feet() + glm::vec3(0, 0, 1.2f);
+    for (auto it = logic_.snipers.begin(); it != logic_.snipers.end(); ++it) {
+        LevelLogic::Object* o = logic_.object(it->first);
+        if (!o || o->dead || !o->enabled || logic_.attack_targets.count(o->id)) continue;
+        const LevelLogic::Object* wp = logic_.object(it->second);
+        const glm::vec3 watched = wp ? wp->position : feet();   // (0: Batman himself)
+        Sniper& s = snipers_[o->id];
+        if (s.phase == Sniper::Phase::Sweep && s.timer == 0 && s.lost == 0 && o->state != "Sniper_Aim_Sweep") {
+            s.base = angle_to(o->position, watched);
+            actor_state(o->id, "Sniper_Aim_Sweep");
+        }
+        const glm::vec3 eye = o->position + glm::vec3(0, 0, 1.6f);
+        const float to_batman = angle_to(o->position, chest);
+        const float dist = glm::distance(eye, chest);
+        auto off = [](float a, float b) { return std::remainder(a - b, 360.0f); };
+        const bool seen = dist < kRange && !logic_.player_hidden && in_sight(eye, chest);
+        switch (s.phase) {
+            case Sniper::Phase::Sweep:
+                s.base = angle_to(o->position, watched);   // (the scripts may change what it watches)
+                s.sweep += s.dir * kSweepSpeed * dt;
+                if (std::abs(s.sweep) > kSweepWidth) s.dir = -s.dir, s.sweep = std::clamp(s.sweep, -kSweepWidth, kSweepWidth);
+                o->yaw = s.base + s.sweep;
+                s.timer += dt;   // (marks it started)
+                if (seen && std::abs(off(to_batman, o->yaw)) < kCone) {
+                    s.phase = Sniper::Phase::Aim, s.timer = kAimTime, s.lost = 0;
+                    actor_state(o->id, "Sniper_Aim_Idle");
+                    if (logic_.trace) logic_.log("sniper " + std::to_string(o->id) + " has Batman in its sights");
+                }
+                break;
+            case Sniper::Phase::Aim: {
+                const float d = off(to_batman, o->yaw);
+                o->yaw += std::clamp(d, -kTurn * dt, kTurn * dt);
+                if (!seen) {
+                    s.lost += dt;
+                    if (s.lost > 3) s.phase = Sniper::Phase::Sweep, s.sweep = off(o->yaw, s.base), actor_state(o->id, "Sniper_Aim_Sweep");
+                    break;
+                }
+                s.lost = 0;
+                s.timer -= dt;
+                if (s.timer <= 0 && std::abs(d) < kCone) {   // the shot
+                    actor_state(o->id, "Sniper_Shoot");
+                    hurt_batman(25, "Batman_Hurt_02_Cross");
+                    if (logic_.trace) logic_.log("sniper " + std::to_string(o->id) + " shoots Batman");
+                    s.phase = Sniper::Phase::Reload, s.timer = kReload;
+                }
+                break;
+            }
+            case Sniper::Phase::Reload:
+                s.timer -= dt;
+                if (s.timer < kReload - 0.6f && o->state == "Sniper_Shoot") actor_state(o->id, "Sniper_Reload");
+                if (s.timer <= 0) s.phase = Sniper::Phase::Aim, s.timer = kAimTime, actor_state(o->id, "Sniper_Aim_Idle");
+                break;
+        }
+        if (o->index != std::numeric_limits<size_t>::max()) scene_.set_object_pose(o->index, o->position, o->yaw);
+    }
+}
+
+int Brawl::pull_target(const glm::vec3& eye, const glm::vec3& forward) const {
+    if (!player_.on_ground || busy() || pull_.id >= 0) return -1;
+    if (logic_.grapple_lock >= 0 && enemy(logic_.grapple_lock)) return logic_.grapple_lock;
+    int best = -1;
+    float best_dot = std::cos(glm::radians(6.0f));
+    for (const auto& [id, o] : logic_.objects_) {
+        if (!o.targetable || !enemy(id)) continue;
+        const glm::vec3 at = o.position + glm::vec3(0, 0, 1.2f);
+        const glm::vec3 d = at - eye;
+        const float dist = glm::length(d);
+        if (dist < 4 || dist > 40) continue;
+        const float dot = glm::dot(d / dist, forward);
+        if (dot > best_dot && in_sight(eye, at)) best_dot = dot, best = id;
+    }
+    return best;
+}
+
+bool Brawl::pull(int id) {
+    LevelLogic::Object* o = logic_.object(id);
+    if (!o || o->dead || pull_.id >= 0) return false;
+    const glm::vec3 f = feet();
+    glm::vec2 d(o->position - f);
+    d = glm::length(d) > 1e-3f ? glm::normalize(d) : glm::vec2(0, 1);
+    pull_ = {id, o->position, f + glm::vec3(d * 1.6f, 0.0f), 0, std::clamp(glm::distance(o->position, f) / 18.0f, 0.5f, 1.6f)};
+    act("Grapnel_Enemy_Shoot", 0x400000, yaw_to(o->position), 0.6f);
+    actor_state(id, "Enemy_Grapnel_Loopable_Pull_Start");
+    logic_.snipers.erase(id);
+    logic_.attack_targets.erase(id);
+    fighter(id).phase = Fighter::Phase::Down;
+    if (logic_.grapple_lock == id) logic_.grapple_lock = -1;
+    if (logic_.trace) logic_.log("brawl: grapnel pulls " + std::to_string(id));
+    return true;
 }
 
 bool Brawl::can_take_down() const {
@@ -299,8 +411,7 @@ void Brawl::update(float dt) {
             if (fi.timer <= 0) {   // it lands
                 const EnemyAttack& a = attack_of(fi.attack);
                 if (dist < 2.2f && !(busy() && logic_.player_action_mask & kSpecial)) {
-                    batman_health = std::max(batman_health - kEnemyDamage, 0.0f);
-                    act(a.batman_hurt, kHurt, hero_.facing(), 0.5f);
+                    hurt_batman(kEnemyDamage, a.batman_hurt);
                     if (logic_.trace) logic_.log("brawl: Batman hit by " + std::to_string(id));
                 }
                 fi.phase = Fighter::Phase::Ready;
@@ -340,6 +451,31 @@ void Brawl::update(float dt) {
             }
         }
         if (o->index != std::numeric_limits<size_t>::max()) scene_.set_object_pose(o->index, o->position, o->yaw);
+    }
+    update_snipers(dt);
+    // A pulled enemy flies to Batman's feet, lies there a moment, then gets up to fight.
+    if (pull_.id >= 0) {
+        LevelLogic::Object* o = logic_.object(pull_.id);
+        if (!o || o->dead) {
+            pull_.id = -1;
+        } else {
+            const float before = pull_.t;
+            pull_.t += dt;
+            const float k = std::min(pull_.t / pull_.length, 1.0f);
+            if (before < 0.15f && pull_.t >= 0.15f) actor_state(o->id, "Enemy_Grapnel_Loopable_Pull_Fly");
+            o->position = glm::mix(pull_.from, pull_.to, k) + glm::vec3(0, 0, std::sin(k * 3.14159f) * 1.0f);
+            if (k >= 1 && before < pull_.length) actor_state(o->id, "Enemy_Grapnel_Loopable_Pull_Land");
+            if (pull_.t > pull_.length + 0.5f && o->state == "Enemy_Grapnel_Loopable_Pull_Land")
+                actor_state(o->id, "Enemy_Grapnel_Pulled_Down_Floor_Idle");
+            if (pull_.t > pull_.length + 2.5f) {   // up, and at Batman
+                actor_state(o->id, "Enemy_Grapnel_Pulled_Down_Floor_Get_Up");
+                Fighter& fi = fighter(o->id);
+                fi.phase = Fighter::Phase::Hurt, fi.timer = 1.2f, fi.cooldown = 2.0f;
+                logic_.attack_targets[o->id] = 0;
+                pull_.id = -1;
+            }
+            if (o->index != std::numeric_limits<size_t>::max()) scene_.set_object_pose(o->index, o->position, o->yaw);
+        }
     }
     // Headless tests fight by themselves.
     if (auto_fight) {

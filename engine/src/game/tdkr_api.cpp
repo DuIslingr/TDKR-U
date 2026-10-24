@@ -211,7 +211,7 @@ int api_object_get_position(lua_State* L) {
 int api_object_set_position(lua_State* L) {
     LevelLogic& c = ctx(L);
     const glm::vec3 p(float(lua_tonumber(L, 2)), float(lua_tonumber(L, 3)), float(lua_tonumber(L, 4)));
-    if (int_arg(L, 1) == 0) c.player.spawn(p, c.player.yaw);
+    if (int_arg(L, 1) == 0) c.player.center = p + glm::vec3(0, 0, c.player.radius.z + 0.05f);   // as it is: gliding stays
     else if (LevelLogic::Object* o = c.object(int_arg(L, 1))) c.teleport_object(*o, p);
     return 0;
 }
@@ -256,6 +256,28 @@ int api_false(lua_State* L) {   // IsLowEndDevice: this port draws everything
     return 1;
 }
 int api_nothing(lua_State*) { return 0; }   // analytics, store prompts, editor hints
+
+// SetWinScreen(title, xp, wayne tech[, name, value, value]...): the end of a mission; the XP and
+// WayneTech go to the inventory (CInventory::AddXPPoints / AddWayneTechPoints).
+int api_set_win_screen(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    std::string title = str_arg(L, 1);
+    if (title.empty())
+        if (const Quests::Quest* q = c.quests.find(c.quests.last_completed())) title = q->title;
+    const std::string text = c.strings.find(title);
+    c.win = {true, text.empty() ? title : text, int_arg(L, 2), int_arg(L, 3)};
+    c.xp += int_arg(L, 2), c.wayne_tech += int_arg(L, 3);
+    c.log("win screen: " + c.win.title + ", " + std::to_string(c.win.xp) + " XP, " + std::to_string(c.win.coins) + " WayneTech");
+    return 0;
+}
+int api_add_xp(lua_State* L) {   // AddXP(n)
+    ctx(L).xp += int_arg(L, 1);
+    return 0;
+}
+int api_add_wayne_tech(lua_State* L) {   // AddWayneTech(n, ...)
+    ctx(L).wayne_tech += int_arg(L, 1);
+    return 0;
+}
 
 // --- script globals (CScriptGlobals) -------------------------------------------------------
 
@@ -441,10 +463,24 @@ int api_kill_actor(lua_State* L) {
     c.runtime_.send_event("Dead", o->id);
     return 0;
 }
-// GrapplingLockTarget(target, ...): the grapnel's next shot goes to that object or waypoint.
+// GrapplingLockTarget(target, ...): the grapnel's next shot goes to that object or waypoint (an
+// enemy: it is pulled).
 int api_grappling_lock_target(lua_State* L) {
     LevelLogic& c = ctx(L);
     c.grapple_lock = c.object(int_arg(L, 1)) ? int_arg(L, 1) : -1;
+    return 0;
+}
+// NPCSetSniper(actor, waypoint, stand ground, sweep[, ...]): the sniper sweeps its aim around
+// the waypoint (CSniperComponent::Sweep_SetParams / Sweep_Start).
+int api_npc_set_sniper(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    glm::vec3 at;   // (0: Batman)
+    if (c.object(int_arg(L, 1)) && position_of(c, int_arg(L, 2), at) && bool_arg(L, 4)) c.snipers[int_arg(L, 1)] = int_arg(L, 2);
+    return 0;
+}
+// MissionFailedAutoReload(): back to the checkpoint.
+int api_mission_failed_reload(lua_State* L) {
+    ctx(L).respawn_player();
     return 0;
 }
 // ActorGrapnelEnable(actor, on): CGameObject::SetTargetable.
@@ -508,7 +544,7 @@ int api_play_camera_anim(lua_State* L) {
     }
     return 0;
 }
-// CameraLookAt(x, y, z, ms) or (object, ms): the camera turns to a point.
+// CameraLookAt(x, y, z, ms) or (object, ms): the view turns to a point over ms.
 int api_camera_look_at(lua_State* L) {
     LevelLogic& c = ctx(L);
     const int n = lua_gettop(L);
@@ -524,7 +560,7 @@ int api_camera_look_at(lua_State* L) {
         c.camera_to_player(true);
         return 0;
     }
-    c.camera_look_to(at, ms / 1000.0f);
+    c.player_look_to(at, std::max(ms, 1.0f) / 1000.0f);   // the view turns there, then is the player's again
     return 0;
 }
 // CameraSwitchToPlayer / CameraSwitchToPlayerResetOrientation([ms]): the player's camera again.
@@ -547,17 +583,33 @@ int api_end_cinematic(lua_State* L) {
 
 // --- slow motion (CSlowMotion) -------------------------------------------------------------
 
-// SetSlowMotion(factor, ms in, ms held, ms out, ...): the game slows to `factor`.
+// SetSlowMotion(factor, ms in, ms held, ms out, ...) (CSlowMotion::Set).
 int api_set_slow_motion(lua_State* L) {
-    LevelLogic& c = ctx(L);
-    const float factor = float(lua_tonumber(L, 1));
-    float ms = 0;
-    for (int i = 2; i <= std::min(lua_gettop(L), 4); ++i) ms += float(lua_tonumber(L, i));
-    c.bullet_time(std::max(ms, 1.0f), std::max(factor, 0.05f));
+    ctx(L).slow_motion(float(lua_tonumber(L, 1)), float(lua_tonumber(L, 2)), float(lua_tonumber(L, 3)), float(lua_tonumber(L, 4)));
     return 0;
 }
-int api_reset_slow_motion(lua_State* L) {
-    ctx(L).bullet_time(0, 1);
+int api_reset_slow_motion(lua_State* L) {   // ResetSlowMotion(ms)
+    ctx(L).reset_slow_motion(float(lua_tonumber(L, 1)));
+    return 0;
+}
+// ResetObjectSlowMotion(object, ms): Batman's (0) is the game's.
+int api_reset_object_slow_motion(lua_State* L) {
+    if (int_arg(L, 1) == 0) ctx(L).reset_slow_motion(float(lua_tonumber(L, 2)));
+    return 0;
+}
+int api_reset_ignored_controls(lua_State* L) {   // ResetAllIgnoredControls
+    ctx(L).controls.ignore = 0;
+    return 0;
+}
+// QTE_AutoGrapnel(target, waypoint, ...): Batman fires the grapnel at the target by himself
+// (CActorBaseComponent::SetGrapplingTarget), over its edge.
+int api_auto_grapnel(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    glm::vec3 at;
+    if (!position_of(c, int_arg(L, 1), at)) return 0;
+    glm::vec2 d(at - c.player.center);
+    if (glm::length(d) > 1e-3f) d = glm::normalize(d);
+    c.player.grapple_to(at + glm::vec3(d * 1.5f, 0.0f));
     return 0;
 }
 
@@ -667,6 +719,9 @@ const Entry kTdkr[] = {
     {"ObjectGetPosition", api_object_get_position},
     {"ObjectSetPosition", api_object_set_position},
     {"IsLowEndDevice", api_false},
+    {"SetWinScreen", api_set_win_screen},
+    {"AddXP", api_add_xp},
+    {"AddWayneTech", api_add_wayne_tech},
     {"IsCopAIEnabled", api_false},
     {"getMCWorldHeight", api_mc_world_height},
     {"IsCameraFacing", api_is_camera_facing},
@@ -694,6 +749,14 @@ const Entry kTdkr[] = {
     {"KillActor", api_kill_actor},
     {"SetActorHealth", api_set_actor_health},
     {"ActorGrapnelEnable", api_actor_grapnel_enable},
+    {"NPCSetSniper", api_npc_set_sniper},
+    {"NPCSetCanBePulledAllTheWay", api_nothing},   // (every pull here lands at Batman)
+    {"MissionFailedAutoReload", api_mission_failed_reload},
+    // Weapons in the actors' hands (models on their hand nodes): not drawn yet.
+    {"EnableWeapon", api_nothing},
+    {"DisableWeapon", api_nothing},
+    {"TakeOutWeapon", api_nothing},
+    {"PutBackWeapon", api_nothing},
     {"GrapplingLockTarget", api_grappling_lock_target},
     {"PlayCameraAnim", api_play_camera_anim},
     {"CameraLookAt", api_camera_look_at},
@@ -705,7 +768,9 @@ const Entry kTdkr[] = {
     {"NPCSetAIBehavior", api_nothing},
     {"NPCCombatSet", api_nothing},
     {"SetObjectSlowMotion", api_nothing},
-    {"ResetObjectSlowMotion", api_nothing},
+    {"ResetObjectSlowMotion", api_reset_object_slow_motion},
+    {"ResetAllIgnoredControls", api_reset_ignored_controls},
+    {"QTE_AutoGrapnel", api_auto_grapnel},
     {"NPCGoToWaypoint", api_npc_go_to_waypoint},
     {"NPCGoToWaypointWithNavmesh", api_npc_go_to_waypoint},
     {"SetActorSpeedWalk", api_set_actor_speed, 0},

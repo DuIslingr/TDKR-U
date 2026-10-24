@@ -51,12 +51,27 @@ and `work/ios/ios_features.jsonl`), then `vtable_match.py`, `match_symbols.py`, 
 - `core/vfs`: plain-text pak names, empty paks, archives in `data/` and `textures/`, and loose files under `data/`
   mounted as entries (`Entry::Loose`).
 - `assets/texture`: `.tga` names hold PVR v2; the few real Targa files (intro logos) decode through `decode_tga`.
-- `assets/bres.h`, `assets/bdae.cpp`: mesh blocks (self-relative pointers, unprefixed buffers) and a 0xC image stride.
-  The check below matches the Python parser's triangle counts on every model.
-- Everything above the asset layer (levels, Lua API, HUD, menus, combat) is still N.O.V.A. 3's and expects its data.
+- `assets/bres.h`, `assets/bdae.cpp`: mesh blocks (self-relative pointers, unprefixed buffers), a 0xC image stride, and
+  **quantized attributes**: `SMesh +0x28/+0x2c` holds, per attribute, a pointer to `(scale xyz, offset xyz)` or null. TDKR
+  stores texcoords as s16 (scale ~1.5e-5) that way. The check below matches the Python parser's triangle counts on every model.
+- `assets/level.cpp` (+ generated `level_specs.inc`, `tools/gen_engine_specs.py`): TDKR's level types, hashed components,
+  GOL layout and flag-0 rule, read until -1. All 12 levels load, with the same object counts as `tools/lvc.py`.
+- `assets/stream.cpp` + `Scene::load_level`: a level's `<Level>.zip` streamed city becomes one model (LOD 0, world space).
+- Shaders: TDKR attribute names (`Position`, `Coord0`, `Coord1`, `Color`), a `LOD_BIAS -1.0` driver define (several shaders
+  sample with it but never define it), and `Coord<n>_scaleoffset` / `LightMapAtlas` set to identity (the shaders dequantize
+  texcoords themselves; the loader already has).
+- Fog from `CComponentBaseGlobalIllum`: level-properties fields 44–45 (start, end) and 46–49 (RGBA).
+- Everything else above the asset layer (Lua API, HUD, menus, combat, zones) is still N.O.V.A. 3's and keyed to its
+  small component ids, which find nothing in TDKR's data.
 
 `tdkr-check` over the iOS data: `vfs` reads all 6,932 files; `textures` decodes all 1,230; `models` loads all
-1,339 (2.3 M triangles).
+1,339 (2.3 M triangles); `levels` loads all 12; `shaders` compiles 376 of 406 effect passes (the rest reference
+missing shader files, `shadow2DEXT`, or one effect whose shader name parses as garbage).
+
+In the game (`tdkr --level Stadion.lvc --no-scripts --screenshot OUT.bmp`), Stadion draws at night with the game's own
+shaders, and Gotham (`--level GothamCity.lvc`) draws its streamed city and props. Side-by-sides with the gameplay
+playlist (Android, 13 parts, `work/youtube`, 360p) are in `work/compare/`. The city is brighter than the footage: no
+lightmaps yet, so no baked night lighting.
 
 ## Data formats, and how far N.O.V.A. 3's code gets
 
@@ -69,7 +84,7 @@ and `work/ios/ios_features.jsonl`), then `vtable_match.py`, `match_symbols.py`, 
 | `.glsl` | 127 | The game's GLES 2 shaders (`*-v.glsl`/`*-f.glsl`, post effects, BatSonar, CascadedShadow...). N.O.V.A. 3's GLSL to SPIR-V translator is the place to start. |
 | `.lvc` levels + `gol.bin` | 12 | **All 12 parse** with `tools/lvc.py`, each ending exactly at its -1 marker (Gotham City: 13,643 objects). Lua 5.1 scripts are stored as source text in the string table, plus `LuaQ` bytecode. See "Levels" below. |
 | `.irr` | 696 | **Irradiance volumes** (magic `MIhS`), `<level>.lvc_<id>[_low].irr`, one per `irradiance_volume` object. Not Irrlicht scenes. |
-| `GothamCity[_Island2][_low_inorm].zip` | 4 | **Gotham's city geometry, streamed** (`CLevelStreaming`): `<name>_materials.bdae`, `lod_table/lod_data/lod_selector.bin`, `bih_struct/bih_data.bin`, `batch_info.bin`, `stream_info.bin`. The 42 `*_BEAST` city-block objects name `gc_footprint_XX.bdae` files that don't exist; their meshes come from here. Not decoded yet. |
+| `GothamCity[_Island2][_low_inorm].zip` | 4 | **Gotham's city geometry, streamed** (`CLevelStreaming`). Decoded by `tools/streaming.py` (format in its docstring): 307 batches of 197-byte records (material index + glitch vertex stream header: f32 position, s16 texcoords with per-batch scale/offset, s8 normal), 1,526 LOD groups, 3,706 segments packed in `lod_data.bin`. All four parse. The 42 `*_BEAST` city-block objects name `gc_footprint_XX.bdae` files that don't exist; their meshes come from here. |
 | `.nm` / `.edge` / `.index` | 10 each | Per-level navmesh (`<Level>_<id>_navdata.nm`, opened by `CNavMeshNova::Create`), edges and streaming index. |
 | `.wav` | 3110 | RIFF, **MS-ADPCM** (format 2), mono 32 kHz. SDL can load these directly. `sounds.xml` + `BATMAN_TDKR.vxa` describe the vox sound events. |
 | `.swf` | 104 | **gameswf Flash UI** (SWF v10, uncompressed `FWS`): HUD, menus, shop, minimap. N.O.V.A. 3 has nothing for this (it uses bsprite), so it is the biggest new subsystem. |
@@ -121,14 +136,20 @@ Game objects differ from N.O.V.A. 3 in three ways:
 `gol.bin`: 653 types, and 643 read their templates exactly. The other 10 are library entries for level-structure types
 (LevelProperties, Portal, Occluder…), each 4–16 bytes short. N.O.V.A. 3 has the same gap.
 
-`tools/level2gltf.py` places every object's model (from the level, or its type's template): Stadion gives 70 placements of 16 models,
-and the stadium bowl renders in place. Gotham gives only its props (2,320 placements), because the city blocks are in the streaming zips.
+`tools/level2gltf.py` places every object's model (from the level, or its type's template) and adds the level's streamed city:
+Stadion gives 70 placements of 16 models, and the stadium bowl renders in place. Gotham gives 2,320 prop placements plus 3,041 streamed
+segments (buildings, roads, bridges) in the same world space.
 
 ## Open items found so far
 
-- **Gotham streaming zips** (`lod_data.bin`, `bih_*.bin`, `batch_info.bin`): decode `CLevelStreaming::Load`/`PrepareFiles`.
+- **Lightmaps**: Beast atlases (`BakeGroup_*.tga`) per object (`CBeastObjectComponent`: atlas scale/offset + texture) and per
+  streamed batch (the 30-byte attribute map and materials don't name them yet); without them the scenes lack baked night lighting.
+- Streaming in the engine loads all of Gotham at LOD 0 at once; the game streams cells (`bih_*`, `CRegularGridStreaming`) and picks
+  LODs by distance (`lod_selector`).
+- Stadion's `st_stadium_volumetric` light shafts blend far too bright with the game shader.
+- TDKR shaders that skin on the GPU (`SkinWeights`, `SkinIndices`) are not wired to the engine's skinning.
 - 114 models referenced in Gotham aren't in the iOS data. 46 are the streamed footprints; the rest (`hc_prop_billboard*`, …) look like cut content.
 - Batman's cape is missing from the glTF render. Skinning or the controller path is likely different too.
 - gameswf: decide between reimplementing the parts the UI uses and embedding an SWF player.
 - The Batpod, Tumbler and Bat vehicles have no N.O.V.A. 3 counterpart.
-- Port the level reader into the engine (`engine/src/assets/level.cpp` is still N.O.V.A. 3's).
+- Lights: no level uses the light record (0x265E); lighting objects use other components (`CHasLightComponent`, `CSoundAndLight`).

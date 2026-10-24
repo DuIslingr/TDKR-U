@@ -89,6 +89,14 @@ void MaterialSystem::fill_stage(const Effect& fx, const EffectPass& pass, const 
             slots.push_back({u.offset, u.type, u.array, sem, light});
             continue;
         }
+        // TDKR shaders dequantize s16 texcoords with Coord<n>_scaleoffset (and map the Beast
+        // lightmap atlas with LightMapAtlas); the loader already dequantizes, so these are the
+        // identity until per-object lightmap atlases are wired up.
+        if ((u.name.size() > 12 && u.name.compare(u.name.size() - 12, 12, "_scaleoffset") == 0) || u.name == "LightMapAtlas") {
+            fields.push_back({u.name, fragment, u});
+            write(u, {1.0f, 1.0f, 0.0f, 0.0f});
+            continue;
+        }
         const EffectParam* ep = bound_param(u.name);
         Semantic over;
         if (object_override_for(ep ? ep->name : u.name, over)) {

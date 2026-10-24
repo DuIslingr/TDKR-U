@@ -11,8 +11,8 @@ namespace {
 
 #include "assets/level_specs.inc"
 
-const char* kBaseSpec = "i f f f f f f f f f c c";
-const char* kMeshSpec = "s i c c c c c c c c c c c";
+// CComponentBase::Load values: c, id, position, rotation, scale, 3 flags. The id is field 1.
+constexpr size_t kBaseFirst = 1;
 
 template <typename K, typename V, size_t N>
 auto table(const std::pair<K, V> (&rows)[N]) {
@@ -22,11 +22,9 @@ auto table(const std::pair<K, V> (&rows)[N]) {
     return m;
 }
 
-const auto& component_classes() { static auto t = table(kComponentClasses); return t; }
-const auto& template_specs() { static auto t = table(kTemplateSpecs); return t; }
+const auto& component_loads() { static auto t = table(kComponentLoads); return t; }
+const auto& template_loads() { static auto t = table(kTemplateLoads); return t; }
 const auto& loader_specs() { static auto t = table(kLoaderSpecs); return t; }
-const auto& always_specs() { static auto t = table(kAlwaysSpecs); return t; }
-const auto& per_instance_specs() { static auto t = table(kPerInstanceSpecs); return t; }
 
 // Inline nested <Name::Load> references.
 std::string expand(const std::string& spec, int depth = 0) {
@@ -46,29 +44,31 @@ std::string expand(const std::string& spec, int depth = 0) {
     return out;
 }
 
-const std::string& component_spec(int comp) {
-    static std::unordered_map<int, std::string> cache;
-    auto it = cache.find(comp);
+const std::string& loader_spec(const std::string& loader) {
+    static std::unordered_map<std::string, std::string> cache;
+    auto it = cache.find(loader);
     if (it != cache.end()) return it->second;
-    auto cls = component_classes().find(comp);
-    std::string spec = cls == component_classes().end() ? "" : expand("<" + cls->second + "::Load>");
-    return cache.emplace(comp, std::move(spec)).first->second;
+    return cache.emplace(loader, expand("<" + loader + ">")).first->second;
+}
+
+// What a flag-0 component stores in a level: the factory class's Load, else the template
+// reader (GenerateComponentTemplate), else nothing.
+const std::string& component_spec(int comp) {
+    static const std::string none;
+    if (auto it = component_loads().find(comp); it != component_loads().end()) return loader_spec(it->second);
+    if (auto it = template_loads().find(comp); it != template_loads().end()) return loader_spec(it->second);
+    return none;
 }
 
 const std::string& template_spec(int comp) {
-    static std::unordered_map<int, std::string> cache;
-    auto it = cache.find(comp);
-    if (it != cache.end()) return it->second;
-    auto t = template_specs().find(comp);
-    if (t == template_specs().end()) throw FormatError("no template reader for component " + std::to_string(comp));
-    return cache.emplace(comp, expand(t->second)).first->second;
+    static const std::string none;
+    auto it = template_loads().find(comp);
+    return it == template_loads().end() ? none : loader_spec(it->second);
 }
 
-Transform read_base(DictStream& st) { return transform_from_values(st.spec(kBaseSpec)); }
-void read_mesh(DictStream& st, LevelObject& o) {
-    const Value v = st.spec(kMeshSpec);
-    o.model = v[0].s;
-    o.mesh_flags = uint32_t(v[1].i);
+void read_mesh_values(const Value& v, LevelObject& o, size_t first = 0) {
+    o.model = v[first].s;
+    o.mesh_flags = 0;
 }
 
 std::string strip(std::string s) {
@@ -77,114 +77,44 @@ std::string strip(std::string s) {
     return b == std::string::npos ? "" : s.substr(b, e - b + 1);
 }
 
-// ------------------------------------------------------------------ level-structure readers
-
-void read_nav_mesh(DictStream& st, LevelObject& o) {
-    o.base = read_base(st);
-    const int nverts = st.h();
-    for (int k = 0; k < nverts; ++k) o.nav.vertices.push_back({st.f(), st.f(), st.f()});
-    st.c();
-    const int npolys = st.h();
-    for (int k = 0; k < npolys; ++k) {
-        std::array<int16_t, 8> p{};
-        for (int a = 0; a < 6; ++a) p[a] = st.h();
-        p[6] = st.c();
-        p[7] = st.c();
-        o.nav.polygons.push_back(p);
-    }
-    const int nlinks = st.H();
-    for (int k = 0; k < nlinks; ++k) {
-        const Value l = st.spec("h c f f f i");
-        o.nav.links.push_back({l[0].i, {l[2].as_float(), l[3].as_float(), l[4].as_float()}, l[5].i});
-    }
-    st.spec("f f f f f f H H");
-    const int nnodes = st.H();
-    for (int k = 0; k < nnodes; ++k) st.spec("H H f f i H H");
-}
-
-void read_nav_space(DictStream& st, LevelObject& o) {
-    o.fields = st.spec("i f f f f f f");
-    const uint32_t nx = uint32_t(st.i()) & 0xFFFF, ny = uint32_t(st.i()) & 0xFFFF, nz = uint32_t(st.i()) & 0xFFFF;
-    st.f();
-    st.skip((size_t(nx) * ny * nz + 3) >> 2);   // 2-bit occupancy grid
-    const int n = st.H();
-    for (int k = 0; k < n; ++k) st.spec("h h h i");
-}
-
-using Reader = std::function<void(DictStream&, LevelObject&)>;
-
-const std::unordered_map<int, std::pair<const char*, Reader>>& level_types() {
-    static const std::unordered_map<int, std::pair<const char*, Reader>> t = {
-        {0x3A, {"level_properties", [](DictStream& st, LevelObject& o) {
-             o.fields = st.spec("i c c c c f f f f f [c c c c f f f] f f f f [f] c c c c f f f f s c c c [s] s "
-                                "c c c c c c c c s s i s s f f");
-         }}},
-        {0x3B, {"nav_mesh", read_nav_mesh}},
-        {0x3E9, {"nav_mesh", read_nav_mesh}},
-        {0x3C, {"portal", [](DictStream& st, LevelObject& o) {
-             o.base = read_base(st);
-             o.fields = st.spec("i i c f f i c c c c");
-         }}},
-        {0x3D, {"skybox", [](DictStream& st, LevelObject& o) {
-             o.fields = st.spec("s i c");
-             o.model = o.fields[0].s;
-         }}},
-        {0x3E, {"zone", [](DictStream& st, LevelObject& o) {
-             o.base = read_base(st);
-             o.fields = st.spec("i c c c c c f f f [c c c c c f f]");
-             o.model = st.s();
-             const int32_t size = st.i();   // bytes of this zone's records (CLevel skips them)
-             o.content_end = st.pos + size_t(std::max(size, 0));
-         }}},
-        {0x6C, {"spawn_point", [](DictStream& st, LevelObject& o) {
-             o.base = read_base(st);
-             o.fields = st.spec("c c c s i i i i i i i");
-         }}},
-        {0x6D, {"waypoint", [](DictStream& st, LevelObject& o) { o.fields = st.spec("i c f f f i c c c c c s f c"); }}},
-        {0x7E9, {"waypoint", [](DictStream& st, LevelObject& o) { o.fields = st.spec("i c f f f i c c c c c s f c"); }}},
-        {0x6E, {"zone_end", [](DictStream&, LevelObject&) {}}},
-        {0x71, {"nav_space", read_nav_space}},
-        {0x401, {"ai_group", [](DictStream& st, LevelObject& o) { o.fields = st.spec("i c c"); }}},
-        {0x421, {"ai_region", [](DictStream& st, LevelObject& o) { o.base = read_base(st); }}},
-        {0xA23, {"nav_point", [](DictStream& st, LevelObject& o) { o.fields = st.spec("i f f f c i"); }}},
-        {0xA25, {"patrol_point", [](DictStream& st, LevelObject& o) { o.fields = st.spec("i f f f [i]"); }}},
-        {0xBB9, {"link", [](DictStream& st, LevelObject& o) { o.fields = st.spec("i i i"); }}},
-        {0xBBA, {"meta_zone", [](DictStream& st, LevelObject& o) {
-             o.base = read_base(st);
-             o.fields = st.spec("[i] i");
-             o.model = st.s();
-             const int32_t size = st.i();
-             o.content_end = st.pos + size_t(std::max(size, 0));
-         }}},
-        {0xBC1, {"occluder", [](DictStream& st, LevelObject& o) {
-             o.base = read_base(st);
-             read_mesh(st, o);
-             o.fields = st.spec("f");
-         }}},
-        {0x1011, {"irradiance_volume", [](DictStream& st, LevelObject& o) {
-             o.base = read_base(st);
-             read_mesh(st, o);
-             o.fields = st.spec("c f c f f f");
-         }}},
-    };
+const std::unordered_map<int, const LevelTypeSpec*>& level_types() {
+    static const auto t = [] {
+        std::unordered_map<int, const LevelTypeSpec*> m;
+        for (const auto& lt : kLevelTypes) m.emplace(lt.type, &lt);
+        return m;
+    }();
     return t;
 }
 
-void read_game_object(DictStream& st, const GolType& type, const Gol& gol, LevelObject& o) {
-    for (const auto& [comp, flag] : resolved_components(type, gol)) {
-        if (auto a = always_specs().find(comp); a != always_specs().end()) {
-            o.components[comp] = st.spec(a->second);
+void read_level_type(DictStream& st, const LevelTypeSpec& lt, LevelObject& o) {
+    o.kind = lt.kind;
+    const std::string spec = lt.spec;
+    o.fields = st.spec(expand(spec));
+    const std::string base = std::string("<") + kBaseLoader + ">";
+    if (spec.rfind(base, 0) == 0) o.base = transform_from_values(o.fields, kBaseFirst);
+    if (o.kind == "skybox") {
+        o.model = o.fields[0].s;
+    } else if (o.kind == "long_distance_mesh" || o.kind == "reflection_mesh") {
+        read_mesh_values(o.fields, o, 14);     // after the 14 base values
+    } else if (o.kind == "zone") {
+        // The zone's byte size: CLevel skips that much for a mission zone that is not current.
+        const int32_t size = o.fields[o.fields.size() - 1].i;
+        o.content_end = st.pos + size_t(std::max(size, 0));
+    }
+}
+
+void read_game_object(DictStream& st, const GolType& type, LevelObject& o) {
+    for (const auto& [comp, flag] : type.components) {
+        if (comp == kCompGroupHash) {
+            o.components[comp] = st.spec(kGroupBuiltinSpec);
         } else if (flag != 0) {
             continue;
-        } else if (comp == kCompBase) {
-            o.base = read_base(st);
-        } else if (comp == kCompMesh) {
-            read_mesh(st, o);
-        } else if (auto p = per_instance_specs().find(comp); p != per_instance_specs().end()) {
-            o.components[comp] = st.spec(p->second);
-        } else {
-            const std::string& spec = component_spec(comp);
-            if (!spec.empty()) o.components[comp] = st.spec(spec);
+        } else if (comp == kCompBaseHash) {
+            o.base = transform_from_values(st.spec(loader_spec(kBaseLoader)), kBaseFirst);
+        } else if (comp == kCompMeshHash) {
+            read_mesh_values(st.spec(loader_spec(kMeshLoader)), o);
+        } else if (const std::string& spec = component_spec(comp); !spec.empty()) {
+            o.components[comp] = st.spec(spec);
         }
     }
 }
@@ -219,7 +149,7 @@ Gol load_gol(const Bytes& data) {
         const int nc = st.h();
         t.name = strip(st.s());
         for (int k = 0; k < nc; ++k) {
-            const int comp = st.h();
+            const int comp = st.i();
             const int flag = st.h();
             t.components.emplace_back(comp, flag);
         }
@@ -232,7 +162,7 @@ Gol load_gol(const Bytes& data) {
         } catch (const FormatError&) {
             t.templates_ok = false;
         }
-        if (!t.templates_ok) t.templates.clear();   // menu-only components don't validate yet
+        if (!t.templates_ok) t.templates.clear();   // 10 level-structure entries end a few bytes short
         gol[t.id] = std::move(t);
     }
     return gol;
@@ -243,21 +173,24 @@ Level load_level(const Bytes& data, const Gol& gol) {
     if (st.h() != 0x4E56) throw FormatError("missing 'NV' tag");
     if (st.h() != 3) throw FormatError("unsupported level version");
     Level level;
-    level.header_count = st.i();
+    level.header_count = st.i();   // an editor figure: LoadNextObject reads until -1
     level.strings = st.strings();
-    for (int k = 0; k < level.header_count; ++k) {
+    bool terminated = false;
+    while (st.pos + 4 <= st.end) {
         LevelObject o;
         o.offset = st.pos;
         o.type = st.i();
-        if (o.type == -1) break;
+        if (o.type == -1) {
+            terminated = true;
+            break;
+        }
         try {
             if (auto lt = level_types().find(o.type); lt != level_types().end()) {
-                o.kind = lt->second.first;
-                lt->second.second(st, o);
+                read_level_type(st, *lt->second, o);
             } else if (auto g = gol.find(o.type); g != gol.end()) {
                 o.kind = "object";
                 o.name = g->second.name;
-                read_game_object(st, g->second, gol, o);
+                read_game_object(st, g->second, o);
             } else {
                 throw FormatError("unknown object type " + std::to_string(o.type));
             }
@@ -266,8 +199,7 @@ Level load_level(const Bytes& data, const Gol& gol) {
         }
         level.objects.push_back(std::move(o));
     }
-    // The real end check: a -1 terminator exactly at the string table.
-    if (st.pos + 4 <= st.end && st.i() != -1) throw FormatError("missing end marker");
+    if (!terminated) throw FormatError("no end marker");
     if (st.pos != st.end) throw FormatError(std::to_string(st.end - st.pos) + " bytes left after the last object");
     return level;
 }
@@ -297,13 +229,17 @@ const Value* resolved_template(const GolType& type, const Gol& gol, int comp) {
 
 namespace {
 bool is_helper_model(const std::string& model) {
+    // Editor stand-ins: N.O.V.A. 3's helper boxes and placeholders, TDKR's editor_* icons
+    // and test collision boxes.
     const std::string m = to_lower(model);
-    return m.find("helpers_box") != std::string::npos || m.find("staticmeshplaceholder") != std::string::npos;
+    for (const char* h : {"helpers_box", "staticmeshplaceholder", "editor_", "meshplaceholder", "box_collision"})
+        if (m.find(h) != std::string::npos) return true;
+    return false;
 }
 
 std::optional<Transform> object_transform(const LevelObject& o, const GolType& type, const Gol& gol) {
     if (o.base) return o.base;
-    if (const Value* t = resolved_template(type, gol, kCompBase)) return transform_from_values(*t);
+    if (const Value* t = resolved_template(type, gol, kCompBase)) return transform_from_values(*t, kBaseFirst);
     return std::nullopt;
 }
 }  // namespace
@@ -318,10 +254,7 @@ std::vector<Placement> model_placements(const Level& level, const Gol& gol, bool
         std::string model = o.model;
         uint32_t mesh_flags = o.mesh_flags;
         if (model.empty() && library) {
-            if (const Value* t = resolved_template(g->second, gol, kCompMesh)) {
-                model = (*t)[0].s;
-                if (t->size() > 1) mesh_flags = uint32_t((*t)[1].i);
-            }
+            if (const Value* t = resolved_template(g->second, gol, kCompMesh)) model = (*t)[0].s;
         }
         auto tf = library ? object_transform(o, g->second, gol) : o.base;
         if (model.empty() || !tf || is_helper_model(model)) continue;
@@ -355,10 +288,11 @@ std::vector<Placement> collision_placements(const Level& level, const Gol& gol) 
         if (auto it = o.components.find(kCompCollision); it != o.components.end()) data = &it->second;
         else data = resolved_template(g->second, gol, kCompCollision);
         auto tf = object_transform(o, g->second, gol);
-        if (data && tf && data->size() > 5 && (*data)[5].type == Value::String && !(*data)[5].s.empty()) {
+        if (data && tf && data->size() > kCollisionModelField && (*data)[kCollisionModelField].type == Value::String &&
+            !(*data)[kCollisionModelField].s.empty()) {
             Placement p;
             p.object_index = index;
-            p.model = (*data)[5].s;
+            p.model = (*data)[kCollisionModelField].s;
             p.transform = *tf;
             p.object = o.name;
             out.push_back(std::move(p));
@@ -370,57 +304,32 @@ std::vector<Placement> collision_placements(const Level& level, const Gol& gol) 
 std::vector<SkyboxRef> level_skyboxes(const Level& level) {
     std::vector<SkyboxRef> out;
     for (const auto& o : level.objects) {
-        if (o.kind != "skybox" || o.fields.size() < 3) continue;
-        out.push_back({o.fields[0].s, o.fields[1].i, o.fields[2].i != 0});
+        if (o.kind != "skybox" || o.fields.size() < 4) continue;
+        out.push_back({o.fields[0].s, o.fields[3].i, true});
     }
     return out;
 }
 
-std::vector<LevelLight> level_lights(const Level& level, const Gol& gol) {
+std::vector<LevelLight> level_lights(const Level& level, const Gol&) {
     std::vector<LevelLight> out;
-    for (const auto& o : level.objects) {
-        if (o.kind != "object") continue;
-        auto g = gol.find(o.type);
-        if (g == gol.end()) continue;
-        const Value* v = nullptr;
-        if (auto it = o.components.find(kCompLight); it != o.components.end()) v = &it->second;
-        else v = resolved_template(g->second, gol, kCompLight);
-        auto tf = object_transform(o, g->second, gol);
-        if (!v || v->size() < 10 || !tf) continue;
+    for (size_t index = 0; index < level.objects.size(); ++index) {
+        const LevelObject& o = level.objects[index];
+        if (o.kind != "light" || !o.base || o.fields.size() < 19) continue;
+        // After the 14 base values: f, f, i, i, f (CComponentLight::Load). Not yet checked
+        // against a level that uses them; none of the shipped levels has a light record.
         LevelLight l;
-        l.object = o.name;
-        l.index = size_t(&o - level.objects.data());
-        l.position = tf->position;
-        for (int k = 0; k < 4; ++k) l.color[k] = float(uint8_t((*v)[size_t(k)].i)) / 255.0f;
-        l.intensity = (*v)[4].as_float();
-        l.radius = (*v)[5].as_float();
-        l.fake = (*v)[9].i != 0;
+        l.object = "light";
+        l.index = index;
+        l.position = o.base->position;
+        const uint32_t c = uint32_t(o.fields[16].i);
+        l.color = glm::vec4((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, c >> 24) / 255.0f;
+        l.intensity = o.fields[14].as_float();
+        l.radius = o.fields[15].as_float();
         out.push_back(l);
     }
     return out;
 }
 
-void keep_section(Level& level, uint32_t section_mask) {
-    // CLevel: a zone (or meta zone) whose mask misses the section is skipped together
-    // with the records that follow it, `content_end` bytes into the file.
-    std::vector<LevelObject> kept;
-    kept.reserve(level.objects.size());
-    size_t skip_until = 0;
-    for (LevelObject& o : level.objects) {
-        if (o.offset < skip_until) continue;
-        if (o.kind == "zone" || o.kind == "meta_zone") {
-            // Zone: the mask is its first field; meta zone: the int after the zone list.
-            uint32_t mask = 0xFFFFFFFF;
-            if (o.kind == "zone" && o.fields.size() >= 1) mask = uint32_t(o.fields[0].i);
-            if (o.kind == "meta_zone" && o.fields.size() >= 2) mask = uint32_t(o.fields[1].i);
-            if ((mask & section_mask) == 0) {
-                skip_until = o.content_end;
-                continue;
-            }
-        }
-        kept.push_back(std::move(o));
-    }
-    level.objects = std::move(kept);
-}
+void keep_section(Level&, uint32_t) {}
 
 }  // namespace tdkr

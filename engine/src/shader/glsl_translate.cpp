@@ -178,6 +178,9 @@ int attribute_location(const std::string& name) {
     static const std::map<std::string, int> kLocations = {
         {"Vertex", kLocPosition}, {"Normal", kLocNormal}, {"TexCoord0", kLocUv0}, {"TexCoord1", kLocUv1},
         {"TexCoord2", kLocUv2}, {"Color0", kLocColor}, {"Tangent", kLocTangent}, {"Binormal", kLocBinormal},
+        // TDKR's shaders also use these names.
+        {"Position", kLocPosition}, {"Coord0", kLocUv0}, {"Coord1", kLocUv1}, {"Color", kLocColor},
+        {"Texcoord0", kLocUv0}, {"normal", kLocNormal},
     };
     auto it = kLocations.find(name);
     return it == kLocations.end() ? -1 : it->second;
@@ -238,8 +241,8 @@ TranslatedShader translate_vertex(const std::string& preprocessed, bool skinned,
             head += decl_text(d.type, d.name, d.array) + ";\n";
             if (loc < 0) continue;   // not provided by our vertex format: stays zero
             head += "layout(location = " + std::to_string(loc) + ") in " + d.type + " nova_a_" + d.name + ";\n";
-            const bool position = d.name == "Vertex", direction = d.name == "Normal" || d.name == "Tangent" ||
-                                                                  d.name == "Binormal";
+            const bool position = d.name == "Vertex" || d.name == "Position",
+                       direction = d.name == "Normal" || d.name == "normal" || d.name == "Tangent" || d.name == "Binormal";
             if (skinned && position) {
                 prologue += "    " + d.name + " = " + from_vec4(d.type, "(nova_skin * vec4(" + xyz(d.type, "nova_a_" + d.name) +
                                                                      ", 1.0))") + ";\n";

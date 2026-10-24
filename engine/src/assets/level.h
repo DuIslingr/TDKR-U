@@ -1,10 +1,11 @@
 // Levels (.lvc) and the game object library (gol.bin). See tools/lvc.py for the format.
 //
-// A level is a stream of objects: u32 type, then exactly the fields the game's
-// loader reads for that type (no lengths). Level-structure types (zones, portals,
-// nav data, spawn points...) have dedicated readers; any other type is a game
-// object whose per-instance component data follows the type's component list in
-// gol.bin. Component readers come from the generated specs in level_specs.inc.
+// A level is a stream of objects until -1: u32 type, then exactly the fields the game's
+// loader reads for that type (no lengths). Level-structure types (zones, portals, spawn
+// points...) have their own specs; any other type is a game object whose data follows
+// its gol.bin type's own components: each flag-0 component's Load (or template reader),
+// plus group objects' builtin data. TDKR identifies components by 32-bit hashes.
+// The readers come from the generated specs in level_specs.inc.
 #pragma once
 
 #include <array>
@@ -20,11 +21,12 @@
 
 namespace tdkr {
 
-constexpr int kCompBase = 0x00;       // CComponentBase: id, position, rotation (degrees), scale, 2 flags
-constexpr int kCompMesh = 0x01;       // CComponentMesh: model name, int, 11 flags
-constexpr int kCompAnimation = 0x0C;  // CAnimationComponent: s(animation file) s(default clip) f(speed) ...
-constexpr int kCompCollision = 0x19;  // CCollisionComponent: c c c c c s(collision model) [s i] i(triangles)
-constexpr int kCompLight = 0x88;      // CLightComponent: c c c c (RGBA) f(intensity) f(radius) i i f c(fake)
+constexpr int kCompBase = 0x0014CA79;       // CComponentBase: c, id, position, rotation (degrees), scale, 3 flags
+constexpr int kCompMesh = 0x00152B87;       // CComponentMesh: model name, 4 flags
+constexpr int kCompAnimation = 0x0F5F8CFD;  // CAnimationComponent: s(animation file) s(default clip) f(speed) ...
+constexpr int kCompCollision = 0x2DB081E2;  // CCollisionComponent: c c s(collision model) ...
+constexpr size_t kCollisionModelField = 2;
+constexpr int kCompLight = -1;              // N.O.V.A. 3's CLightComponent; TDKR's lights are not mapped yet
 
 struct Transform {
     int id = 0;
@@ -38,7 +40,7 @@ struct GolType {
     int id = 0;
     std::string name;
     std::vector<int> parents;
-    std::vector<std::pair<int, int>> components;   // (component id, flag); flag 0 = stored per instance
+    std::vector<std::pair<int, int>> components;   // (component hash, flag); flag 0 = stored per instance
     std::map<int, Value> templates;                // component id -> template values
     bool templates_ok = false;
 };
@@ -59,13 +61,13 @@ struct NavMesh {
 
 struct LevelObject {
     size_t offset = 0;
-    size_t content_end = 0;    // zones / meta zones: end of the records the game skips with them
+    size_t content_end = 0;    // zones: end of the records the game skips with them (inactive mission zones)
     int type = 0;
     std::string kind;          // "object", "zone", "nav_mesh", "spawn_point", ...
     std::string name;          // object type name from gol.bin
     std::optional<Transform> base;
     std::string model;         // per-instance mesh component model
-    uint32_t mesh_flags = 0;   // its flags (4: fade in, 8: fade out with distance; CGameObject::InitComponentMesh)
+    uint32_t mesh_flags = 0;   // N.O.V.A. 3's fade flags; TDKR's mesh component has 4 bytes, not mapped yet
     std::map<int, Value> components;
     Value fields;              // structure-type fields
     NavMesh nav;
@@ -80,13 +82,12 @@ struct Level {
 Gol load_gol(const Bytes& data);
 Level load_level(const Bytes& data, const Gol& gol);
 
-// Levels are split into sections (bit masks on zone and meta zone records). The game
-// loads one section at a time (LoadLevelSections reloads with another) and skips every
-// zone whose mask misses it, with all the objects up to the next zone record. Keep only
-// what the section `section_mask` loads.
+// N.O.V.A. 3 splits levels into sections by zone masks. TDKR has no such masks (it skips
+// inactive mission zones instead, which needs the mission state), so this keeps everything.
 void keep_section(Level& level, uint32_t section_mask);
 
-// Components including inherited ones (parents first, the type's own entries win).
+// Components including inherited ones (parents first, the type's own entries win). Only the
+// type's own components store level data (CGameObjectManager::CreateObject).
 std::vector<std::pair<int, int>> resolved_components(const GolType& type, const Gol& gol);
 // Template values for `comp` from the type or its nearest parent; nullptr if none.
 const Value* resolved_template(const GolType& type, const Gol& gol, int comp);
@@ -110,8 +111,8 @@ std::vector<Placement> collision_placements(const Level& level, const Gol& gol);
 
 Transform transform_from_values(const Value& v, size_t first = 0);
 
-// Skybox records (level type 0x3D): the model, the id scripts pass to SetSkybox, and
-// whether it is shown when the level starts.
+// Skybox records (level type 0x2661: s model, c, f, i id): the model, the id scripts pass to
+// SetSkybox, and whether it is shown when the level starts (LoadNextObject always adds it).
 struct SkyboxRef {
     std::string model;
     int id = 0;
@@ -119,7 +120,7 @@ struct SkyboxRef {
 };
 std::vector<SkyboxRef> level_skyboxes(const Level& level);
 
-// Objects with a light component (CLightComponent::Load).
+// Light records (level type 0x265E: base, then CComponentLight::Load "f f i i f").
 struct LevelLight {
     std::string object;
     glm::vec3 position{0};

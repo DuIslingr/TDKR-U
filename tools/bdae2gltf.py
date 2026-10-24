@@ -164,7 +164,12 @@ class Exporter:
         fmt, size = bdae.COMP_FORMATS[a.comp_type]
         dtype = np.dtype("<" + fmt)
         start = mesh.vertices_off + a.offset + first * a.stride
-        return np.ndarray((count, a.comps), dtype, self.b.data, start, (a.stride, size)).copy()
+        v = np.ndarray((count, a.comps), dtype, self.b.data, start, (a.stride, size)).copy()
+        if a.quant:     # TDKR: quantized (s16) data with a scale and offset per component
+            k = min(a.comps, 3)
+            v = v.astype(np.float32)
+            v[:, :k] = v[:, :k] * np.array(a.quant[:k], np.float32) + np.array(a.quant[3:3 + k], np.float32)
+        return v
 
     def _skin_arrays(self, skin, first, count, vertex_count):
         b = self.b

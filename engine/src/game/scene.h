@@ -294,6 +294,7 @@ private:
     };
 
     const LoadedModel* model(const std::string& name);
+    const LoadedModel* finish_model(LoadedModel& lm);
     static void build_lod_sets(LoadedModel& lm);
     // Returns the instance's index into instances_.
     size_t add_instance(const LoadedModel& m, const glm::mat4& placement, const Placement* p = nullptr, bool sky = false);

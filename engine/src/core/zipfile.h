@@ -1,8 +1,9 @@
 // Members of plain (unscrambled) ZIP files, as nested inside some game files
-// (.etc colour+alpha texture pairs, effect .bdae files).
+// (.etc colour+alpha texture pairs, effect .bdae files, TDKR's streaming archives).
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "core/bytes.h"
 
@@ -14,5 +15,8 @@ inline bool is_zip(const Bytes& data) {
 
 // The named member's contents, or an empty buffer if absent.
 Bytes unzip_member(const Bytes& zip, const std::string& name);
+
+// Member names, in file order (TDKR's streaming archives name their materials file after the level).
+std::vector<std::string> zip_names(const Bytes& zip);
 
 }  // namespace tdkr

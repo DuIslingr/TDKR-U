@@ -2,557 +2,559 @@
 // Do not edit; regenerate instead.
 // Spec tokens: i f h H c s v, [ ... ] = int-count-prefixed list, <Name::Load> = nested loader.
 
-// CComponentFactory::CreateComponent: component id -> runtime class.
-static const std::pair<int, const char*> kComponentClasses[] = {
-    {0x06, "CTriggerComponent"},
-    {0x0c, "CAnimationComponent"},
-    {0x0d, "CActorsCollisionComponent"},
-    {0x0e, "CStatesSetComponent"},
-    {0x11, "CHealthComponent"},
-    {0x13, "CBreakableComponent"},
-    {0x14, "CMotionComponent"},
-    {0x15, "CPathComponent"},
-    {0x16, "CMotionOnPathComponent"},
-    {0x17, "CLinkObjectComponent"},
-    {0x18, "CElevatorAIComponent"},
-    {0x19, "CCollisionComponent"},
-    {0x1b, "CAirNavigationComponent"},
-    {0x1c, "CWayPtNavigationComponent"},
-    {0x1d, "CGroundNavigationComponent"},
-    {0x1e, "CRunScriptComponent"},
-    {0x1f, "CAwarenessComponent"},
-    {0x21, "CAlienCommanderAIComponent"},
-    {0x23, "CMechAIComponent"},
-    {0x25, "CJumpComponent"},
-    {0x26, "CGrenadeComponent"},
-    {0x27, "CGroupComponent"},
-    {0x28, "CProjectileComponent"},
-    {0x29, "CPlayerBaseComponent"},
-    {0x2a, "PlayerComponent"},
-    {0x2b, "RemoteWeaponComponent"},
-    {0x2c, "RemotePlayerComponent"},
-    {0x2e, "CPlayerBikeComponent"},
-    {0x2f, "CPlayerJeepComponent"},
-    {0x30, "CPlayerBikeConfig"},
-    {0x31, "CPlayerCaughtComponent"},
-    {0x32, "CPlayerCarComponent"},
-    {0x33, "CPlayerMachineGunComponent"},
-    {0x34, "CPlayerMechComponent"},
-    {0x35, "CPlayerControlledFlyComponent"},
-    {0x36, "CPlayerLimitedControlComponent"},
-    {0x37, "CPlayerCinematicComponent"},
-    {0x38, "CPlayerSentinelComponent"},
-    {0x3a, "MPLoadoutComponent"},
-    {0x3b, "CThrowMotionComponent"},
-    {0x3e, "CDroneAIComponent"},
-    {0x3f, "CLaserTurretAIComponent"},
-    {0x40, "CCannonAIComponent"},
-    {0x41, "CCinematicComponent"},
-    {0x42, "CTentacleAIComponent"},
-    {0x43, "CMachineGunAIComponent"},
-    {0x44, "CInteractiveComponent"},
-    {0x47, "CWeaponComponent"},
-    {0x48, "CNPCWeaponComponent"},
-    {0x4a, "CPowerUpComponent"},
-    {0x4b, "CNPCComponent"},
-    {0x4d, "CNPCStaticComponent"},
-    {0x4e, "CAIComponent"},
-    {0x50, "CActorComponent"},
-    {0x52, "CActorWeaponComponent"},
-    {0x53, "CHFSMComponent"},
-    {0x55, "CBigSpiderAiComponent"},
-    {0x57, "CCybertoothAiComponent"},
-    {0x59, "CRedFuryAiComponent"},
-    {0x5a, "CActorSoundsComponent"},
-    {0x5e, "CCarPhysicsComponent"},
-    {0x5f, "CCarAIComponent"},
-    {0x61, "CDoorAIComponent"},
-    {0x62, "CSpawnManager"},
-    {0x63, "CJumpPadComponent"},
-    {0x64, "CTeleportComponent"},
-    {0x65, "CSoundEmitterComponent"},
-    {0x66, "CFlagComponent"},
-    {0x67, "CHomeBaseComponent"},
-    {0x68, "CDamageEmitterComponent"},
-    {0x73, "CUpgradeObjectComponent"},
-    {0x78, "CMpPowerUpComponent"},
-    {0x79, "CMpGameModeComponent"},
-    {0x7a, "CGrenadeDataComponent"},
-    {0x7b, "CGrenadeTriggerComponent"},
-    {0x88, "CLightComponent"},
-    {0x8a, "CLensFlareComponent"},
-    {0x8d, "CTargetableComponent"},
-    {0x8e, "CPhysicsRagdollComponent"},
-    {0x8f, "CPhysicsObjectComponent"},
-    {0x90, "CPhysicsCollisionComponent"},
-    {0x91, "CLinkedObjectsComponent"},
-    {0x92, "CEffectsComponent"},
-    {0x93, "CEffectsLocalComponent"},
-    {0x94, "CMaterialComponent"},
-    {0x95, "CColorMask"},
-    {0x96, "CVehicleCar"},
-    {0x97, "CVehicleCarAI"},
-    {0x98, "CCoverComponent"},
-    {0x99, "CDamageComponent"},
-    {0x9b, "CCapturePointComponent"},
-    {0x9c, "PlayerMultiplayerComponent"},
-    {0x9d, "MPKillchainsComponent"},
-    {0x9f, "CDropShipAIComponent"},
-    {0xa0, "RemoteMechComponent"},
-    {0xa1, "CMPVehicleImpactComponent"},
-    {0xa2, "CMPVisibilityComponent"},
-    {0xa3, "CCharacterShadowPlaneComponent"},
-    {0xa6, "CBoxNodeComponent"},
-    {0xa7, "CPlaneNodeComponent"},
-    {0xa8, "CCylinderNodeComponent"},
+// CComponentFactory::CreateComponent: component hash -> the Load that reads its level data.
+static const std::pair<int, const char*> kComponentLoads[] = {
+    {0x00154bb0, "CPoolComponent::Load"},   // CPoolComponent
+    {0x010fcfd6, "CDummyComponent::Load"},   // CDummyComponent
+    {0x0113317a, "CMeleeComponent::Load"},   // CMeleeComponent
+    {0x0113f791, "CNpcAIComponent::Load"},   // CNpcAIComponent
+    {0x0116a6fa, "CTrailComponent::Load"},   // CTrailComponent
+    {0x0651bdaa, "CActorsCollisionComponent::Load"},   // CActorsCollisionComponent
+    {0x068d1134, "CDestroyableComponent::Load"},   // CDestroyableComponent
+    {0x082ea1c6, "CCollectibleGeneralComponent::Load"},   // CCollectibleGeneralComponent
+    {0x0c7d8baf, "CTrafficRoad::Load"},   // CTrafficRoad
+    {0x0d1839c4, "CBatpodHandleComponent::Load"},   // CBatpodHandleComponent
+    {0x0d6f006f, "CPlatformComponent::Load"},   // CPlatformComponent
+    {0x0ddcd6c4, "CHealthComponent::Load"},   // CHealthComponent
+    {0x0dfe2718, "CMotionComponent::Load"},   // CMotionComponent
+    {0x0e1f5b6f, "CSniperComponent::Load"},   // CSniperComponent
+    {0x0e286154, "CElectricTurretComponent::Load"},   // CElectricTurretComponent
+    {0x0e31d4a0, "CWeaponComponent::Load"},   // CWeaponComponent
+    {0x0f5f8cfd, "CAnimationComponent::Load"},   // CAnimationComponent
+    {0x1402fd4b, "CCrimeHotSpotComponent::Load"},   // CCrimeHotSpotComponent
+    {0x1721f5ba, "CBeastDirectionalComponent::Load"},   // CBeastDirectionalComponent
+    {0x1791e34f, "CVehicleGraphicsComponent::Load"},   // CVehicleGraphicsComponent
+    {0x17ac851f, "CCinematicComponent::Load"},   // CCinematicComponent
+    {0x1963f0c0, "CDistrictComponent::Load"},   // CDistrictComponent
+    {0x1d7644a4, "CRunScriptComponent::Load"},   // CRunScriptComponent
+    {0x216bb1eb, "CVehicleAwareness::Load"},   // CVehicleAwareness
+    {0x222500f6, "CTheBatHandleComponent::Load"},   // CTheBatHandleComponent
+    {0x238767e3, "CHoverToPath::Load"},   // CHoverToPath
+    {0x25fadb96, "CHasLightComponent::Load"},   // CHasLightComponent
+    {0x25fe2587, "CHasSoundComponent::Load"},   // CHasSoundComponent
+    {0x28091330, "CCollectibleComponent::Load"},   // CCollectibleComponent
+    {0x2ad64f3d, "CPlaneNodeComponent::Load"},   // CPlaneNodeComponent
+    {0x2b1efd04, "CBeastWindowComponent::Load"},   // CBeastWindowComponent
+    {0x2b9b5fed, "CVehiclePhysics::Load"},   // CVehiclePhysics
+    {0x2ca13c06, "CEffectComponent::Load"},   // CEffectComponent
+    {0x2db081e2, "CCollisionComponent::Load"},   // CCollisionComponent
+    {0x2ef26c52, "CSoundAndLight::Load"},   // CSoundAndLight
+    {0x30951655, "CTrafficParking::Load"},   // CTrafficParking
+    {0x30e3ad7c, "CEngineSoundsComponent::Load"},   // CEngineSoundsComponent
+    {0x3164ae79, "CPlaneNodeComponent::Load"},   // CPlaneNodeComponent
+    {0x3189e053, "CTrafficSetting::Load"},   // CTrafficSetting
+    {0x3198c7c5, "CTrafficSemaphore::Load"},   // CTrafficSemaphore
+    {0x31c00731, "CTrafficSpawner::Load"},   // CTrafficSpawner
+    {0x33702f4a, "CDummiesComponent::Load"},   // CDummiesComponent
+    {0x339bfc0c, "PlayerCapeComponent::Load"},   // PlayerCapeComponent
+    {0x3438ab08, "CGrenadeComponent::Load"},   // CGrenadeComponent
+    {0x34747ebe, "CInteractionComponent::Load"},   // CInteractionComponent
+    {0x35c5e0a0, "CMissileComponent::Load"},   // CMissileComponent
+    {0x3638f4e3, "CDebugDrawComponent::Load"},   // CDebugDrawComponent
+    {0x365cfd67, "CBeastObjectComponent::Load"},   // CBeastObjectComponent
+    {0x377ea715, "CTargetableComponent::Load"},   // CTargetableComponent
+    {0x378ab920, "CVehicleLogic::Load"},   // CVehicleLogic
+    {0x378ded9b, "CVehicleState::Load"},   // CVehicleState
+    {0x37f7a8ae, "CTriggerComponent::Load"},   // CTriggerComponent
+    {0x3b912a30, "CWantedManagerComponent::Load"},   // CWantedManagerComponent
+    {0x3e2bb040, "CWantedGeneratorComponent::Load"},   // CWantedGeneratorComponent
+    {0x3e8cdd06, "CLensFlareComponent::Load"},   // CLensFlareComponent
+    {0x3ebf0875, "CTrafficMagnet::Load"},   // CTrafficMagnet
+    {0x3ef5108d, "CDropCollectibleComponent::Load"},   // CDropCollectibleComponent
+    {0x406510ec, "CNpcSound::Load"},   // CNpcSound
+    {0x40c6b80a, "CCustomizeActorComponent::Load"},   // CCustomizeActorComponent
+    {0x4846ed83, "CGrapplingHookComponent::Load"},   // CGrapplingHookComponent
+    {0x4891830c, "PullableObjectComponent::Load"},   // PullableObjectComponent
+    {0x4ab8a7cd, "CSmartLightComponent::Load"},   // CSmartLightComponent
+    {0x4cbfd885, "CBeastAreaComponent::Load"},   // CBeastAreaComponent
+    {0x4cc04ddb, "CBeastOmniComponent::Load"},   // CBeastOmniComponent
+    {0x4cc07242, "CBeastSpotComponent::Load"},   // CBeastSpotComponent
+    {0x4de3f7c4, "CVehicleSounds::Load"},   // CVehicleSounds
+    {0x5441a117, "CStateSetComponent::Load"},   // CStateSetComponent
+    {0x54505898, "CSteammerComponent::Load"},   // CSteammerComponent
+    {0x54989cb1, "CActorBaseComponent::Load"},   // CActorBaseComponent
+    {0x557a594a, "CAreaDamageComponent::Load"},   // CAreaDamageComponent
+    {0x55a6393b, "CQuestComponent::Load"},   // CQuestComponent
+    {0x5863bd59, "CMainStoryQuestsComponent::Load"},   // CMainStoryQuestsComponent
+    {0x592ce07c, "CActorSpecialEffects::Load"},   // CActorSpecialEffects
+    {0x5941c179, "CTrafficCrossroad::Load"},   // CTrafficCrossroad
+    {0x59a8390c, "CBeastObjectGlobalComponent::Load"},   // CBeastObjectGlobalComponent
+    {0x5a77332f, "CWpMovementComponent::Load"},   // CWpMovementComponent
+    {0x5e35be99, "IComponent::Load"},   // CNetworkPlayerComponent
+    {0x62353c58, "CSurveillanceCameraComponent::Load"},   // CSurveillanceCameraComponent
+    {0x650bb301, "IComponent::Load"},   // CPedestrian
+    {0x65da04ed, "CExhaustFanComponent::Load"},   // CExhaustFanComponent
+    {0x6754056b, "CAwarenessComponent::Load"},   // CAwarenessComponent
+    {0x675d6313, "CDropActorsComponent::Load"},   // CDropActorsComponent
+    {0x67c82e62, "CVehicleCollisionComponent::Load"},   // CVehicleCollisionComponent
+    {0x68a62e65, "CActorShadowComponent::Load"},   // CActorShadowComponent
+    {0x69540db7, "CBeastSkylightComponent::Load"},   // CBeastSkylightComponent
+    {0x729ec572, "CBoxNodeComponent::Load"},   // CBoxNodeComponent
+    {0x749126c3, "CCylinderNodeComponent::Load"},   // CCylinderNodeComponent
+    {0x7538c652, "PlayerComponent::Load"},   // PlayerComponent
+    {0x75a9de0e, "CGrapplingHookTargetComponent::Load"},   // CGrapplingHookTargetComponent
+    {0x786f6ecb, "CHelicopterLogic::Load"},   // CHelicopterLogic
+    {0x7d561d33, "CCameraParamsComponent::Load"},   // CCameraParamsComponent
+    {0x7f88e44e, "CCollisionBoxNodeComponent::Load"},   // CCollisionBoxNodeComponent
 };
 
-// GenerateComponentTemplate: component id -> template spec (gol.bin).
-static const std::pair<int, const char*> kTemplateSpecs[] = {
-    {0x00, "<CComponentBase::Load>"},
-    {0x01, "<CComponentMesh::Load>"},
-    {0x02, "i i"},
-    {0x03, "<CComponentMetaZone::Load>"},
-    {0x04, "i"},
-    {0x05, "<CComponentZoneFog::Load>"},
-    {0x06, "<CComponentTrigger::Load>"},
-    {0x07, "<CComponentWaypoint::Load>"},
-    {0x08, "<CComponentNavPoint::Load>"},
-    {0x09, "<CComponentPatrolPoint::Load>"},
-    {0x0a, "s s c"},
-    {0x0b, "<CComponentMenuSlide::Load>"},
-    {0x0c, "<CComponentAnimated::Load>"},
-    {0x0d, "<CComponentActorsCollision::Load>"},
-    {0x0e, "<CComponentStateSet::Load>"},
-    {0x0f, "<CComponentConsumablesData::Load>"},
-    {0x10, "<CComponentAchievementData::Load>"},
-    {0x11, "<CComponentHealth::Load>"},
-    {0x12, "<CComponentHealth_Config::Load>"},
-    {0x13, "<CComponentBreakable::Load>"},
-    {0x14, "<CComponentMotion::Load>"},
-    {0x15, "<CComponentPath::Load>"},
-    {0x16, "<CComponentMotionOnPath::Load>"},
-    {0x17, "i"},
-    {0x18, "i i f"},
-    {0x19, "<CComponentCollision::Load>"},
-    {0x1a, "<CComponentCollisionTypesInfos::Load>"},
-    {0x1b, "<CComponentAirNavigation::Load>"},
-    {0x1c, "i s"},
-    {0x1d, "<CComponentGroundNavigation::Load>"},
-    {0x1e, "s i"},
-    {0x1f, "<CComponentAwareness::Load>"},
-    {0x20, "<CComponentAIController::Load>"},
-    {0x21, "<CComponentAlienCommanderAI::Load>"},
-    {0x22, "c c"},
-    {0x23, "<CComponentMechAI::Load>"},
-    {0x24, "c"},
-    {0x25, "<CComponentJump::Load>"},
-    {0x26, "<CComponentGrenade::Load>"},
-    {0x27, "<CComponentEnemyGroup::Load>"},
-    {0x28, "<CComponentProjectile::Load>"},
-    {0x29, "<CComponentPlayerBaseComponent::Load>"},
-    {0x2a, "<CComponentPlayerComponent::Load>"},
-    {0x2b, "<CComponentRemoteWeapon::Load>"},
-    {0x2c, "<CComponentRemotePlayer::Load>"},
-    {0x2d, "<CComponentSkin_Config::Load>"},
-    {0x2e, "<CComponentPlayerBikeComponent::Load>"},
-    {0x2f, "<CComponentPlayerJeepComponent::Load>"},
-    {0x30, "<CComponentPlayerBikeConfig::Load>"},
-    {0x31, "s"},
-    {0x32, "<CComponentPlayerCarComponent::Load>"},
-    {0x33, "<CComponentPlayerMachineGunComponent::Load>"},
-    {0x34, "<CComponentPlayerMechComponent::Load>"},
-    {0x35, "f"},
-    {0x36, "f f f"},
-    {0x37, "f f"},
-    {0x38, ""},
-    {0x39, "<CComponentPlayerControl::Load>"},
-    {0x3a, "<CComponentMPLoadout::Load>"},
-    {0x3b, "<CComponentThrowMotion::Load>"},
-    {0x3c, "<CComponentTutorial::Load>"},
-    {0x3d, "<CComponentDifficultyLevels::Load>"},
-    {0x3e, "<CComponentDroneAI::Load>"},
-    {0x3f, "<CComponentLaserTurretAI::Load>"},
-    {0x40, ""},
-    {0x41, "<CComponentCinematic::Load>"},
-    {0x42, "f s s"},
-    {0x43, "<CComponentMachineGunAI::Load>"},
-    {0x44, "<CComponentInteractive::Load>"},
-    {0x45, "<CComponentInteractive_Global::Load>"},
-    {0x46, "<CComponentWeaponManager::Load>"},
-    {0x47, "<CComponentWeapon::Load>"},
-    {0x48, "<CComponentNPCWeapon::Load>"},
-    {0x49, "<CComponentPowerManager::Load>"},
-    {0x4a, "<CComponentPowerUp::Load>"},
-    {0x4b, "<CComponentNPC::Load>"},
-    {0x4c, "<CComponentNPC_Config::Load>"},
-    {0x4d, "<CComponentNPCStatic::Load>"},
-    {0x4e, "<CComponentAI::Load>"},
-    {0x4f, "i"},
-    {0x50, "<CComponentActor::Load>"},
-    {0x51, "i"},
-    {0x52, "<CComponentActorWeapon::Load>"},
-    {0x53, "<CComponentHFSM::Load>"},
-    {0x54, "s"},
-    {0x55, "<CComponentBigSpiderAi::Load>"},
-    {0x56, "i"},
-    {0x57, "<CComponentCybertoothAi::Load>"},
-    {0x58, "i"},
-    {0x59, "<CComponentRedFuryAi::Load>"},
-    {0x5a, "<CComponentActorSounds::Load>"},
-    {0x5b, "<CComponentLevelProperties::Load>"},
-    {0x5c, "<CComponentGameLevels::Load>"},
-    {0x5d, "<CComponentMPLevels::Load>"},
-    {0x5e, "<CComponentCarPhysics::Load>"},
-    {0x5f, "<CComponentCarAI::Load>"},
-    {0x60, "i c"},
-    {0x61, "<CComponentDoorAI::Load>"},
-    {0x62, "<CComponentSpawnManager::Load>"},
-    {0x63, "<CComponentJumpPad::Load>"},
-    {0x64, "f i"},
-    {0x65, "<CComponentSoundEmitter::Load>"},
-    {0x66, "f i"},
-    {0x67, "f i"},
-    {0x68, "<CComponentDamageEmitter::Load>"},
-    {0x69, "<CComponentMenuFonts::Load>"},
-    {0x6a, "i i"},
-    {0x6b, "<CComponentDisplayMeshTemplate::Load>"},
-    {0x6c, "<CComponentMenuTableProps::Load>"},
-    {0x6d, "<CComponentMenuSweepFrames::Load>"},
-    {0x6e, "<CComponentMenuSweepStrings::Load>"},
-    {0x6f, "<CComponentMenuMultiOptionTexts::Load>"},
-    {0x70, "<CComponentMenuColor::Load>"},
-    {0x71, "i i"},
-    {0x72, "i i c"},
-    {0x73, "i f s"},
-    {0x74, "<CComponentUpgradesManager::Load>"},
-    {0x75, "<CComponentMPXPGain::Load>"},
-    {0x76, "<CComponentMPSoundFiles::Load>"},
-    {0x77, "<CComponentMPChatInfo::Load>"},
-    {0x78, "<CComponentMPPowerUp::Load>"},
-    {0x79, "i"},
-    {0x7a, "i f i"},
-    {0x7b, "<CComponentGrenadeTrigger::Load>"},
-    {0x7c, "<CComponentEnemyGrenades::Load>"},
-    {0x7d, "<CComponentMPUnlockTableWeapons::Load>"},
-    {0x7e, "<CComponentMPUnlockTableAddOns::Load>"},
-    {0x7f, "<CComponentMPUnlockTableItems::Load>"},
-    {0x80, "<CComponentMPUnlockTablePerks::Load>"},
-    {0x81, ""},
-    {0x82, "<CComponentMPUnlockTableKillchains::Load>"},
-    {0x83, "<CComponentMPUnlockTablePresets::Load>"},
-    {0x84, "<CComponentMPLevelXPTable::Load>"},
-    {0x85, "<CComponentMPRankLevel::Load>"},
-    {0x86, "<CComponentSkinColorPreset::Load>"},
-    {0x87, "<CComponentMPMusics::Load>"},
-    {0x88, "<CComponentLight::Load>"},
-    {0x89, ""},
-    {0x8a, "<CComponentLensFlareParams::Load>"},
-    {0x8b, ""},
-    {0x8c, "<CComponentRagdollsSettings::Load>"},
-    {0x8d, "<CComponentTargetable::Load>"},
-    {0x8e, "<CComponentPhysicsRagdoll::Load>"},
-    {0x8f, "<CComponentPhysicsObject::Load>"},
-    {0x90, "c"},
-    {0x91, "<CComponentLinkedObjects::Load>"},
-    {0x92, "<CComponentEffects::Load>"},
-    {0x93, "<CComponentEffectsLocal::Load>"},
-    {0x94, "f"},
-    {0x95, "<CComponentColorMask::Load>"},
-    {0x96, "<CComponentVehicleCar::Load>"},
-    {0x97, "i i"},
-    {0x98, ""},
-    {0x99, "<CComponentDamage::Load>"},
-    {0x9a, "<CComponentIrradianceVolume::Load>"},
-    {0x9b, "<CComponentCapturePoint::Load>"},
-    {0x9c, "i"},
-    {0x9d, "<CComponentMPKillchains::Load>"},
-    {0x9e, "i i"},
-    {0x9f, "<CComponentDropShipAI::Load>"},
-    {0xa0, "<CComponentRemoteMech::Load>"},
-    {0xa1, "<CComponentVehicleImpact::Load>"},
-    {0xa2, "<CComponentMPVisibility::Load>"},
-    {0xa3, "<CComponentCharacterShadowPlane::Load>"},
-    {0xa4, "<CComponentLevelStatistics::Load>"},
-    {0xa5, "<CComponentNPCBarksManager::Load>"},
-    {0xa6, "<CComponentBuiltinBox::Load>"},
-    {0xa7, "<CComponentBuiltinPlane::Load>"},
-    {0xa8, "<CComponentBuiltinCylinder::Load>"},
-    {0xa9, "s"},
-    {0xaa, ""},
-    {0xab, ""},
-    {0xac, ""},
-    {0xad, "<CComponentBuiltinTerrain::Load>"},
-    {0xae, "<CComponentBuiltinEffect::Load>"},
-    {0xaf, "<CComponentBuiltinCollisionBox::Load>"},
-    {0xb0, "<CComponentBuiltinCollisionPlane::Load>"},
-    {0xb1, ""},
-    {0xb2, ""},
-    {0xb3, "<CComponentBuiltinCover::Load>"},
-    {0xb4, "f f f"},
-    {0xb5, "c c"},
+// GenerateComponentTemplate: component hash -> the template's Load (gol.bin, and
+// level data of components the factory does not build).
+static const std::pair<int, const char*> kTemplateLoads[] = {
+    {0x00019ee5, "CComponentLOD::Load"},   // CComponentLOD
+    {0x0014ca79, "CComponentBase::Load"},   // CComponentBase
+    {0x00152b87, "CComponentMesh::Load"},   // CComponentMesh
+    {0x00154bb0, "CComponentPool::Load"},   // CComponentPool
+    {0x001560d4, "CComponentShop::Load"},   // CComponentShop
+    {0x010fcfd6, "CComponentDummy::Load"},   // CComponentDummy
+    {0x0110ce1f, "CComponentGlide::Load"},   // CComponentGlide
+    {0x0112e126, "CComponentLight::Load"},   // CComponentLight
+    {0x0113317a, "CComponentMelee::Load"},   // CComponentMelee
+    {0x0113f791, "CComponentNpcAI::Load"},   // CComponentNpcAI
+    {0x0116a6fa, "CComponentTrail::Load"},   // CComponentTrail
+    {0x0651bdaa, "CComponentActorsCollision::Load"},   // CComponentActorsCollision
+    {0x068d1134, "CComponentDestroyable::Load"},   // CComponentDestroyable
+    {0x082ea1c6, "CComponentColectibleGeneral::Load"},   // CComponentColectibleGeneral
+    {0x0c69a6a7, "CComponentZonesLink::Load"},   // CComponentZonesLink
+    {0x0c7d8baf, "CComponentTrafficRoad::Load"},   // CComponentTrafficRoad
+    {0x0d1839c4, "CComponentBatpodHandle::Load"},   // CComponentBatpodHandle
+    {0x0d6f006f, "CComponentPlatform_Properties::Load"},   // CComponentPlatform_Properties
+    {0x0dc22f56, "CComponentBullet::Load"},   // CComponentBullet
+    {0x0dd583de, "CComponentGadget::Load"},   // CComponentGadget
+    {0x0ddcd6c4, "CComponentHealth::Load"},   // CComponentHealth
+    {0x0dfe2718, "CComponentMotion::Load"},   // CComponentMotion
+    {0x0e1f5b6f, "CComponentSniper::Load"},   // CComponentSniper
+    {0x0e286154, "CComponentTurret::Load"},   // CComponentTurret
+    {0x0e31d4a0, "CComponentWeapon::Load"},   // CComponentWeapon
+    {0x0f5f8cfd, "CComponentAnimated::Load"},   // CComponentAnimated
+    {0x0f992a02, "CComponentBatarang::Load"},   // CComponentBatarang
+    {0x11ff6781, "CComponentPlayerCombat::Load"},   // CComponentPlayerCombat
+    {0x1402fd4b, "CComponentCrimeHotspot::Load"},   // CComponentCrimeHotspot
+    {0x16fcc6f6, "CComponentBuiltinNavSpace::Load"},   // CComponentBuiltinNavSpace
+    {0x1721f5ba, "CComponentBeast_Directional::Load"},   // CComponentBeast_Directional
+    {0x1791e34f, "CComponentVehicleGraphics::Load"},   // CComponentVehicleGraphics
+    {0x17ac851f, "CComponentCinematic::Load"},   // CComponentCinematic
+    {0x1963f0c0, "CComponentDistrict::Load"},   // CComponentDistrict
+    {0x1b2aa571, "CComponentBeastBakeGroup::Load"},   // CComponentBeastBakeGroup
+    {0x1d50aa73, "CComponentCharXPLevels::Load"},   // CComponentCharXPLevels
+    {0x1d7644a4, "CComponentRunScript::Load"},   // CComponentRunScript
+    {0x20af73b7, "CComponentFileName::Load"},   // CComponentFileName
+    {0x216bb1eb, "CComponentVehicleAwareness::Load"},   // CComponentVehicleAwareness
+    {0x222500f6, "CComponentTheBatHandle::Load"},   // CComponentTheBatHandle
+    {0x238767e3, "CComponentHoverPath::Load"},   // CComponentHoverPath
+    {0x25fadb96, "CComponentHasLight::Load"},   // CComponentHasLight
+    {0x25fe2587, "CComponentHasSound::Load"},   // CComponentHasSound
+    {0x26a331e5, "CComponentBuiltinWaypointBox::Load"},   // CComponentBuiltinWaypointBox
+    {0x278bdd36, "CComponentFireTrailAI::Load"},   // CComponentFireTrailAI
+    {0x279c68f5, "CComponentBaseGlobalIllum::Load"},   // CComponentBaseGlobalIllum
+    {0x28091330, "CComponentCollectible::Load"},   // CComponentCollectible
+    {0x2888019a, "CComponentBaseWorldBox::Load"},   // CComponentBaseWorldBox
+    {0x292930b0, "CComponentNewShopCategory::Load"},   // CComponentNewShopCategory
+    {0x29e7750d, "CComponentMinimapInit::Load"},   // CComponentMinimapInit
+    {0x2ad0cc14, "CComponentBuiltinCover::Load"},   // CComponentBuiltinCover
+    {0x2ad2a046, "CComponentBuiltinGroup::Load"},   // CComponentBuiltinGroup
+    {0x2ad64f3d, "CComponentBuiltinPlane::Load"},   // CComponentBuiltinPlane
+    {0x2b1efd04, "CComponentBeast_Window::Load"},   // CComponentBeast_Window
+    {0x2b9b5fed, "CComponentVehiclePhysics::Load"},   // CComponentVehiclePhysics
+    {0x2c9a0e3f, "CComponentBuiltinColors::Load"},   // CComponentBuiltinColors
+    {0x2ca13c06, "CComponentBuiltinEffect::Load"},   // CComponentBuiltinEffect
+    {0x2cf1c31c, "CComponentGrapplingGun::Load"},   // CComponentGrapplingGun
+    {0x2cf34785, "CComponentBuiltinSkyBox::Load"},   // CComponentBuiltinSkyBox
+    {0x2db081e2, "CComponentCollision::Load"},   // CComponentCollision
+    {0x2e23cdd8, "CComponentBuiltinNavMeshAuto::Load"},   // CComponentBuiltinNavMeshAuto
+    {0x2ef26c52, "CComponentSoundAndLight::Load"},   // CComponentSoundAndLight
+    {0x30951655, "CComponentTrafficParking::Load"},   // CComponentTrafficParking
+    {0x30e3ad7c, "CComponentEngineSounds::Load"},   // CComponentEngineSounds
+    {0x3164ae79, "CComponentBuiltinCollisionPlane::Load"},   // CComponentBuiltinCollisionPlane
+    {0x3189e053, "CComponentTrafficSetting::Load"},   // CComponentTrafficSetting
+    {0x3198c7c5, "CComponentTrafficSemaphore::Load"},   // CComponentTrafficSemaphore
+    {0x31c00731, "CComponentTrafficSpawner::Load"},   // CComponentTrafficSpawner
+    {0x331052a1, "CComponentCraneAI::Load"},   // CComponentCraneAI
+    {0x33601348, "CComponentDroneAI::Load"},   // CComponentDroneAI
+    {0x33702f4a, "CComponentDummies::Load"},   // CComponentDummies
+    {0x339bfc0c, "CComponentPlayerCape::Load"},   // CComponentPlayerCape
+    {0x33f89aaa, "CComponentMeshUVTransform::Load"},   // CComponentMeshUVTransform
+    {0x3438ab08, "CComponentGrenade::Load"},   // CComponentGrenade
+    {0x34747ebe, "CComponentInteraction::Load"},   // CComponentInteraction
+    {0x352b0a2e, "CComponentLazyLoad::Load"},   // CComponentLazyLoad
+    {0x35c5e0a0, "CComponentMissile::Load"},   // CComponentMissile
+    {0x3638f4e3, "CComponentDebugDraw::Load"},   // CComponentDebugDraw
+    {0x365cfd67, "CComponentBeastObjectComponent::Load"},   // CComponentBeastObjectComponent
+    {0x36f1fe78, "CComponentAIScripts::Load"},   // CComponentAIScripts
+    {0x3755b69f, "CComponentScaling::Load"},   // CComponentScaling
+    {0x377ea715, "CComponentTargetable::Load"},   // CComponentTargetable
+    {0x37883208, "CComponentVehicleGears::Load"},   // CComponentVehicleGears
+    {0x378ab920, "CComponentVehicleLogic::Load"},   // CComponentVehicleLogic
+    {0x378ded9b, "CComponentVehicleState::Load"},   // CComponentVehicleState
+    {0x37f7a8ae, "CComponentTrigger::Load"},   // CComponentTrigger
+    {0x39e32181, "CComponentMetaZone::Load"},   // CComponentMetaZone
+    {0x3b912a30, "CComponentWantedManager::Load"},   // CComponentWantedManager
+    {0x3c3c6b28, "CComponentThrowMotion::Load"},   // CComponentThrowMotion
+    {0x3e2bb040, "CComponentWantedGenerator::Load"},   // CComponentWantedGenerator
+    {0x3e5bbba8, "CComponentZombieConverter::Load"},   // CComponentZombieConverter
+    {0x3e8cdd06, "CComponentLensFlare::Load"},   // CComponentLensFlare
+    {0x3ebf0875, "CComponentTrafficMagnet::Load"},   // CComponentTrafficMagnet
+    {0x3ef5108d, "CComponentDropCollectible::Load"},   // CComponentDropCollectible
+    {0x406510ec, "CComponentNpcSound::Load"},   // CComponentNpcSound
+    {0x409a2d0e, "CComponentLevelInit::Load"},   // CComponentLevelInit
+    {0x40c6b80a, "CComponentCustomizeActor::Load"},   // CComponentCustomizeActor
+    {0x43c8a8d1, "CComponentObjective::Load"},   // CComponentObjective
+    {0x44c6e9e5, "CComponentNpcCombat::Load"},   // CComponentNpcCombat
+    {0x44c835d1, "CComponentNewShopItem::Load"},   // CComponentNewShopItem
+    {0x454206a4, "CComponentAIController::Load"},   // CComponentAIController
+    {0x46b0c1c3, "CComponentBuiltinNavMesh::Load"},   // CComponentBuiltinNavMesh
+    {0x4846ed83, "CComponentGrapplingHook::Load"},   // CComponentGrapplingHook
+    {0x4880cfb2, "CComponentBuiltinTerrain::Load"},   // CComponentBuiltinTerrain
+    {0x4891830c, "CComponentMiniGameObject::Load"},   // CComponentMiniGameObject
+    {0x4a04f065, "CComponentKombatCameraParams::Load"},   // CComponentKombatCameraParams
+    {0x4ab8a7cd, "CComponentSmartLight::Load"},   // CComponentSmartLight
+    {0x4ca5f00e, "CComponentNewShopItemProperty::Load"},   // CComponentNewShopItemProperty
+    {0x4cbfd885, "CComponentBeast_Area::Load"},   // CComponentBeast_Area
+    {0x4cc04ddb, "CComponentBeast_Omni::Load"},   // CComponentBeast_Omni
+    {0x4cc07242, "CComponentBeast_Spot::Load"},   // CComponentBeast_Spot
+    {0x4de3f7c4, "CComponentVehicleSoundEvents::Load"},   // CComponentVehicleSoundEvents
+    {0x500fe00c, "CComponentSegments::Load"},   // CComponentSegments
+    {0x519ad19b, "CComponentMuzzleFlash::Load"},   // CComponentMuzzleFlash
+    {0x522b4939, "CComponentMorphValueList::Load"},   // CComponentMorphValueList
+    {0x5441a117, "CComponentStateSet::Load"},   // CComponentStateSet
+    {0x54505898, "CComponentSteammer::Load"},   // CComponentSteammer
+    {0x5471c18b, "CComponentMissionsList::Load"},   // CComponentMissionsList
+    {0x54989cb1, "CComponentActorBaseComponent::Load"},   // CComponentActorBaseComponent
+    {0x557a594a, "CComponentAreaDamage::Load"},   // CComponentAreaDamage
+    {0x55a6393b, "CComponentQuest_Parameters::Load"},   // CComponentQuest_Parameters
+    {0x55d743c0, "CComponentObject_Rotation::Load"},   // CComponentObject_Rotation
+    {0x5863bd59, "CComponentMainStoryQuests::Load"},   // CComponentMainStoryQuests
+    {0x58b2b422, "CComponentTutorial::Load"},   // CComponentTutorial
+    {0x592ce07c, "CComponentActorSpecialEffects::Load"},   // CComponentActorSpecialEffects
+    {0x5941c179, "CComponentTrafficCrossroad::Load"},   // CComponentTrafficCrossroad
+    {0x59a8390c, "CComponentBeastObjectComponentGlobal::Load"},   // CComponentBeastObjectComponentGlobal
+    {0x5a77332f, "CComponentWaypoint_Movement::Load"},   // CComponentWaypoint_Movement
+    {0x5e35be99, "CComponentNetworkPlayer::Load"},   // CComponentNetworkPlayer
+    {0x5e46be31, "CComponentWaypoint::Load"},   // CComponentWaypoint
+    {0x6133228b, "CComponentBuiltinIrradianceVolume::Load"},   // CComponentBuiltinIrradianceVolume
+    {0x62353c58, "CComponentSurveillanceCam::Load"},   // CComponentSurveillanceCam
+    {0x650bb301, "CComponentPedestrian::Load"},   // CComponentPedestrian
+    {0x65da04ed, "CComponentExhaustFan::Load"},   // CComponentExhaustFan
+    {0x6754056b, "CComponentAwareness::Load"},   // CComponentAwareness
+    {0x675d6313, "CComponentDropActors::Load"},   // CComponentDropActors
+    {0x67c82e62, "CComponentVehicleCollision::Load"},   // CComponentVehicleCollision
+    {0x68a62e65, "CComponentActorShadow::Load"},   // CComponentActorShadow
+    {0x69540db7, "CComponentBeast_Skylight::Load"},   // CComponentBeast_Skylight
+    {0x69f956fc, "CComponentPlayerControl::Load"},   // CComponentPlayerControl
+    {0x6a204677, "CComponentGadgetZoom::Load"},   // CComponentGadgetZoom
+    {0x6bb478e6, "CComponentPlayerCaughtComponent::Load"},   // CComponentPlayerCaughtComponent
+    {0x6ea4cd6c, "CComponentTentacleAI::Load"},   // CComponentTentacleAI
+    {0x71c81d7a, "CComponentLevelGlobalIllum::Load"},   // CComponentLevelGlobalIllum
+    {0x727dddd6, "CComponentPendulum_Movement::Load"},   // CComponentPendulum_Movement
+    {0x729ec572, "CComponentBuiltinBox::Load"},   // CComponentBuiltinBox
+    {0x73f0fe09, "CComponentEffectsLOD::Load"},   // CComponentEffectsLOD
+    {0x749126c3, "CComponentBuiltinCylinder::Load"},   // CComponentBuiltinCylinder
+    {0x7538c652, "CComponentPlayerComponent::Load"},   // CComponentPlayerComponent
+    {0x75a9de0e, "CComponentGrapplingHookTarget::Load"},   // CComponentGrapplingHookTarget
+    {0x78048724, "CComponentPendulum_Properties::Load"},   // CComponentPendulum_Properties
+    {0x786f6ecb, "CComponentHelicopterLogic::Load"},   // CComponentHelicopterLogic
+    {0x7c2f7284, "CComponentIrradianceVolume::Load"},   // CComponentIrradianceVolume
+    {0x7cbf8411, "CComponentObject_Scaling::Load"},   // CComponentObject_Scaling
+    {0x7d561d33, "CComponentCameraParams::Load"},   // CComponentCameraParams
+    {0x7f305b9b, "CComponentNpcGlobals::Load"},   // CComponentNpcGlobals
+    {0x7f88e44e, "CComponentBuiltinCollisionBox::Load"},   // CComponentBuiltinCollisionBox
 };
 
 // Loader name -> spec (generated specs with lvc.SPEC_OVERRIDES applied).
 static const std::pair<const char*, const char*> kLoaderSpecs[] = {
-    {"CAIComponent::Load", "<CComponentAI::Load>"},
-    {"CActorComponent::Load", "<CComponentActor::Load>"},
-    {"CActorSoundsComponent::Load", "[ <CContainerStepsSounds::Load> ]"},
-    {"CActorWeaponComponent::Load", "i i c i f f f i s i c s f f f [ s ]"},
-    {"CActorsCollisionComponent::Load", "f f f f f f"},
-    {"CAirNavigationComponent::Load", "s i f i f f f f f f f f f f f i"},
-    {"CAlienCommanderAIComponent::Load", "<CComponentAlienCommanderAI::Load>"},
-    {"CAnimationComponent::Load", "s s f c s c c [ [ s f ] ] c c c"},
-    {"CAwarenessComponent::Load", "i i f f f f i f f f c f [ s ]"},
-    {"CBigSpiderAiComponent::Load", "f f f f f f f f f c f f f f f f [ s ]"},
-    {"CBoxNodeComponent::Load", "f f f i c c c c i c c c c i c c c c i c c c c i c c c c i c c c c"},
-    {"CBreakableComponent::Load", "i [ f i c ] [ f i f f f f f f f f s ]"},
-    {"CCannonAIComponent::Load", ""},
-    {"CCapturePointComponent::Load", "f i f i s"},
-    {"CCarAIComponent::Load", "i i s s"},
-    {"CCarPhysicsComponent::Load", "<CComponentCarPhysics::Load>"},
-    {"CCharacterShadowPlaneComponent::Load", "s f f f c c c c c [ s ]"},
+    {"CActorBaseComponent::Load", "<CComponentActorBaseComponent::Load>"},
+    {"CActorShadowComponent::Load", "<CComponentActorShadow::Load>"},
+    {"CActorSpecialEffects::Load", "<CComponentActorSpecialEffects::Load>"},
+    {"CActorsCollisionComponent::Load", "<CComponentActorsCollision::Load>"},
+    {"CAnimationComponent::Load", "<CComponentAnimated::Load>"},
+    {"CAreaDamageComponent::Load", "<CComponentAreaDamage::Load>"},
+    {"CAwarenessComponent::Load", "<CComponentAwareness::Load>"},
+    {"CBatpodHandleComponent::Load", "<CComponentBatpodHandle::Load>"},
+    {"CBeastAreaComponent::Load", "<CComponentBeast_Area::Load>"},
+    {"CBeastDirectionalComponent::Load", "<CComponentBeast_Directional::Load>"},
+    {"CBeastObjectComponent::Load", "<CComponentBeastObjectComponent::Load>"},
+    {"CBeastObjectGlobalComponent::Load", "<CComponentBeastObjectComponentGlobal::Load>"},
+    {"CBeastOmniComponent::Load", "<CComponentBeast_Omni::Load>"},
+    {"CBeastSkylightComponent::Load", "<CComponentBeast_Skylight::Load>"},
+    {"CBeastSpotComponent::Load", "<CComponentBeast_Spot::Load>"},
+    {"CBeastWindowComponent::Load", "<CComponentBeast_Window::Load>"},
+    {"CBoxNodeComponent::Load", "<CComponentBuiltinBox::Load>"},
+    {"CCameraParamsComponent::Load", ""},
     {"CCinematicComponent::Load", "<CComponentCinematic::Load>"},
-    {"CCollisionComponent::Load", "c c c c c s [ s i ] i"},
-    {"CColorMask::Load", "s c c c c"},
-    {"CComponentAI::Load", "c f c c c c c c c c c c c c f f i f [ s s ] s i i i i i i i f f i f i i i i i i i i i i i i i i f f f f f f f f f f f f f f f f f f f f f [ s f f f f f f f f f f f f f f f f f f i i i i i f f ]"},
-    {"CComponentAIController::Load", "i i i i i i"},
-    {"CComponentAchievementData::Load", "[ i i i i i i i i i i i i i s s s i ]"},
-    {"CComponentActor::Load", "i [ i s c ] f s s i f f s f f f f f f f i [ f ] f i i i i s s s f f f f f f f f c f i i i i i f f i f i i i i [ s f ] [ s ]"},
-    {"CComponentActorSounds::Load", "[ <CContainerStepsSounds::Load> ]"},
-    {"CComponentActorWeapon::Load", "i i c i f f f i s i c s f f f [ s ]"},
-    {"CComponentActorsCollision::Load", "f f f f f f"},
-    {"CComponentAirNavigation::Load", "s i f i f f f f f f f f f f f i"},
-    {"CComponentAlienCommanderAI::Load", "i i i i f f f f f f i i i i i f i i i i f f i f i s i i i i i i i i i i i [ s ] s s"},
-    {"CComponentAnimated::Load", "s s f c s c c [ [ s f ] ] c c c"},
-    {"CComponentAwareness::Load", "i i f f f f i f f f c f [ s ]"},
-    {"CComponentBase::Load", "i f f f f f f f f f c c"},
-    {"CComponentBigSpiderAi::Load", "f f f f f f f f f c f f f f f f [ s ]"},
-    {"CComponentBreakable::Load", "i [ f i c ] [ f i f f f f f f f f s ]"},
+    {"CCollectibleComponent::Load", "<CComponentCollectible::Load>"},
+    {"CCollectibleGeneralComponent::Load", "<CComponentColectibleGeneral::Load>"},
+    {"CCollisionBoxNodeComponent::Load", "f f f i i i i i i i"},
+    {"CCollisionComponent::Load", "<CComponentCollision::Load> c s [ f f f f f f f f f c ] [ i ]"},
+    {"CComponentAIController::Load", "i i i f i f f i i f"},
+    {"CComponentAIScripts::Load", "[ i s c ] s"},
+    {"CComponentActorBaseComponent::Load", "c c c c c c c f f f f f f f f f f f f f f f f c c c i [ i c ]"},
+    {"CComponentActorShadow::Load", "s c"},
+    {"CComponentActorSpecialEffects::Load", "c f f c f f"},
+    {"CComponentActorsCollision::Load", "f f f"},
+    {"CComponentAnimated::Load", "s s f c c c c s [ [ s f ] ] c"},
+    {"CComponentAreaDamage::Load", "i i i"},
+    {"CComponentAwareness::Load", "f f f f f f f f f f f f f f f f"},
+    {"CComponentBase::Load", "c i f f f f f f f f f c c c"},
+    {"CComponentBaseGlobalIllum::Load", "c i f f c c c c f f c c c c [ i i ] c c s s s f f f f s f f c c c c f f f c c c c"},
+    {"CComponentBaseWorldBox::Load", "i f f f f f f i"},
+    {"CComponentBatarang::Load", "i f f f f f f f i i i i i i i i i f f f f f f f s s s s s s s s s s s c f f i s"},
+    {"CComponentBatpodHandle::Load", "f f f f i f f f f f f f f f i s s s s s f f f f"},
+    {"CComponentBeastBakeGroup::Load", "s f s f"},
+    {"CComponentBeastObjectComponent::Load", "f f f f s f f f f s"},
+    {"CComponentBeastObjectComponentGlobal::Load", "i i s"},
+    {"CComponentBeast_Area::Load", "c c c c f c i i"},
+    {"CComponentBeast_Directional::Load", "c c c c f c i f i"},
+    {"CComponentBeast_Omni::Load", "c c c c f c i f i f f c i"},
+    {"CComponentBeast_Skylight::Load", "c c c c f c i f i f f c i"},
+    {"CComponentBeast_Spot::Load", "c c c c f c i f i f f c f f f i"},
+    {"CComponentBeast_Window::Load", "c c c c f c i f i"},
     {"CComponentBuiltinBox::Load", "f f f i c c c c i c c c c i c c c c i c c c c i c c c c i c c c c"},
     {"CComponentBuiltinCollisionBox::Load", "f f f i i i i i i i"},
     {"CComponentBuiltinCollisionPlane::Load", "f f i i"},
+    {"CComponentBuiltinColors::Load", ""},
     {"CComponentBuiltinCover::Load", "[ f f f f f f c c c c ]"},
     {"CComponentBuiltinCylinder::Load", "f f c i c c c c i c c c c i i i c c c c c c c c"},
-    {"CComponentBuiltinEffect::Load", "s i s c c"},
+    {"CComponentBuiltinEffect::Load", "s i s c c c f f"},
+    {"CComponentBuiltinGroup::Load", "c c"},
+    {"CComponentBuiltinIrradianceVolume::Load", "f f f"},
+    {"CComponentBuiltinNavMesh::Load", ""},
+    {"CComponentBuiltinNavMeshAuto::Load", ""},
+    {"CComponentBuiltinNavSpace::Load", ""},
     {"CComponentBuiltinPlane::Load", "f f i c c c c"},
+    {"CComponentBuiltinSkyBox::Load", "s c f"},
     {"CComponentBuiltinTerrain::Load", "i i i i f s"},
-    {"CComponentCapturePoint::Load", "f i f i s"},
-    {"CComponentCarAI::Load", "i i s s"},
-    {"CComponentCarPhysics::Load", "f f f f f f f f i f f f i f f i i i i f i i f f f f f f f f f f f i f f f f f f f f f f f f f f f i i i i i i i [ i ] i i i i i f [ f ] f f i i f f f [ i ] f f f f f f f f f f f"},
-    {"CComponentCharacterShadowPlane::Load", "s f f f c c c c c [ s ]"},
-    {"CComponentCinematic::Load", "i c f c c c c s c [ i [ i i i i ] ] [ [ i i s c ] ] [ [ i i s ] ] [ s [ i i f f f f f f ] ] [ <CContainerTracksAnimatedObject::Load> ]"},
-    {"CComponentCollision::Load", "c c c c c s [ s i ] i"},
-    {"CComponentCollisionTypesInfos::Load", "[ i c f f ]"},
-    {"CComponentColorMask::Load", "s c c c c"},
-    {"CComponentConsumablesData::Load", "i f f i f f i i i i i [ i s i s i s s i s i ]"},
-    {"CComponentCybertoothAi::Load", "f f f f f f i f f f f f f f f f f f f f f f f f f f f f f f f f f c c"},
-    {"CComponentDamage::Load", "i f f f f f f f f f c i i [ i f ] c i s"},
-    {"CComponentDamageEmitter::Load", "i f i c"},
-    {"CComponentDifficultyLevels::Load", "[ f ] [ f ] [ f ] [ f ] [ f ] [ f ] [ f ]"},
-    {"CComponentDisplayMeshTemplate::Load", "[ i ]"},
-    {"CComponentDoorAI::Load", "f s s s"},
-    {"CComponentDroneAI::Load", "c i [ s ] f f f f f f f f f i i f i f f i i i i i f f f f f"},
-    {"CComponentDropShipAI::Load", "i s f f f f f f f f s"},
-    {"CComponentEffects::Load", "[ s s c c c c c ]"},
-    {"CComponentEffectsLocal::Load", "i s c s f f f c s"},
-    {"CComponentEnemyGrenades::Load", "[ i ]"},
-    {"CComponentEnemyGroup::Load", "i c c"},
-    {"CComponentGameLevels::Load", "[ s i s s s s s s s i i i c c c ]"},
-    {"CComponentGrenade::Load", "i f f f f f c f f i s i [ i ] i i s s s [ s ] [ i i f ]"},
-    {"CComponentGrenadeTrigger::Load", "i s [ i ]"},
-    {"CComponentGroundNavigation::Load", "s f f f f f f f f f f f"},
-    {"CComponentHFSM::Load", "s s [ s s [ s s ] ]"},
-    {"CComponentHealth::Load", "f c f i i [ s f ] [ s ] [ s f ] [ s f ] [ s ] [ s ] s s s s s s [ s ] [ i i ] [ s i c c ] s"},
-    {"CComponentHealth_Config::Load", "f c [ i i ]"},
-    {"CComponentInteractive::Load", "c s c c s"},
-    {"CComponentInteractive_Global::Load", "[ f f f f f f f f s ] s s s [ s s ] s s s s c c c s c [ i i c ] c"},
-    {"CComponentIrradianceVolume::Load", "c f c f f f"},
-    {"CComponentJump::Load", "[ s f f ]"},
-    {"CComponentJumpPad::Load", "f i s i"},
-    {"CComponentLaserTurretAI::Load", "i i s i f c s f i [ i ] f [ s ] s s"},
-    {"CComponentLensFlareParams::Load", "f f f f f"},
-    {"CComponentLevelProperties::Load", "i c c c c f f f f f [ c c c c f f f ] f f f f [ f ] c c c c f f f f s c c c [ s ] s c c c c c c c c s s i s s f f"},
-    {"CComponentLevelStatistics::Load", "i i i i i i i i i i f f f"},
-    {"CComponentLight::Load", "c c c c f f i i f c"},
-    {"CComponentLinkedObjects::Load", "[ i s c c ]"},
-    {"CComponentMPChatInfo::Load", "[ s s ] [ s s ] [ s s ] [ s s ] [ s s ] [ s s ]"},
-    {"CComponentMPKillchains::Load", "[ i i i i s s ]"},
-    {"CComponentMPLevelXPTable::Load", "[ i ]"},
-    {"CComponentMPLevels::Load", "i [ s s s s s c c c i ]"},
-    {"CComponentMPLoadout::Load", "f f f f f f f f f f f f f f f i i f i i i i [ s ] i i f i i i i"},
-    {"CComponentMPMusics::Load", "[ s ]"},
-    {"CComponentMPPowerUp::Load", "i i i i i s"},
-    {"CComponentMPRankLevel::Load", "[ s i ]"},
-    {"CComponentMPSoundFiles::Load", "s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i s i"},
-    {"CComponentMPUnlockTableAddOns::Load", "i i [ i i i i i i s s f f f f f i c ]"},
-    {"CComponentMPUnlockTableItems::Load", "i i [ i i i i i i s s i c ]"},
-    {"CComponentMPUnlockTableKillchains::Load", "[ i i i i i c s s ]"},
-    {"CComponentMPUnlockTablePerks::Load", "i i [ i i i i i i i s s i c ]"},
-    {"CComponentMPUnlockTablePresets::Load", "[ i i i i c s ]"},
-    {"CComponentMPUnlockTableWeapons::Load", "i i [ i i i i i i s f f f f f i c i s ]"},
-    {"CComponentMPVisibility::Load", "[ i ] [ i ]"},
-    {"CComponentMPXPGain::Load", "i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i"},
-    {"CComponentMachineGunAI::Load", "i s s f f f s i i i i i f s s c i s i s"},
-    {"CComponentMechAI::Load", "c f c f i f f f f f f [ s c i ] [ s c i ] s s s s s s s s s f f f i i s i"},
-    {"CComponentMenuColor::Load", "c c c c c c c c c"},
-    {"CComponentMenuFonts::Load", "[ i ]"},
-    {"CComponentMenuMultiOptionTexts::Load", "[ s ]"},
-    {"CComponentMenuSlide::Load", "i i i i [ s i i i i i i c c c c c c c c c ]"},
-    {"CComponentMenuSweepFrames::Load", "[ i ]"},
-    {"CComponentMenuSweepStrings::Load", "i [ s ]"},
-    {"CComponentMenuTableProps::Load", "[ s i i i i i i ]"},
-    {"CComponentMesh::Load", "s i c c c c c c c c c c c"},
+    {"CComponentBuiltinWaypointBox::Load", ""},
+    {"CComponentBullet::Load", "f s i i i"},
+    {"CComponentCameraParams::Load", "f f f f f f f f i i i c c s s i i f c f f f"},
+    {"CComponentCharXPLevels::Load", "i [ i i i i i ]"},
+    {"CComponentCinematic::Load", "i c f c [ i [ i i i i ] ] [ [ i i s c ] ] [ [ i i s ] ] [ s [ i i f f f f f f ] ] [ <CContainerTracksAnimatedObject::Load> ]"},
+    {"CComponentColectibleGeneral::Load", "f s"},
+    {"CComponentCollectible::Load", "c i c i i i i s s s s s"},
+    {"CComponentCollision::Load", "c c s i c c i"},
+    {"CComponentCraneAI::Load", "i s f"},
+    {"CComponentCrimeHotspot::Load", "i i i i"},
+    {"CComponentCustomizeActor::Load", "[ s s s [ s ] ] i i"},
+    {"CComponentDebugDraw::Load", "i"},
+    {"CComponentDestroyable::Load", "i s s s s s c c s"},
+    {"CComponentDistrict::Load", "i s"},
+    {"CComponentDroneAI::Load", "i i i i i i i i i i i i"},
+    {"CComponentDropActors::Load", "[ i s ]"},
+    {"CComponentDropCollectible::Load", "[ i i ]"},
+    {"CComponentDummies::Load", "[ s ]"},
+    {"CComponentDummy::Load", "s"},
+    {"CComponentEffectsLOD::Load", "[ s f f f f ]"},
+    {"CComponentEngineSounds::Load", "s s f s s"},
+    {"CComponentExhaustFan::Load", "f f f c f f f f"},
+    {"CComponentFileName::Load", ""},
+    {"CComponentFireTrailAI::Load", "f i i"},
+    {"CComponentGadget::Load", "c i i"},
+    {"CComponentGadgetZoom::Load", "i f f i i"},
+    {"CComponentGlide::Load", "i f f f f f f f f f f f f f f f f f f f f f i"},
+    {"CComponentGrapplingGun::Load", "i i f f f f f f f f f f f f f f f f f f f f i f f f f f i f f f i"},
+    {"CComponentGrapplingHook::Load", ""},
+    {"CComponentGrapplingHookTarget::Load", ""},
+    {"CComponentGrenade::Load", "s s s s f f f f f f f i c c s s s s s"},
+    {"CComponentHasLight::Load", "c c c c f f i i f"},
+    {"CComponentHasSound::Load", "s i i i"},
+    {"CComponentHealth::Load", "f c i i"},
+    {"CComponentHelicopterLogic::Load", "f f f f f f f f f f f"},
+    {"CComponentHoverPath::Load", "f f f"},
+    {"CComponentInteraction::Load", "f i s i"},
+    {"CComponentIrradianceVolume::Load", "c f c f f"},
+    {"CComponentKombatCameraParams::Load", "f c f f f f f f f f f f f f f f f f f f f f f f f"},
+    {"CComponentLOD::Load", "[ s f ]"},
+    {"CComponentLazyLoad::Load", "c s f"},
+    {"CComponentLensFlare::Load", "s"},
+    {"CComponentLevelGlobalIllum::Load", "f f c c c c f f f f s"},
+    {"CComponentLevelInit::Load", "s s s s s s c s [ s s s s c s i s s i s s s s c ] c s c f f f f f f f f f f f f f f f f f f f f f f f f f c"},
+    {"CComponentLight::Load", "c c c c f f i i f"},
+    {"CComponentMainStoryQuests::Load", "[ i i s s s s i s c ]"},
+    {"CComponentMelee::Load", "f f f f"},
+    {"CComponentMesh::Load", "s c c c c"},
+    {"CComponentMeshUVTransform::Load", "f f f f"},
     {"CComponentMetaZone::Load", "[ i ]"},
-    {"CComponentMotion::Load", "s s f s f s f s f c"},
-    {"CComponentMotionOnPath::Load", "s i f f f c"},
-    {"CComponentNPC::Load", "i [ i s s ] s f i i f f s s f f f f f f f f f i [ f ] f i f f f s s s f f f f f f f i c f i i i i i f f i f i i i i f f [ s f ] [ s ] s s i s i f s s i c c f s s c f f f f f f f f c c"},
-    {"CComponentNPCBarksManager::Load", "f f [ [ i ] [ i f [ s ] ] ]"},
-    {"CComponentNPCStatic::Load", "i s s f f f f c"},
-    {"CComponentNPCWeapon::Load", "i i i c c i f f f i s i c s f f c f f f f f [ s ] [ s ]"},
-    {"CComponentNPC_Config::Load", "i i c c c c"},
-    {"CComponentNavPoint::Load", "i f f f c i"},
-    {"CComponentPath::Load", "i i i i f"},
-    {"CComponentPatrolPoint::Load", "i f f f [ i ]"},
-    {"CComponentPhysicsObject::Load", "c c c f f f f i f f c c c c f c f f f f c f c f s"},
-    {"CComponentPhysicsRagdoll::Load", "c i c f f f f f f f f f f f f f f f f f s c"},
-    {"CComponentPlayerBaseComponent::Load", "f f f f f [ s ] [ s ]"},
-    {"CComponentPlayerBikeComponent::Load", "s s s s s f i f f f f f f f i f f s"},
-    {"CComponentPlayerBikeConfig::Load", "f f f f f f f i f f"},
-    {"CComponentPlayerCarComponent::Load", "s s s s s f i"},
-    {"CComponentPlayerComponent::Load", "f f f f f f f f f f f f f f f f i i f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f i f f f i i i i i [ i [ s ] ] f f s s s s"},
-    {"CComponentPlayerControl::Load", "i i f f f f i f f f f c f f f f f f f f f f c c f f f f f c f f f f f f f f c f f f f f f f f"},
-    {"CComponentPlayerJeepComponent::Load", "i i i i f f f f c f f f f f f f f f c f f f f f f f f f f"},
-    {"CComponentPlayerMachineGunComponent::Load", "s f f f"},
-    {"CComponentPlayerMechComponent::Load", "i f f f f f f f f f f f f f f f f"},
-    {"CComponentPowerManager::Load", "i i [ i s i i s i c s ] [ i s i f i s i c c i i ]"},
-    {"CComponentPowerUp::Load", "i i c c i f i s c c"},
-    {"CComponentProjectile::Load", "c f f f f f f f f f f f s s f f c f [ i s i ] i [ i [ s f ] ] [ i i f ] c s s f c c c c s f c i f i i c c i"},
-    {"CComponentRagdollsSettings::Load", "[ <CContainerSkeleton::Load> ] [ i i ]"},
-    {"CComponentRedFuryAi::Load", "i s s f f f f f f f f f f f f f f f f f f f [ s f f f f f f f f f i f f f f f f f f f f i i i i i i i i i i f i i i ]"},
-    {"CComponentRemoteMech::Load", "i [ s c i ] [ s c i ] s s s s s s s s s s i i"},
-    {"CComponentRemotePlayer::Load", "f f f f f f f f f f f f f f f f f i [ i i s i s c c [ s ] [ s ] ] [ s ] s s s s s s"},
-    {"CComponentRemoteWeapon::Load", "i s s i i [ s ] s s s s"},
-    {"CComponentSkinColorPreset::Load", "[ c c c c ]"},
-    {"CComponentSkin_Config::Load", "s [ s ]"},
-    {"CComponentSoundEmitter::Load", "[ s ] c c f i i s c c c c"},
-    {"CComponentSpawnManager::Load", "[ i ] [ [ i i i ] i i ] c i c"},
-    {"CComponentStateSet::Load", "i [ <CContainerState::Load> ] s"},
-    {"CComponentTargetable::Load", "c c c s i c c [ f f f f f f f f f f c s ] s f s c s s s s"},
-    {"CComponentThrowMotion::Load", "f i f f f f f f s s s [ s ]"},
-    {"CComponentTrigger::Load", "i f f f f f f f f f i c s i i i c i c"},
-    {"CComponentTutorial::Load", "i f i i i i i i i i"},
-    {"CComponentUpgradesManager::Load", "[ i s f i i s c c i ]"},
-    {"CComponentVehicleCar::Load", "i i i f f f f f f f f f f f f f f f f f f f f i [ i c s s f f f f f f f ] [ f i i i ] f i i"},
-    {"CComponentVehicleImpact::Load", "[ f f ]"},
-    {"CComponentWaypoint::Load", "i c f f f i c c c c c s f c"},
-    {"CComponentWeapon::Load", "s s [ s ] i [ c i c i i i i i i i i s s i i [ s ] s s s c ] i s s s s c c c i i i i i i f i i f f f f f f f f f f f c i s c i i i i s s c c f c f f f f f f f f f f f f f f f i s i s f f c c f f f f"},
-    {"CComponentWeaponManager::Load", "s s s [ s ] [ f f f f i i f i f i f f f f ] s i [ i c c c i ]"},
-    {"CComponentZoneFog::Load", "c c c c c f f f [ c c c c c f f ]"},
-    {"CContainerSkeleton::Load", "i [ i i i s s f f f f f f c ] [ i i i i f f f ]"},
-    {"CContainerState::Load", "s i c i i i i i i i i [ <CContainerStateAnimation::Load> ] [ i i i i i c s ]"},
-    {"CContainerStateAnimation::Load", "s f [ s s [ s i i i i ] ] [ s s [ s i i c c i c c c f i s [ s ] ] ] [ s s [ s i i s i ] ] [ [ i i s s f f f c f c c ] ]"},
-    {"CContainerStepsSounds::Load", "i [ s ] [ s ] [ s ] [ s ] [ s ] [ s ] [ s ]"},
-    {"CContainerTracksAnimatedObject::Load", "i [ s i f i i ] [ s [ f f f i i ] ] [ s [ s f f f i i ] ] [ s [ f f f i i ] ] [ [ i i s ] ] [ [ s i i s c ] ]"},
-    {"CCoverComponent::Load", ""},
-    {"CCybertoothAiComponent::Load", "f f f f f f i f f f f f f f f f f f f f f f f f f f f f f f f f f c c"},
+    {"CComponentMiniGameObject::Load", "s s s s i i i i i i f i s s"},
+    {"CComponentMinimapInit::Load", "f s f f"},
+    {"CComponentMissile::Load", "i f f f f f f f f f f f f f f s s"},
+    {"CComponentMissionsList::Load", "[ s [ s s i s ] ]"},
+    {"CComponentMorphValueList::Load", "[ f f f ]"},
+    {"CComponentMotion::Load", "s"},
+    {"CComponentMuzzleFlash::Load", "s [ s ] s c c c c c f f f f i i i"},
+    {"CComponentNetworkPlayer::Load", "i"},
+    {"CComponentNewShopCategory::Load", "i s i"},
+    {"CComponentNewShopItem::Load", "i s s i s s s"},
+    {"CComponentNewShopItemProperty::Load", "i s s i i f f f c c c c [ c i i f f f f s s s s i c i c ]"},
+    {"CComponentNpcAI::Load", "i c c c c c c i i i i f f f"},
+    {"CComponentNpcCombat::Load", "i i i i i c c i i i"},
+    {"CComponentNpcGlobals::Load", "f f f f f f f f i i i c c c c c c c c c c c c c c c c"},
+    {"CComponentNpcSound::Load", "f s i i c s i i c"},
+    {"CComponentObject_Rotation::Load", "i f f f"},
+    {"CComponentObject_Scaling::Load", "i f f f"},
+    {"CComponentObjective::Load", "s s i i"},
+    {"CComponentPedestrian::Load", ""},
+    {"CComponentPendulum_Movement::Load", "c i f i f"},
+    {"CComponentPendulum_Properties::Load", "i c s c c s"},
+    {"CComponentPlatform_Properties::Load", "c i s c c s"},
+    {"CComponentPlayerCape::Load", "f f f f f f f f f f f f f f f f f f f f f i f f"},
+    {"CComponentPlayerCaughtComponent::Load", "s"},
+    {"CComponentPlayerCombat::Load", "i i i i i f f f f c c f f f f f f f f i i i [ f i i i i i f f f f i i ] [ f i i i i i f f f f i i ] f f f i f f f f f f i f f f f f f f [ f ] f i i c c c c i"},
+    {"CComponentPlayerComponent::Load", "f i f f f f f f f i i i f f f f f f f f f f f f f f f f f f f"},
+    {"CComponentPlayerControl::Load", "i c f f f f c c f f f f f f f f f f f f i i"},
+    {"CComponentPool::Load", ""},
+    {"CComponentQuest_Parameters::Load", "i s s s i i s c c c s"},
+    {"CComponentRunScript::Load", "s"},
+    {"CComponentScaling::Load", "f f f"},
+    {"CComponentSegments::Load", "[ i ] [ i ]"},
+    {"CComponentShop::Load", "s i [ s i ]"},
+    {"CComponentSmartLight::Load", "s c f f c i c [ c c c c i i i f ]"},
+    {"CComponentSniper::Load", "f f f f f"},
+    {"CComponentSoundAndLight::Load", "i i i s [ s s i ]"},
+    {"CComponentStateSet::Load", "[ <CContainerState::Load> ] s s s s s s s"},
+    {"CComponentSteammer::Load", "i i i i s s s s"},
+    {"CComponentSurveillanceCam::Load", "f f f f f f f i f i i i f f s"},
+    {"CComponentTargetable::Load", "c c s f f f f i"},
+    {"CComponentTentacleAI::Load", "i s s"},
+    {"CComponentTheBatHandle::Load", "f f f i f f f f f f f f f f f f f f f f f f f f f f s s s i s s f f f f"},
+    {"CComponentThrowMotion::Load", "f i f f f i i"},
+    {"CComponentTrafficCrossroad::Load", "i c f f f i i i i i i i i i"},
+    {"CComponentTrafficMagnet::Load", "i c f f f f f f"},
+    {"CComponentTrafficParking::Load", "i c f f f f f f c s s i"},
+    {"CComponentTrafficRoad::Load", "i c f f f i i i i i i s f c"},
+    {"CComponentTrafficSemaphore::Load", "i"},
+    {"CComponentTrafficSetting::Load", "i c f f f s f f f f f f [ i i i ] [ i i [ s f ] i ]"},
+    {"CComponentTrafficSpawner::Load", "i c f f f s i i i i"},
+    {"CComponentTrail::Load", "[ c s s f f f f f f ]"},
+    {"CComponentTrigger::Load", "i f f f f f f f f f i c s i c"},
+    {"CComponentTurret::Load", "f f f f f f f f f f f f f f"},
+    {"CComponentTutorial::Load", "i i i i"},
+    {"CComponentVehicleAwareness::Load", "f f"},
+    {"CComponentVehicleCollision::Load", "f f f"},
+    {"CComponentVehicleGears::Load", "f f [ f s f ]"},
+    {"CComponentVehicleGraphics::Load", "[ c c c c ]"},
+    {"CComponentVehicleLogic::Load", "i f f f f f f f f"},
+    {"CComponentVehiclePhysics::Load", "f f f f f"},
+    {"CComponentVehicleSoundEvents::Load", "s s s s s s s s s f f"},
+    {"CComponentVehicleState::Load", "i s s [ f s s ] [ f ]"},
+    {"CComponentWantedGenerator::Load", "i i f i"},
+    {"CComponentWantedManager::Load", "f f f f f i f i s [ i i f i ]"},
+    {"CComponentWaypoint::Load", "i c f f f i i i i i i i i i i s c c i"},
+    {"CComponentWaypoint_Movement::Load", "c i i i c i i i c i s s s i i"},
+    {"CComponentWeapon::Load", "i i c i i i f f f f f i i s s i i i i i"},
+    {"CComponentZombieConverter::Load", "f f f"},
+    {"CComponentZonesLink::Load", "i i"},
+    {"CContainerState::Load", "s i i c c c c c c c f f i f f f f f f f c f i i i c c [ <CContainerStateAnimation::Load> ] [ i i i i i i f i i s i ]"},
+    {"CContainerStateAnimation::Load", "s [ s [ s i i i i ] ] [ s [ i i s c ] ] [ [ i i s i c ] ] [ [ i i s s c ] ] [ [ i i f f i c c ] ]"},
+    {"CContainerTracksAnimatedObject::Load", "i [ s i f i i ] [ s [ f f f i i ] ] [ s [ s f f f i i ] ] [ s [ f f f i i ] ] [ [ i i s ] ] [ [ s i i s c ] ] [ [ i i s s c f c c ] ]"},
+    {"CCrimeHotSpotComponent::Load", "<CComponentCrimeHotspot::Load>"},
+    {"CCustomizeActorComponent::Load", "<CComponentCustomizeActor::Load>"},
     {"CCylinderNodeComponent::Load", "f f c i c c c c i c c c c i i i c c c c c c c c"},
-    {"CDamageComponent::Load", "i f f f f f f f f f c i i [ i f ] c i s"},
-    {"CDamageEmitterComponent::Load", "i f i c"},
-    {"CDoorAIComponent::Load", "f s s s"},
-    {"CDroneAIComponent::Load", "<CComponentDroneAI::Load>"},
-    {"CDropShipAIComponent::Load", "i s f f f f f f f f s"},
-    {"CEffectsComponent::Load", "[ s s c c c c c ]"},
-    {"CEffectsLocalComponent::Load", "i s c s f f f c s"},
-    {"CElevatorAIComponent::Load", "i i f"},
-    {"CFlagComponent::Load", "f i"},
+    {"CDebugDrawComponent::Load", "<CComponentDebugDraw::Load>"},
+    {"CDestroyableComponent::Load", "<CComponentDestroyable::Load>"},
+    {"CDistrictComponent::Load", "<CComponentDistrict::Load>"},
+    {"CDropActorsComponent::Load", "<CComponentDropActors::Load>"},
+    {"CDropCollectibleComponent::Load", "<CComponentDropCollectible::Load>"},
+    {"CDummiesComponent::Load", "<CComponentDummies::Load>"},
+    {"CDummyComponent::Load", "<CComponentDummy::Load>"},
+    {"CEffectComponent::Load", "<CComponentBuiltinEffect::Load>"},
+    {"CElectricTurretComponent::Load", "<CComponentTurret::Load>"},
+    {"CEngineSoundsComponent::Load", "<CComponentEngineSounds::Load>"},
+    {"CExhaustFanComponent::Load", "<CComponentExhaustFan::Load>"},
+    {"CGrapplingHookComponent::Load", ""},
+    {"CGrapplingHookTargetComponent::Load", ""},
     {"CGrenadeComponent::Load", "<CComponentGrenade::Load>"},
-    {"CGrenadeDataComponent::Load", "i f i"},
-    {"CGrenadeTriggerComponent::Load", "i s [ i ]"},
-    {"CGroundNavigationComponent::Load", "s f f f f f f f f f f f"},
-    {"CGroupComponent::Load", "i c c"},
-    {"CHFSMComponent::Load", "s s [ s s [ s s ] ]"},
+    {"CHasLightComponent::Load", "<CComponentHasLight::Load>"},
+    {"CHasSoundComponent::Load", "<CComponentHasSound::Load>"},
     {"CHealthComponent::Load", "<CComponentHealth::Load>"},
-    {"CHomeBaseComponent::Load", "f i"},
-    {"CInteractiveComponent::Load", "c s c c s"},
-    {"CJumpComponent::Load", "[ s f f ]"},
-    {"CJumpPadComponent::Load", "f i s i"},
-    {"CLaserTurretAIComponent::Load", "i i s i f c s f i [ i ] f [ s ] s s"},
-    {"CLensFlareComponent::Load", "f f f f f"},
-    {"CLightComponent::Load", "c c c c f f i i f c"},
-    {"CLinkObjectComponent::Load", "i"},
-    {"CLinkedObjectsComponent::Load", "[ i s c c ]"},
-    {"CMPVehicleImpactComponent::Load", "[ f f ]"},
-    {"CMPVisibilityComponent::Load", "[ i ] [ i ]"},
-    {"CMachineGunAIComponent::Load", "i s s f f f s i i i i i f s s c i s i s"},
-    {"CMaterialComponent::Load", "f"},
-    {"CMechAIComponent::Load", "<CComponentMechAI::Load>"},
-    {"CMotionComponent::Load", "s s f s f s f s f c"},
-    {"CMotionOnPathComponent::Load", "s i f f f c"},
-    {"CMpGameModeComponent::Load", "i"},
-    {"CMpPowerUpComponent::Load", "i i i i i s"},
-    {"CNPCComponent::Load", "<CComponentNPC::Load>"},
-    {"CNPCStaticComponent::Load", "i s s f f f f c"},
-    {"CNPCWeaponComponent::Load", "<CComponentNPCWeapon::Load>"},
-    {"CPathComponent::Load", "i i i i f"},
-    {"CPhysicsCollisionComponent::Load", "c"},
-    {"CPhysicsObjectComponent::Load", "c c c f f f f i f f c c c c f c f f f f c f c f s"},
-    {"CPhysicsRagdollComponent::Load", "c i c f f f f f f f f f f f f f f f f f s c"},
-    {"CPlaneNodeComponent::Load", "f f i c c c c"},
-    {"CPlayerBaseComponent::Load", "f f f f f [ s ] [ s ]"},
-    {"CPlayerBikeComponent::Load", "s s s s s f i f f f f f f f i f f s"},
-    {"CPlayerBikeConfig::Load", "f f f f f f f i f f"},
-    {"CPlayerCarComponent::Load", "s s s s s f i"},
-    {"CPlayerCaughtComponent::Load", "s"},
-    {"CPlayerCinematicComponent::Load", "f f"},
-    {"CPlayerControlledFlyComponent::Load", "f"},
-    {"CPlayerJeepComponent::Load", "i i i i f f f f c f f f f f f f f f c f f f f f f f f f f"},
-    {"CPlayerLimitedControlComponent::Load", "f f f"},
-    {"CPlayerMachineGunComponent::Load", "s f f f"},
-    {"CPlayerMechComponent::Load", "i f f f f f f f f f f f f f f f f"},
-    {"CPlayerSentinelComponent::Load", ""},
-    {"CPowerUpComponent::Load", "i i c c i f i s c c"},
-    {"CProjectileComponent::Load", "<CComponentProjectile::Load>"},
-    {"CRedFuryAiComponent::Load", "<CComponentRedFuryAi::Load>"},
-    {"CRunScriptComponent::Load", "s i"},
-    {"CSoundEmitterComponent::Load", "[ s ] c c f i i s c c c c"},
-    {"CSpawnManager::Load", "[ i ] [ [ i i i ] i i ] c i c"},
-    {"CStatesSetComponent::Load", "i [ <CContainerState::Load> ] s"},
+    {"CHelicopterLogic::Load", "<CComponentHelicopterLogic::Load>"},
+    {"CHoverToPath::Load", "<CComponentHoverPath::Load>"},
+    {"CInteractionComponent::Load", "<CComponentInteraction::Load>"},
+    {"CLensFlareComponent::Load", "<CComponentLensFlare::Load>"},
+    {"CMainStoryQuestsComponent::Load", "<CComponentMainStoryQuests::Load>"},
+    {"CMeleeComponent::Load", "<CComponentMelee::Load>"},
+    {"CMissileComponent::Load", "<CComponentMissile::Load>"},
+    {"CMotionComponent::Load", "<CComponentMotion::Load>"},
+    {"CNpcAIComponent::Load", "<CComponentNpcAI::Load>"},
+    {"CNpcSound::Load", "<CComponentNpcSound::Load>"},
+    {"CPlaneNodeComponent::Load", "f f i i"},
+    {"CPlatformComponent::Load", "<CComponentPlatform_Properties::Load>"},
+    {"CPoolComponent::Load", ""},
+    {"CQuestComponent::Load", "<CComponentQuest_Parameters::Load>"},
+    {"CRunScriptComponent::Load", "<CComponentRunScript::Load>"},
+    {"CSmartLightComponent::Load", "<CComponentSmartLight::Load>"},
+    {"CSniperComponent::Load", "<CComponentSniper::Load>"},
+    {"CSoundAndLight::Load", "<CComponentSoundAndLight::Load>"},
+    {"CSpawnPointObject::Create", "c i f f f f f f f f f c c c s s c c c i"},
+    {"CStateSetComponent::Load", ""},
+    {"CSteammerComponent::Load", "<CComponentSteammer::Load>"},
+    {"CSurveillanceCameraComponent::Load", "<CComponentSurveillanceCam::Load>"},
     {"CTargetableComponent::Load", "<CComponentTargetable::Load>"},
-    {"CTeleportComponent::Load", "f i"},
-    {"CTentacleAIComponent::Load", "f s s"},
-    {"CThrowMotionComponent::Load", "f i f f f f f f s s s [ s ]"},
-    {"CTriggerComponent::Load", "i f f f f f f f f f i c s i i i c i c"},
-    {"CUpgradeObjectComponent::Load", "i f s"},
-    {"CVehicleCar::Load", "<CComponentVehicleCar::Load>"},
-    {"CVehicleCarAI::Load", "i i"},
-    {"CWayPtNavigationComponent::Load", "i s"},
+    {"CTemplateBakeGroup::Load", "c i f f f f f f f f f c c c s f s f"},
+    {"CTemplateGlobalIllumination::Load", "c i f f c c c c f f c c c c [ i i ] c c s s s f f f f s f f c c c c f f f c c c c"},
+    {"CTemplateLevelProperties::Load", "<CComponentLevelInit::Load> f s f f <CComponentBaseGlobalIllum::Load> i"},
+    {"CTemplateMetaZone::Load", "c i f f f f f f f f f c c c [ i ] s"},
+    {"CTemplateOccluder::Load", "c i f f f f f f f f f c c c s c c c c f"},
+    {"CTemplatePortal::Load", "c i f f f f f f f f f c c c i i f f i c c c c f f"},
+    {"CTemplateZone::Load", "c s f c i f f f f f f f f f c c c"},
+    {"CTheBatHandleComponent::Load", "<CComponentTheBatHandle::Load>"},
+    {"CTrafficCrossroad::Load", "<CComponentTrafficCrossroad::Load>"},
+    {"CTrafficMagnet::Load", "<CComponentTrafficMagnet::Load>"},
+    {"CTrafficParking::Load", "<CComponentTrafficParking::Load>"},
+    {"CTrafficRoad::Load", "<CComponentTrafficRoad::Load>"},
+    {"CTrafficSemaphore::Load", "<CComponentTrafficSemaphore::Load>"},
+    {"CTrafficSetting::Load", "<CComponentTrafficSetting::Load>"},
+    {"CTrafficSpawner::Load", "<CComponentTrafficSpawner::Load>"},
+    {"CTrailComponent::Load", "<CComponentTrail::Load>"},
+    {"CTriggerComponent::Load", "<CComponentTrigger::Load>"},
+    {"CVehicleAwareness::Load", "<CComponentVehicleAwareness::Load>"},
+    {"CVehicleCollisionComponent::Load", "<CComponentVehicleCollision::Load>"},
+    {"CVehicleGraphicsComponent::Load", "<CComponentVehicleGraphics::Load>"},
+    {"CVehicleLogic::Load", "<CComponentVehicleLogic::Load>"},
+    {"CVehiclePhysics::Load", "<CComponentVehiclePhysics::Load>"},
+    {"CVehicleSounds::Load", "<CComponentVehicleSoundEvents::Load>"},
+    {"CVehicleState::Load", "<CComponentVehicleState::Load>"},
+    {"CWantedGeneratorComponent::Load", "<CComponentWantedGenerator::Load>"},
+    {"CWantedManagerComponent::Load", "<CComponentWantedManager::Load>"},
+    {"CWayPointObject::Load", "i c f f f i i i i i i i i i i s c c i"},
     {"CWeaponComponent::Load", "<CComponentWeapon::Load>"},
-    {"MPKillchainsComponent::Load", "[ i i i i s s ]"},
-    {"MPLoadoutComponent::Load", "<CComponentMPLoadout::Load>"},
+    {"CWpMovementComponent::Load", "<CComponentWaypoint_Movement::Load>"},
+    {"CZone::LoadIrradianceVolume", "c i f f f f f f f f f c c c s c c c c c f c f f"},
+    {"IComponent::Load", ""},
+    {"PlayerCapeComponent::Load", "<CComponentPlayerCape::Load>"},
     {"PlayerComponent::Load", "<CComponentPlayerComponent::Load>"},
-    {"RemoteMechComponent::Load", "<CComponentRemoteMech::Load>"},
-    {"RemotePlayerComponent::Load", "<CComponentRemotePlayer::Load>"},
-    {"RemoteWeaponComponent::Load", "i s s i i [ s ] s s s s"},
+    {"PullableObjectComponent::Load", "<CComponentMiniGameObject::Load>"},
 };
 
-// CreateObject components read whatever their flag (config components).
-static const std::pair<int, const char*> kAlwaysSpecs[] = {
-    {0x12, "f c [i i]"},
-    {0x22, "c c"},
-    {0x24, "c"},
-    {0x2d, "s [s]"},
-    {0x4c, "i i c c c c"},
-    {0x4f, "i"},
-    {0x51, "i"},
-    {0x56, "i"},
-    {0x58, "i"},
-    {0x60, "i c"},
-    {0x72, "i i c"},
-    {0xae, "s i s c c"},
+// CLevel::LoadNextObject: level-structure type -> (kind, spec).
+struct LevelTypeSpec {
+    int type;
+    const char* kind;
+    const char* spec;
+};
+static const LevelTypeSpec kLevelTypes[] = {
+    {0x00bba, "meta_zone", "<CTemplateMetaZone::Load>"},
+    {0x01011, "irradiance_volume", "<CZone::LoadIrradianceVolume>"},
+    {0x02653, "occluder", "<CTemplateOccluder::Load>"},
+    {0x02657, "level_properties", "<CTemplateLevelProperties::Load>"},
+    {0x0265e, "light", "<CComponentBase::Load> <CComponentLight::Load>"},
+    {0x0265f, "portal", "<CTemplatePortal::Load>"},
+    {0x02661, "skybox", "s c f i"},
+    {0x02662, "spawn_point", "<CSpawnPointObject::Create>"},
+    {0x02664, "level_int", "i"},
+    {0x02666, "waypoint", "<CWayPointObject::Load>"},
+    {0x02667, "zone", "<CTemplateZone::Load> i"},
+    {0x02669, "global_illumination", "<CTemplateGlobalIllumination::Load>"},
+    {0x0267d, "nav_mesh", "<CComponentBase::Load>"},
+    {0x04741, "waypoint", "<CWayPointObject::Load>"},
+    {0x0798f, "waypoint_cylinder", "<CWayPointObject::Load> f f f <CComponentBuiltinCylinder::Load>"},
+    {0x14050, "reflection_mesh", "<CComponentBase::Load> <CComponentMesh::Load>"},
+    {0x14051, "long_distance_mesh", "<CComponentBase::Load> <CComponentMesh::Load>"},
+    {0x1869f, "bake_group", "<CTemplateBakeGroup::Load>"},
+    {0xdbbb8, "world_box", "<CComponentBaseWorldBox::Load> <CComponentBuiltinBox::Load>"},
 };
 
-// Inline per-instance readers in CreateObject (besides base 0x00 and mesh 0x01).
-static const std::pair<int, const char*> kPerInstanceSpecs[] = {
-    {0xb3, "[f f f f f f c c c c]"},
-};
+static const int kCompBaseHash = 0x0014ca79;
+static const int kCompMeshHash = 0x00152b87;
+static const int kCompGroupHash = 0x2ad2a046;   // read whatever its flag
+static const char* const kGroupBuiltinSpec = "c c [ i ]";
+static const char* const kBaseLoader = "CComponentBase::Load";
+static const char* const kMeshLoader = "CComponentMesh::Load";

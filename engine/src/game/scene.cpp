@@ -13,6 +13,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "assets/stream.h"
+
 namespace tdkr {
 
 glm::mat4 placement_matrix(const Transform& t) {
@@ -145,6 +147,11 @@ const Scene::LoadedModel* Scene::model(const std::string& name) {
         ++stats_.missing_models;
         return nullptr;
     }
+    return finish_model(lm);
+}
+
+// Upload a model and work out what drawing it needs (textures, node parents, joints, LODs, bounds).
+const Scene::LoadedModel* Scene::finish_model(LoadedModel& lm) {
     lm.gpu = renderer_.upload_model(lm.cpu);
     for (const Material& m : lm.cpu.materials) {
         LoadedModel::MaterialTextures mt;
@@ -790,13 +797,16 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
     section_ = section_mask;
     stats_ = SceneStats{};
     for (const LevelObject& o : level_.objects) {
-        if (o.kind != "level_properties" || o.fields.size() < 8) continue;
-        // i, then fog colour as an SColor's bytes (R, G, B, A: glitch's SColor keeps red in the low byte), fog near, fog far, density.
+        // TDKR: CTemplateLevelProperties is CComponentLevelInit (38 values), f s f f, then
+        // CComponentBaseGlobalIllum: c i, fog start, fog end, fog colour as RGBA bytes, then an
+        // unused second fog (100, 10000, grey) and the textured vertical fog.
+        constexpr size_t kFog = 44;
+        if (o.kind != "level_properties" || o.fields.size() < kFog + 6) continue;
         auto byte = [&](size_t k) { return float(uint8_t(o.fields[k].i)) / 255.0f; };
-        fog_color = {byte(1), byte(2), byte(3), byte(4)};
-        fog_start = o.fields[5].as_float();
-        fog_end = o.fields[6].as_float();
-        fog_density = o.fields[7].as_float();
+        fog_start = o.fields[kFog].as_float();
+        fog_end = o.fields[kFog + 1].as_float();
+        fog_color = {byte(kFog + 2), byte(kFog + 3), byte(kFog + 4), byte(kFog + 5)};
+        fog_density = 0.0f;
     }
     draws_.clear();
     draw_materials_.clear();
@@ -842,6 +852,17 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
     for (const Placement& p : model_placements(level_, gol_)) {
         ++stats_.placements;
         if (const LoadedModel* lm = model(p.model)) object_instances_[p.object_index] = add_instance(*lm, placement_matrix(p.transform), &p);
+    }
+    // TDKR: Gotham's buildings and roads are streamed (CLevelStreaming) from <Level>.zip, not
+    // placed; draw the whole city at its most detailed LOD, in world space.
+    if (const std::string zip = stem + ".zip"; vfs_.exists(zip)) {
+        LoadedModel& lm = models_[to_lower(zip)];
+        try {
+            lm.cpu = load_level_stream(vfs_.read(zip));
+            if (const LoadedModel* done = finish_model(lm)) add_instance(*done, glm::mat4(1.0f), nullptr);
+        } catch (const FormatError& ex) {
+            std::fprintf(stderr, "stream %s: %s\n", zip.c_str(), ex.what());
+        }
     }
     // Doors with a zone link are portals between the two zones (CDoorAIComponent::
     // LoadZonesLink): a quad at the centre of the door's bounds, standing up (+90 deg about

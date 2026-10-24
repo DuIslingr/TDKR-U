@@ -13,6 +13,8 @@ A .bdae is a memory image of the engine's glitch::collada::SCollada structures:
   NUL-terminated text.
 * Vertex and index buffers live at the end of the file. Each starts with a u32
   (seen: 1) before the data; the struct pointers point at that prefix.
+* SMesh +0x28/+0x2c: per attribute, a pointer to 6 floats (scale xyz, offset xyz) that
+  dequantize it, or null. TDKR stores texcoords as s16 this way.
 
 Struct layouts below were read from the engine (CColladaDatabase getters,
 CColladaFactory::createGeometry, scene::CMeshBuffer, setMaterialParameter,
@@ -130,6 +132,7 @@ class Attribute:
     comp_type: int
     comps: int
     stride: int
+    quant: tuple = None     # TDKR: (scale x, y, z, offset x, y, z) for quantized (s16) data
 
 
 @dataclass
@@ -234,6 +237,10 @@ class Bdae:
         for i in range(len(offsets)):
             stride = strides[0] if interleaved else strides[i]
             attrs.append(Attribute(offsets[i], types[i], comps[i], stride))
+        for i, x in enumerate(b.array(o, (0x28, 0x2C, 4))[:len(attrs)]):
+            q = b.ptr(x)
+            if q is not None:
+                attrs[i].quant = b.f32(q, 6)
         vbuf = b.ptr(o + 0x30)
         subs = []
         for s in b.array(o, (0x38, 0x3C, SUBMESH_SIZE)):
@@ -275,6 +282,11 @@ class Bdae:
         comps = [b.u32(x) for x in array(o, 0x20, 0x24, 4)]
         attrs = [Attribute(offsets[i], types[i], comps[i], strides[0] if interleaved else strides[i])
                  for i in range(len(offsets))]
+        # +0x28: per attribute, a pointer to its dequantization (scale xyz, offset xyz) or null.
+        for i, x in enumerate(array(o, 0x28, 0x2C, 4)[:len(attrs)]):
+            q = ptr(x)
+            if q is not None:
+                attrs[i].quant = b.f32(q, 6)
         subs = [Submesh(b.u32(s), cstr(s + 4), b.data[s + 0xC:s + 0x1C],
                         b.u32(s + 0x20), b.u32(s + 0x24), b.u32(s + 0x28), ptr(s + 0x2C))
                 for s in array(o, 0x38, 0x3C, SUBMESH_SIZE)]
@@ -295,7 +307,11 @@ class Bdae:
         fmt, size = COMP_FORMATS[a.comp_type]
         st = struct.Struct("<" + fmt * a.comps)
         base = mesh.vertices_off + a.offset
-        return [st.unpack_from(self.bres.data, base + v * a.stride) for v in range(mesh.vertex_count)]
+        out = [st.unpack_from(self.bres.data, base + v * a.stride) for v in range(mesh.vertex_count)]
+        if a.quant:
+            sc, of = a.quant[:3], a.quant[3:]
+            out = [tuple(x * sc[k] + of[k] if k < 3 else x for k, x in enumerate(t)) for t in out]
+        return out
 
     def read_indices(self, sub):
         wide = sub.max_index - sub.min_index >= 0xFFFF

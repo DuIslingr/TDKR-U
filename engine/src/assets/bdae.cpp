@@ -1,6 +1,7 @@
 #include "assets/bdae.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
@@ -241,6 +242,20 @@ private:
         for (uint32_t x : b.array(o, {0x10, 0x14, 4})) offsets.push_back(b.u32(x));
         for (uint32_t x : b.array(o, {0x18, 0x1C, 4})) types.push_back(b.u32(x));
         for (uint32_t x : b.array(o, {0x20, 0x24, 4})) comps.push_back(b.u32(x));
+        // +0x28: per attribute, a pointer to its dequantization (scale xyz, offset xyz) or null
+        // (TDKR stores texcoords as s16 this way).
+        std::vector<std::array<float, 6>> quant(offsets.size());
+        std::vector<bool> quantized(offsets.size(), false);
+        {
+            const auto qs = b.array(o, {0x28, 0x2C, 4});
+            for (size_t a = 0; a < qs.size() && a < offsets.size(); ++a) {
+                if (const uint32_t q = b.ptr(qs[a])) {
+                    check_range(b.data.size(), q, 24);
+                    for (int k = 0; k < 6; ++k) quant[a][size_t(k)] = b.f32(q + 4 * uint32_t(k));
+                    quantized[a] = true;
+                }
+            }
+        }
         const uint32_t vdata = b.buffer(o + 0x30);
         if (!vdata || offsets.empty() || strides.empty()) return mesh;
 
@@ -248,12 +263,19 @@ private:
         auto comp = [&](size_t a, uint32_t v, uint32_t k) -> float {
             const uint32_t stride = interleaved ? strides[0] : strides[a];
             const uint32_t t = types[a];
-            const size_t size = t == 6 ? 4 : 1;
+            const size_t size = t == 6 || t == 4 || t == 5 ? 4 : t == 2 || t == 3 ? 2 : 1;
             const size_t off = vdata + offsets[a] + size_t(v) * stride + k * size;
             check_range(b.data.size(), off, size);
-            if (t == 6) return load_le<float>(&b.data[off]);
-            if (t == 0) return float(int8_t(b.data[off])) / 127.0f;
-            return float(b.data[off]) / 255.0f;
+            float x;
+            if (t == 6) x = load_le<float>(&b.data[off]);
+            else if (t == 2) x = float(load_le<int16_t>(&b.data[off]));
+            else if (t == 3) x = float(load_le<uint16_t>(&b.data[off]));
+            else if (t == 4) x = float(load_le<int32_t>(&b.data[off]));
+            else if (t == 5) x = float(load_le<uint32_t>(&b.data[off]));
+            else if (t == 0) return float(int8_t(b.data[off])) / 127.0f;
+            else return float(b.data[off]) / 255.0f;
+            if (quantized[a] && k < 3) x = x * quant[a][k] + quant[a][k + 3];
+            return x;
         };
 
         for (uint32_t s : b.array(o, kSubmeshes)) {

@@ -33,4 +33,17 @@ Bytes unzip_member(const Bytes& zip, const std::string& wanted) {
     return {};
 }
 
+std::vector<std::string> zip_names(const Bytes& zip) {
+    std::vector<std::string> out;
+    size_t pos = 0;
+    while (pos + 30 <= zip.size() && std::memcmp(&zip[pos], "PK\x03\x04", 4) == 0) {
+        const uint32_t csize = read_le<uint32_t>(zip, pos + 18);
+        const uint16_t nlen = read_le<uint16_t>(zip, pos + 26), xlen = read_le<uint16_t>(zip, pos + 28);
+        check_range(zip.size(), pos + 30, size_t(nlen) + xlen + csize);
+        out.emplace_back(reinterpret_cast<const char*>(&zip[pos + 30]), nlen);
+        pos += 30 + nlen + xlen + csize;
+    }
+    return out;
+}
+
 }  // namespace tdkr

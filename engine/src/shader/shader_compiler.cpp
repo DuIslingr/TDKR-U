@@ -14,12 +14,14 @@ namespace tdkr {
 namespace {
 
 // Bump when the translation changes in a way the cache key would not notice.
-constexpr const char* kCacheVersion = "tdkr-shader-1";
+constexpr const char* kCacheVersion = "tdkr-shader-3";
 
 // Defines the game's driver adds to every shader (libTDKR_neon.so strings). We leave
 // out GLITCH_USE_HIGHP: it turns on SPLIT_ALPHA (alpha in a second texture), and our
 // textures already carry alpha.
-constexpr const char* kDriverDefines[] = {"GLITCH_OPENGLES_2"};
+// TDKR: LightMapDC, Skybox, SkinCharacterSpecularMapDC and others sample with LOD_BIAS but
+// do not define it (NV_Glass and WetMan define it as -1.0, an identical redefinition).
+constexpr const char* kDriverDefines[] = {"GLITCH_OPENGLES_2", "LOD_BIAS -1.0"};
 
 uint64_t fnv1a(const std::string& s) {
     uint64_t h = 1469598103934665603ull;

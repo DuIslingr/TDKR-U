@@ -172,7 +172,7 @@ int cmd_levels(const std::string& dir, const std::string& out_dir) {
             std::printf("FAIL %-34s %s\n", name.c_str(), ex.what());
         }
     }
-    return bad > 1 ? 1 : 0;   // menus.lvc is known not to parse yet
+    return bad ? 1 : 0;
 }
 
 // Sample every track of an animation file at the given times (ms); one line per node and time.

@@ -7,12 +7,17 @@ plan is to follow `../N.O.V.A 3` (a native C++20/SDL3 reimplementation) and reus
 
 | File | What it is |
 | --- | --- |
-| `The Dark Knight Rises v1.0.4 (IOS 4.3+ iPad Optimized).ipa` | Full game: armv7 Mach-O (`TDKR`, decrypted) + all data in `.gla` archives. **The data source.** |
+| `DarkKnightRises.apk` | A 2026 community rebuild of Gameloft's Android **Amazon 1.1.6** build (see below). Its `assets/gamedata.zip` is Gameloft's Android data. **The default data source**: it matches the footage and has the controller prompts. |
+| `The Dark Knight Rises v1.0.4 (IOS 4.3+ iPad Optimized).ipa` | Full game: armv7 Mach-O (`TDKR`, decrypted) + all data in `.gla` archives. The first data source; still supported (`work/data_ios`). |
+| `The_Dark_Knight_Rises___1.0.5_ios_6.0(1).ipa` | iOS 1.0.5, a cracked repack (see below). Data nearly identical to 1.0.4. |
 | `TDKR 2022.apk` | Android `com.gameloft.android.GAND.GloftKRLT`, 1.0.0. No data (it came from a dead Gameloft CDN as `datakrhm.obb`), but `lib/armeabi-v7a/libKRHP.so` (16 MB, ARM mode) is **not stripped, with debug info**: 87k symbols, full C++ names. **The code source for Ghidra.** |
 | `com.wb.goog.lbbg_2.0.1.17-APK_Award.apk` | LEGO Batman: Beyond Gotham (TT Games, `.fib` data, arm64). A different game and engine, not useful here. |
 
-`work/extracted/ipa`, `work/extracted/apk2022` hold the unpacked IPA/APK (`work/data` links to the `.app`); `work/extracted/data/<archive>/`
-holds every `.gla` unpacked (`python3 tools/gla.py extract -o work/extracted/data --per-archive ...`).
+`work/data` is the Android data (`gamedata.zip`'s `data/` and `textures/`), and `work/extracted/data/<archive>/` holds
+its `.gla` archives unpacked (`python3 tools/gla.py extract -o work/extracted/data --per-archive ...`). The iOS
+equivalents are `work/data_ios` (a link to `work/extracted/ipa/Payload/TDKR.app`) and `work/extracted/data_ios`;
+`work/extracted/android` keeps `gamedata.zip` and the APK's code. Findings above that compare against
+"the data" were made on iOS 1.0.4 unless they say otherwise; the engine and tools pass the same checks on both.
 
 ## Code (libKRHP.so)
 

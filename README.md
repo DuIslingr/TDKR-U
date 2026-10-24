@@ -5,8 +5,10 @@ N.O.V.A. 3 one (`../N.O.V.A 3`): the same Glitch engine, so the archive, texture
 Lua code carries over. Behaviour comes from the Android library (`libKRHP.so`, which ships with its
 symbols) in Ghidra. Findings so far are in [ANALYSIS.md](ANALYSIS.md).
 
-**The game's files are not included.** You need your own copy of the iOS build (1.0.4: the `.app`
-folder from the IPA).
+**The game's files are not included.** You need your own copy of the game data. The default is the
+Android build's (Gameloft's Amazon 1.1.6 data, as in `DarkKnightRises.apk`'s `assets/gamedata.zip`): it is
+what the gameplay footage shows and carries the controller prompts. The iOS build (1.0.4: the `.app`
+folder from the IPA) works too.
 
 ## Layout
 
@@ -37,7 +39,12 @@ engine/build/tdkr-check textures work/data
 engine/build/tdkr-check models work/data models.txt
 ```
 
-`work/data` is the IPA's `Payload/TDKR.app` (its `data/` and `textures/` folders are mounted).
+`work/data` is the Android data: `gamedata.zip` unpacked (`unzip -p DarkKnightRises.apk assets/gamedata.zip >
+gamedata.zip`, then `unzip gamedata.zip 'data/*' 'textures/*' -d work/data`); its `data/` and `textures/`
+folders are mounted. `work/extracted/data` holds its archives unpacked for the Python tools (`python3 tools/gla.py
+extract --per-archive -o work/extracted/data work/data/data/*.gla work/data/textures/*.gla`). The iOS data works
+the same way from `work/data_ios` (the IPA's `Payload/TDKR.app`) and `work/extracted/data_ios`; pass
+`--data work/data_ios` to the engine.
 To preview a model: `python3 tools/bdae2gltf.py MODEL.bdae -o out.glb --data work/extracted/data`.
 To check the levels: `python3 tools/lvc.py work/extracted/data/game_config/*.lvc`; to preview one:
 `python3 tools/level2gltf.py work/extracted/data/game_config/Stadion.lvc -o stadion.glb` (Gotham adds its streamed city;

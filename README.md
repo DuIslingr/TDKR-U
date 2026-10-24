@@ -47,7 +47,9 @@ To run a level in the engine: `engine/build/tdkr --data work/data --level Stadio
 `--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera, `--walk-test SECONDS` to walk
 forward first, `--grapple-test SECONDS` to fire the grapnel after 1 s). In the window: mouse to look, WASD to move
 Batman, Shift to sprint, Space to jump (again in the air to glide; while gliding W dives, Shift+W plunges), F to grapple.
-The HUD is the game's own `BatmanHUD.swf`.
+The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
+(arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
+`--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).
 
 The Flash UI: `python3 tools/swf.py info|tree|actions|texts|render FILE.swf` inspects a movie;
 `engine/build/tdkr-check swf work/data MainMenu.swf out.png --size 1280x720 call=screenManager:startScreen:main frames=60`

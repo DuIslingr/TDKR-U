@@ -100,6 +100,24 @@ shaders, and Gotham (`--level GothamCity.lvc`) draws its streamed city and props
 playlist (Android, 13 parts, `work/youtube`, 360p) are in `work/compare/`. The city is brighter than the footage: no
 lightmaps yet, so no baked night lighting.
 
+### iOS 1.0.5 (`The_Dark_Knight_Rises___1.0.5_ios_6.0(1).ipa`)
+
+A later build (iOS 6+, armv7, `cryptid` 0). **This IPA is a cracked repack**: it injects
+`libhzm.dylib` / `Haima.hz` (a third-party store) and links MobileSubstrate IAP-bypass hooks
+(`iap.dylib`, `IAPFreeService.dylib`). Only its data is used here; its binary is never run. The
+uncompressed content is the same size as 1.0.4 (1.54 GB; the IPA is just stored, not deflated). Against 1.0.4:
+
+- **Textures**: identical. **Scripts, levels, strings, sounds, SWFs**: identical (every `.gla` CRC differs
+  only because the archives were rebuilt).
+- **Models**: re-exported with the same content; the only bytes that change are the export timestamps in
+  inline effect ids (`#…-fx1392992010_…` → `-fx1405329388_…`, Feb → Jul 2014) and a few padding bytes.
+- **Gotham**: 127 new `*_low.bdae` models (footprints, islands, trees, billboards, bridges, railway) replace
+  the dropped low-end streaming zips (`GothamCity[_Island2]_low_inorm.zip`); the full-detail streaming zips are
+  rebaked with the same layout (307 batches, 1,526 groups, 3,706 segments). They are low-end stand-ins for the
+  streamed city: loading them as the missing Gotham models (114 → 31 missing) doubles the buildings, so the
+  engine does not.
+- **gameswf_lowres** atlases are 512² (were 256²); `gameswf_normalres` menu backgrounds are re-encoded.
+
 ## Data formats, and how far N.O.V.A. 3's code gets
 
 | Format | Count | Status |
@@ -151,7 +169,23 @@ The UI is 51 distinct movies, in three resolution archives (`gameswf_hires`, `_n
   properties 40 and 41 are pixels per metre and zoom (39 is the movie), the pivot turns with the camera, and
   `CenterMinimap` (the arrow) shows Batman's facing. `SetGrapple` puts `mGraplingHookTarget` over the target.
 - **Menus** (`CMenuManager`, one `RenderFX` per movie): `MainMenu.swf`'s `screenManager.startScreen(type)` with
-  `main`, `ingame`, `death`; `CHUDDisplay::SwitchMenu` calls it.
+  `main`, `ingame`, `death`; `CHUDDisplay::SwitchMenu` calls it, `CHUDDisplay::EnterIGM` loads `MainMenu.swf`
+  into the HUD's `mHackArea` for the pause (`ingame`) and death screens. The title is `MenuPressKey.swf`; the
+  main menu's backdrop is the `l_menu` level through `mm_city_camera.bdae`'s Camera001 (its animation segment is
+  kept in the file: state 1, size 0, data at the runtime-pointer offset).
+- **Events**: the scripts report presses with `registerInGameEvent(NAME, arg)`; the game compares about 60
+  names (`NEW_GAME` → `GS_BaseMenu::StartNewGame`, mission `STR_FPS_LEVEL_01_TUTORIAL`; `CONTINUE_GAME`;
+  `MISSION_ACTIVATED` → `StartChapter(index)`; `CHAPTER_LIST_INIT` → `InitChapterSelection`: `init`,
+  `addToList(chapter, title)`, `init`, `addMissionToChapter(box, n, enabled, id, …)`; `IGMMODE` (Continue),
+  `BUTTON_RESTART_CHECKPOINT`, `BUTTON_RESTART_LEVEL`, `BACK_TO_MAIN_MENU`, `EXIT_GAME`, `SHOP_PARENT`…).
+- **Missions**: level properties field 8 lists each level's missions: start Lua, name, menu background, chapter,
+  number, chapter picture, selection/index/description strings, first-mission flag. Chapters 1–6 are the story,
+  7 the free roam.
+- **HUD buttons** restyle through the slot's `button`: `switchStyle(STYLE)` (`hudAS.hudID` maps a style to its
+  icon and action: STRIKE, TAKEDOWN, COUNTERATTACK, GRAPNEL, JUMP/GLIDE/PLUNGE, gadgets…),
+  `setNumber(n)`, `enableButton()` / `disableButton()` (60% alpha).
+- The footage's Android `MainMenu.swf` puts Tech Shop on a white banner; iOS's (1.0.4 and 1.0.5) makes it
+  yellow text.
 
 The engine's player (`engine/src/swf/`): `movie` (parser), `tess` (even-odd trapezoid fill, like gameswf),
 `as`/`as_vm`/`as_builtins` (the AS2 interpreter), `player`/`player_classes` (display list, timelines, events,
@@ -219,8 +253,9 @@ segments (buildings, roads, bridges) in the same world space.
 - TDKR shaders that skin on the GPU (`SkinWeights`, `SkinIndices`) are not wired to the engine's skinning.
 - 114 models referenced in Gotham aren't in the iOS data. 46 are the streamed footprints; the rest (`hc_prop_billboard*`, …) look like cut content.
 - Batman's cape is missing from the glTF render. Skinning or the controller path is likely different too.
-- Flash UI: the menus render but nothing acts on `NativeSwitchMenu` / `NativeStartLevel` yet (the menu flow,
-  `CMenuManager`'s stack, input focus). The HUD shows Batman's on-foot buttons; their states (counter, glide,
+- Flash UI: the menu flow runs (title, main, chapters, pause, death), but Options, Extras, Help and the Tech Shop
+  (`Shop.swf` through `SHOP_PARENT`) have no game side yet, chapter progress is not saved (all unlocked), and the
+  chapter list does not scroll by keyboard. The HUD shows Batman's on-foot buttons; their states (counter, glide,
   takedown), health, XP, popups, objectives and the joystick for touch are still to be driven from the game.
   Colour transforms' add terms are ignored on bitmaps; non-convex masks clip to their hull; button hit tests use
   bounds.

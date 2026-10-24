@@ -432,6 +432,8 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         fs.cinematic = opt.scripts && logic.player_locked();
         fs.position = glm::vec2(player.center);
         fs.facing = hero.facing();
+        using HM = FlashHud::State::Move;
+        fs.move = player.plunging ? HM::Plunge : player.gliding ? HM::Glide : player.on_ground ? HM::Ground : HM::Air;
         {
             const glm::vec3 fwd = glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0));
             fs.camera_yaw = glm::degrees(std::atan2(-fwd.x, fwd.y));

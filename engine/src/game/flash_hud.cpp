@@ -20,6 +20,8 @@ bool FlashHud::start(const std::string& minimap, float minimap_scale, float mini
     if (!screen_.load("BatmanHUD.swf", width_, height_)) return false;   // 0: the movie's size until the first update
     width_ = height_ = 0;   // the next update sets the viewport and the screen alignment
     left_base_.clear();
+    buttons_.clear();
+    for (const char* slot : {"bJump", "bAttack", "bGrapnel"}) buttons_[slot] = {"", -1};
     set_up();
     return true;
 }
@@ -109,7 +111,23 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         arrow->matrix.set_scale_rotation(1, 1, yaw - glm::radians(state.facing));
         arrow->accept_moves = false;
     }
+    // refreshBatmanButtons / Update: the action slots follow what Batman can do now.
+    using M = State::Move;
+    button("bJump", state.move == M::Glide ? "GLIDE" : state.move == M::Plunge ? "PLUNGE" : "JUMP", true);
+    button("bAttack", state.attack, state.move == M::Ground);
+    button("bGrapnel", "GRAPNEL", state.grapple);
     screen_.update(dt, width, height);
+}
+
+void FlashHud::button(const std::string& slot, const std::string& style, bool enabled) {
+    swf::Player* p = screen_.player();
+    if (!p) return;
+    auto& last = buttons_[slot];
+    if (last.first == style && last.second == int(enabled)) return;
+    const std::string path = slot + ".button";
+    if (last.first != style) p->invoke(path, "switchStyle", {swf::Value(style)});
+    if (last.second != int(enabled)) p->invoke(path, enabled ? "enableButton" : "disableButton");
+    last = {style, int(enabled)};
 }
 
 void FlashHud::draw(ParticleList& out) {

@@ -35,6 +35,8 @@ public:
         float health = 1;                // 0..1
         glm::vec2 position{0};           // Batman, world metres (the minimap follows him)
         float camera_yaw = 0, facing = 0;   // degrees about Z (the map turns with the camera)
+        enum class Move { Ground, Air, Glide, Plunge } move = Move::Ground;   // the jump slot's style
+        const char* attack = "STRIKE";   // the attack slot's style (STRIKE, TAKEDOWN, COUNTERATTACK)
     };
     void update(float dt, const State& state, int width, int height);
     void draw(ParticleList& out);
@@ -42,6 +44,9 @@ public:
 
 private:
     void set_up();
+    // CHUDDisplay::SetButtonStyle: the slot's button switches style and (dis)ables, once per change.
+    void button(const std::string& slot, const std::string& style, bool enabled);
+    std::map<std::string, std::pair<std::string, int>> buttons_;   // slot -> (style, enabled)
     FlashScreen screen_;
     State state_;
     int width_ = 0, height_ = 0;

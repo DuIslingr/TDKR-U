@@ -441,6 +441,30 @@ where quest 838 completes and the main story moves on to 301 (`under_pressure_in
   the object's node plus an offset), `StartFadeOutWhite`, `PauseSound` (here a fade out), `MissionFailed` (back to the
   checkpoint; the death screen's text is not shown). Breakables now play their death effect.
 
+**Under Pressure** (quest 301, back in Gotham at spawn 600101): trigger 600022 calls `NextMission(600152)`, whose
+`Obj600152_Init` plays the `under_pressure_intro` storyboard and the binoculars cinematic; then the couple and their
+three thugs, the park where two policemen hold off thugs, three snipers on the rooftops (each with two thugs coming up
+when Batman gets near), two Bane SUVs that drive in and drop three thugs each, and a Bane helicopter. Batman grapnels
+onto it, hangs under it and plants the EMP; Blake talks, the trigger on Gordon's roof plays the radio call, the antenna
+hack overhears Bane's men, and `SetQuestCompleted(301)` gives the Waynetech win screen and `UnloadMission(600152)`.
+What it needed:
+
+- **Mission zones** (`CZonesManager`): a zone record whose `[0]` is 1 is a mission zone, `[4]` its id, and the objects
+  in its byte span belong to it. They are loaded only while it is the current mission: `NextMission(zone)` unloads the
+  old one (`UnloadMission`) and loads the new one as the level placed it (enabled, visible, where it stood), then runs
+  `Obj<zone>_Init`. An object in an unloaded zone is not there for the scripts (`FindObject` fails), and its scripts stop.
+  Without this the tutorial's triggers (zone 900347) fired in the middle of quest 301.
+- `SpawnObject` starts the new actor on its waypoint's chain (`CNpcAIComponent::StartPatrol`): its `OnReach` runs
+  there and it goes on along the chain (the SUVs' route, the snipers' `NPCSetSniper`); it leaves the chain to fight.
+- **The helicopter** (`CHelicopterLogic` `0x786F6ECB`): it flies its waypoints; `ActorGrapnelEnable(heli, true)` makes
+  it a grapnel target, and the grapnel takes Batman up to hang under it (`Grapnel_Fly_To_Grab_Heli`, `Grab_Heli_Idle`)
+  instead of pulling it. That is the AI controller's `On_Actor_Attached` (`Templ9801_<behaviour>_<event>`, the
+  behaviour being `CNpcAIComponent` `[0]`: 5 for helicopters), which enables its interaction; using it runs the type's
+  `OnScriptEvent`: `UnlinkObject(0)` lets go, `KillActor(heli, "Explode")`. Its guns are not done.
+- `NPCStandGroundTarget(actor, target)` (target set, stance 4, turned to it), `NPCPatrolArea(actor, waypoint, radius)`
+  (walks from point to point within the radius, pausing), `PlayerIsFighting()` (true and the target's id while Batman
+  fights), `UnloadMission(zone)`. NPCs targeting other NPCs (the police at the thugs) are not Batman's enemies.
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it

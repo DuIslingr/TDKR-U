@@ -211,6 +211,8 @@ private:
     bool fire_grapnel(const glm::vec3& eye, const glm::vec3& forward);
     bool answer_qte();   // a QTE button pressed: true if one was up
     // The Batpod (EnterBatPod): one physics step of the ride; false when Batman is on foot.
+    static constexpr float kHangBelow = 3.2f;   // Batman's feet under a helicopter he hangs from
+    bool hanging_ = false;
     bool ride_step(const PlayerInput& in, float dt);
     Batpod batpod;
     Storyboard storyboard;   // StartIntroStory

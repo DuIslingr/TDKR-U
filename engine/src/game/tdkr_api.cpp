@@ -29,6 +29,7 @@ std::string str_arg(lua_State* L, int i) { return lua_isstring(L, i) ? lua_tostr
 bool bool_arg(lua_State* L, int i) { return lua_toboolean(L, i) != 0; }
 constexpr size_t kNoIndex = std::numeric_limits<size_t>::max();
 constexpr int kCompInteraction = 0x34747EBE;   // CInteractionComponent
+constexpr int kCompDistrict = 0x1963F0C0;      // CDistrictComponent
 constexpr int kCompNpcAi = 0x0113F791;         // CNpcAIComponent (what makes an actor)
 
 // CLevel::FindObjectOrWaypoint's position: the player's feet for 0.
@@ -381,7 +382,12 @@ int api_enable_show(lua_State* L) {   // EnableShowObject / DisableHideObject
 }
 int api_enable_interaction(lua_State* L) {
     LevelLogic& c = ctx(L);
-    if (LevelLogic::Object* o = c.object(int_arg(L, 1))) o->interact_enabled = lua_tointeger(L, lua_upvalueindex(2)) != 0;
+    LevelLogic::Object* o = c.object(int_arg(L, 1));
+    if (!o) return 0;
+    o->interact_enabled = lua_tointeger(L, lua_upvalueindex(2)) != 0;
+    // A spawned actor's own interaction (the helicopter's EMP), from its component.
+    if (const Value* it = c.object_component(*o, kCompInteraction); it && it->size() >= 1 && !o->interactive && o->interact_enabled)
+        o->interactive = true, o->interact_radius = (*it)[0].as_float();
     return 0;
 }
 // SetInteractionParams(object, radius, target, button frame) (CInteractionComponent::
@@ -507,7 +513,8 @@ int api_actor_look_to(lua_State* L) {
     return 0;
 }
 // SpawnObject(type, waypoint[, model]): a new actor of a gol type at a waypoint (CZonesManager::
-// SpawnObject); its id, or -1. (The model override is not applied yet.)
+// SpawnObject); its id, or -1. An actor (with an AI) starts on the waypoint's chain there, its
+// OnReach first. (The model override is not applied yet.)
 int api_spawn_object(lua_State* L) {
     LevelLogic& c = ctx(L);
     const std::string type = str_arg(L, 1);
@@ -533,6 +540,7 @@ int api_spawn_object(lua_State* L) {
         o.state = "Idle";
         c.scene.play_clip(index, st.clips[0], true);
     }
+    if (c.object_component(o, kCompNpcAi)) c.start_patrol(id, int_arg(L, 2));   // on along the waypoint's chain
     lua_pushinteger(L, id);
     return 1;
 }
@@ -664,6 +672,55 @@ int api_npc_set_stance(lua_State* L) {
     } else {
         c.attack_targets.erase(id), c.watchers.erase(id);
     }
+    return 0;
+}
+
+// NPCStandGroundTarget(actor, target): its target set, it holds its ground (stance 4) and
+// turns to the target (CGameObject::LookAt); Batman (0) is a fight from where it stands.
+int api_npc_stand_ground_target(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    LevelLogic::Object* o = c.object(int_arg(L, 1));
+    glm::vec3 at;
+    if (!o || o->dead || lua_isnil(L, 2) || int_arg(L, 2) < 0 || !position_of(c, int_arg(L, 2), at)) return 0;
+    c.stances[o->id] = "StandGround";
+    c.watchers.erase(o->id);
+    c.stop_walking(o->id);
+    c.attack_targets[o->id] = int_arg(L, 2);
+    if (glm::length(glm::vec2(at - o->position)) > 1e-3f) o->yaw = glm::degrees(std::atan2(-(at.x - o->position.x), at.y - o->position.y));
+    if (o->index != kNoIndex) c.scene.set_object_pose(o->index, o->position, o->yaw);
+    return 0;
+}
+// NPCPatrolArea(actor, waypoint, radius[, state]).
+int api_npc_patrol_area(lua_State* L) {
+    ctx(L).patrol_area(int_arg(L, 1), int_arg(L, 2), float(lua_tonumber(L, 3)));
+    return 0;
+}
+// PlayerIsFighting(): Batman has a target in a fight (PlayerComponent::GetActiveTarget, fighting
+// or fought): true and its id, else false, -1.
+int api_player_is_fighting(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    int id = -1;
+    if (const LevelLogic::Object* t = c.object(c.batman_target); t && !t->dead) id = t->id;
+    else if (!c.attacking_batman.empty()) id = *c.attacking_batman.begin();
+    else
+        for (const auto& [enemy, target] : c.attack_targets)
+            if (const LevelLogic::Object* e = target == 0 ? c.object(enemy) : nullptr; e && !e->dead && glm::distance(e->position, c.player.center) < 6.0f) id = enemy;
+    lua_pushboolean(L, id >= 0);
+    lua_pushinteger(L, id);
+    return 2;
+}
+// GetDistrictCompletion(district) (CDistrictComponent::GetDistrictCompletion): the percentage of
+// its enabled crime hot spots cleared; -1 for what is not a district. The hot spots are not
+// played yet, so none is cleared: 0.
+int api_get_district_completion(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    lua_pushinteger(L, o && c.object_component(*o, kCompDistrict) ? 0 : -1);
+    return 1;
+}
+// UnloadMission(zone) (CZonesManager::UnloadMission): the mission zone's objects go.
+int api_unload_mission(lua_State* L) {
+    ctx(L).unload_mission(int_arg(L, 1));
     return 0;
 }
 
@@ -1359,6 +1416,11 @@ const Entry kTdkr[] = {
     {"CameraShake", api_camera_shake},
     {"NPCAttackTarget", api_npc_attack_target},
     {"NPCSetStance", api_npc_set_stance},
+    {"NPCStandGroundTarget", api_npc_stand_ground_target},
+    {"NPCPatrolArea", api_npc_patrol_area},
+    {"PlayerIsFighting", api_player_is_fighting},
+    {"UnloadMission", api_unload_mission},
+    {"GetDistrictCompletion", api_get_district_completion},
     {"NPCSetAIBehavior", api_nothing},
     {"NPCCombatSet", api_nothing},
     {"SetObjectSlowMotion", api_nothing},

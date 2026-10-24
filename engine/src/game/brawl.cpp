@@ -249,7 +249,7 @@ int Brawl::pull_target(const glm::vec3& eye, const glm::vec3& forward) const {
     int best = -1;
     float best_dot = std::cos(glm::radians(6.0f));
     for (const auto& [id, o] : logic_.objects_) {
-        if (!o.targetable || !enemy(id)) continue;
+        if (!o.targetable || o.dead || !(enemy(id) || logic_.is_helicopter(id))) continue;
         const glm::vec3 at = o.position + glm::vec3(0, 0, 1.2f);
         const glm::vec3 d = at - eye;
         const float dist = glm::length(d);
@@ -263,6 +263,11 @@ int Brawl::pull_target(const glm::vec3& eye, const glm::vec3& forward) const {
 bool Brawl::pull(int id) {
     LevelLogic::Object* o = logic_.object(id);
     if (!o || o->dead || pull_.id >= 0) return false;
+    if (logic_.is_helicopter(id)) {   // a helicopter is not pulled down: Batman goes up to hang from it
+        act("Grapnel_Fly_To_Grab_Heli", 0x400000, yaw_to(o->position), 0.6f);
+        logic_.grab_helicopter(id);
+        return true;
+    }
     const glm::vec3 f = feet();
     glm::vec2 d(o->position - f);
     d = glm::length(d) > 1e-3f ? glm::normalize(d) : glm::vec2(0, 1);

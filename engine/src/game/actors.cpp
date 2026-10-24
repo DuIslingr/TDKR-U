@@ -1,4 +1,5 @@
 // Actors moving on their own: TDKR's waypoint goals (LevelLogic::walk_to).
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include <limits>
@@ -60,19 +61,33 @@ void LevelLogic::walk_to(int id, int waypoint, bool run) {
     Object* o = object(id);
     if (!o || !object(waypoint)) return;
     Walker& w = walker(id);
-    w.target = waypoint, w.run = run;
+    w.target = waypoint, w.run = run, w.patrol = -1, w.spawned = false;
     if (trace) log("actor " + std::to_string(id) + " goes to waypoint " + std::to_string(waypoint));
+}
+
+void LevelLogic::start_patrol(int id, int waypoint) {
+    if (!object(id) || !object(waypoint)) return;
+    Walker& w = walker(id);
+    w.target = waypoint, w.run = false, w.to_point = false, w.patrol = -1, w.spawned = true;
 }
 
 void LevelLogic::stop_walking(int id) {
     for (Walker& w : walkers_)
-        if (w.id == id) w.target = -1, w.to_point = false;
+        if (w.id == id) w.target = -1, w.to_point = false, w.patrol = -1, w.spawned = false;
 }
 
 void LevelLogic::walk_to_point(int id, const glm::vec3& point, bool run) {
     if (!object(id)) return;
     Walker& w = walker(id);
-    w.target = -1, w.to_point = true, w.point = point, w.run = run;
+    w.target = -1, w.to_point = true, w.point = point, w.run = run, w.patrol = -1, w.spawned = false;
+}
+
+void LevelLogic::patrol_area(int id, int center, float radius) {
+    if (!object(id) || !object(center)) return;
+    Walker& w = walker(id);
+    w.target = -1, w.to_point = false, w.run = false;
+    w.patrol = center, w.patrol_radius = std::max(radius, 0.5f), w.patrol_wait = 0;
+    if (trace) log("actor " + std::to_string(id) + " patrols around " + std::to_string(center));
 }
 
 bool LevelLogic::walking(int id) const {
@@ -96,7 +111,18 @@ void LevelLogic::update_walkers(float dt) {
     for (size_t k = 0; k < walkers_.size(); ++k) {
         Walker& w = walkers_[k];
         Object* o = object(w.id);
-        if (!o || (w.target < 0 && !w.to_point) || o->dead) continue;
+        if (!o || o->dead) continue;
+        // Patrolling: a pause, then the next point within the area (none while it fights).
+        if (w.patrol >= 0 && w.target < 0 && !w.to_point && !attack_targets.count(w.id))
+            if (const Object* c = object(w.patrol); c && (w.patrol_wait -= dt) <= 0) {
+                static uint32_t seed = 12345;
+                auto rnd = [] { return float((seed = seed * 1103515245u + 12345u) >> 8 & 0xffff) / 65535.0f; };
+                const float a = rnd() * 6.2832f, r = std::sqrt(rnd()) * w.patrol_radius;
+                w.to_point = true, w.point = glm::vec3(c->position.x + std::cos(a) * r, c->position.y + std::sin(a) * r, o->position.z);
+                w.patrol_wait = 2.0f + 3.0f * rnd();
+            }
+        if (w.spawned && attack_targets.count(w.id)) w.target = -1, w.to_point = w.spawned = false;
+        if (w.target < 0 && !w.to_point) continue;
         const Object* wp = w.to_point ? nullptr : object(w.target);
         if (!w.to_point && !wp) {
             w.target = -1;

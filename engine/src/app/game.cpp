@@ -1,5 +1,7 @@
 #include "app/game.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 
 #include "swf/steps.h"
@@ -757,8 +759,9 @@ void Game::auto_play(float dt) {
     }
     if ((auto_play_wait -= dt) > 0) return;
     auto_play_wait = 3.0f;
-    if (!hero.active() || logic.player_locked() || logic.hack.active || logic.button_qte.object >= 0 || brawl.busy() ||
-        !logic.attacking_batman.empty() || player.grappling || storyboard.active()) {
+    const bool hanging = logic.hanging_from >= 0;   // (under a helicopter the camera is the script's)
+    if (!hero.active() || (logic.player_locked() && !hanging) || logic.hack.active || logic.button_qte.object >= 0 ||
+        (brawl.busy() && !hanging) || !logic.attacking_batman.empty() || player.grappling || storyboard.active()) {
         if ((auto_play_held += 3.0f) >= 30.0f) {   // say why, every half minute
             auto_play_held = 0;
             std::string who;
@@ -776,7 +779,15 @@ void Game::auto_play(float dt) {
         if (ids != auto_play_markers) auto_play_markers = ids, auto_play_stale.clear();
     }
     // The markers, then (none left) the nearest usable thing within 40 m.
+    // Enemies first, then objectives, then the rest (hostages, talks): the order a player would
+    // take (the Stock Exchange's floors count their hostages as they come).
     std::vector<LevelLogic::ObjectiveMarker> goals = logic.objective_markers;
+    auto rank = [](const std::string& text) {
+        std::string t = text;
+        for (char& ch : t) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+        return t == "kill" ? 0 : t == "objective" ? 1 : 2;
+    };
+    std::stable_sort(goals.begin(), goals.end(), [&](const auto& a, const auto& b) { return rank(a.text) < rank(b.text); });
     if (goals.empty()) {
         float best = 40;
         for (const auto& [id, o] : logic.objects())
@@ -788,6 +799,26 @@ void Game::auto_play(float dt) {
         if (!o || o->dead) continue;   // (a marker on a disabled object is still a place to go)
         if (auto_play_stale[m.id] >= 6 && goals.size() > 1) continue;   // been there, nothing came of it: the next
         const bool use = o->interactive && o->interact_enabled && o->enabled;
+        // A helicopter: the grapnel at it from within reach, then (hanging from it) its use.
+        if (logic.is_helicopter(m.id)) {
+            if (logic.hanging_from == m.id) {
+                if (use && logic.use()) std::printf("[auto-play] use %d (from under it)\n", m.id), auto_play_wait = 6.0f;
+                return;
+            }
+            const glm::vec3 eye = player.eye(), at = o->position + glm::vec3(0, 0, 1.2f);
+            if (glm::distance(eye, at) < 38.0f && player.on_ground && fire_grapnel(eye, glm::normalize(at - eye))) {
+                std::printf("[auto-play] grapnel at %d\n", m.id);
+                return;
+            }
+            float z = 0;   // under it, on the ground
+            if (!scene.collision().ray_down(o->position, 80.0f, z)) return;
+            const glm::vec3 from = player.center - glm::vec3(0, 0, player.radius.z), to(o->position.x, o->position.y, z + 0.1f);
+            const int n = int(glm::distance(to, from) / 0.5f);
+            if (n > 2) std::printf("[auto-play] to %d (under it) at (%.1f %.1f %.1f)\n", m.id, to.x, to.y, to.z);
+            for (int k = 1; k <= n; ++k) auto_play_path.push_back(k == n ? to : on_floor(glm::mix(from, to, float(k) / float(n))));
+            auto_play_use = -1;
+            return;
+        }
         glm::vec2 back(player.center - o->position);
         back = glm::length(back) > 1e-3f ? glm::normalize(back) : glm::vec2(0, -1);
         // Something to break: from 8 m, a batarang.
@@ -840,6 +871,20 @@ void Game::auto_play(float dt) {
         if (float z = 0; !use && !logic.is_enemy(m.id) && auto_play_stale[m.id] >= 3 &&   // (on it did nothing: the floor
             scene.collision().ray_down(o->position + glm::vec3(back * 1.5f, -0.5f), 10.0f, z))  // below, short of it)
             to = glm::vec3(o->position.x + back.x * 1.5f, o->position.y + back.y * 1.5f, z + 0.1f);
+        // An enemy: beside it on its own floor, nearest the way in (a sniper's ledge is narrow).
+        if (logic.is_enemy(m.id)) {
+            float best = 1e9f;
+            for (int k = 0; k < 16; ++k)
+                for (float r : {1.2f, 2.0f, 2.5f}) {
+                    const float a = glm::radians(22.5f * float(k));
+                    const glm::vec3 p = o->position + glm::vec3(std::cos(a) * r, std::sin(a) * r, 0.0f);
+                    float z = 0, head = 1;
+                    if (!scene.collision().ray_down(p + glm::vec3(0, 0, 1.5f), 3.0f, z) || std::abs(z - o->position.z) > 0.6f ||
+                        scene.collision().raycast(glm::vec3(p.x, p.y, z + 0.3f), glm::vec3(p.x, p.y, z + 2.0f), head))
+                        continue;
+                    if (const float d = glm::distance(p, to); d < best) best = d, to = glm::vec3(p.x, p.y, z + 0.1f);
+                }
+        }
         hero.face(glm::degrees(std::atan2(back.x, -back.y)));
         // At a place that has not gone away: the nearest trigger with an OnEnter around it, not
         // yet walked into (the way there leads through it in the game).
@@ -881,6 +926,20 @@ void Game::auto_play(float dt) {
 // the player, whose position the scripts measure and whose feet the triggers test, rides
 // along; the view swings round behind it.
 bool Game::ride_step(const PlayerInput& in, float dt) {
+    // Hanging from a helicopter (Grab_Heli_Idle): carried under it, until he lets go.
+    if (opt.scripts && logic.hanging_from >= 0) {
+        const LevelLogic::Object* h = logic.object(logic.hanging_from);
+        if (h && !h->dead && h->enabled) {
+            const glm::vec3 feet = h->position - glm::vec3(0, 0, kHangBelow);
+            player.center = feet + glm::vec3(0, 0, player.radius.z);
+            player.on_ground = false, player.vertical_speed = 0, player.gliding = player.plunging = player.grappling = false;
+            hero.ride(scene, feet, h->yaw, hanging_ ? "_324_grapnel_hang_idle" : "_323_grapnel_fly_idle_to_hang_idle");
+            hanging_ = true;
+            return true;
+        }
+        logic.hanging_from = -1;
+    }
+    if (hanging_) hanging_ = false, hero.stop_riding();   // let go: he falls
     if (!opt.scripts || logic.riding < 0) {
         if (batpod.object() >= 0) batpod.stop(), hero.stop_riding();
         return false;

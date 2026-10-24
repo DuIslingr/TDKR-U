@@ -48,6 +48,7 @@ public:
     void send_event(const std::string& event, int id = -1);
 
     void stop_all();
+    void stop_owner(int owner);   // the threads an object started (its zone unloaded), but the one running
     // A fresh state (CLuaScriptManager::ClearGlobals): no threads, no globals; functions
     // must be registered and chunks loaded again.
     void reset();
@@ -76,6 +77,7 @@ private:
 
     lua_State* L_ = nullptr;
     std::vector<Thread> threads_;
+    lua_State* running_ = nullptr;   // the coroutine being resumed
 };
 
 }  // namespace tdkr

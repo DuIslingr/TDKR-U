@@ -22,6 +22,7 @@ namespace {
 
 constexpr int kCompTrigger = 0x37F7A8AE;  // CTriggerComponent
 constexpr int kCompRunScript = 0x1E;      // CRunScriptComponent (OnDead)
+constexpr int kCompHelicopter = 0x786F6ECB;   // CHelicopterLogic
 constexpr int kCompInteractive = 0x34747EBE;   // CInteractionComponent: radius, ?, script (OnScriptEvent), button frame
 constexpr int kCompDoor = 0x61;           // CDoorAIComponent
 constexpr int kCompEffects = 0x92;        // CEffectsComponent: [[effect, node, autostart, ...], ...]
@@ -60,7 +61,13 @@ LevelLogic::LevelLogic(Scene& s, Player& p, const Gol& g) : scene(s), player(p),
 
 LevelLogic::Object* LevelLogic::object(int id) {
     auto it = objects_.find(id);
-    return it == objects_.end() ? nullptr : &it->second;
+    if (it == objects_.end()) return nullptr;
+    if (!it->second.loaded) {
+        if (trace && warned_.insert("unloaded " + std::to_string(id)).second)
+            log("object " + std::to_string(id) + " is in mission zone " + std::to_string(it->second.zone) + ", not loaded");
+        return nullptr;
+    }
+    return &it->second;
 }
 
 void LevelLogic::load_objects() {
@@ -68,8 +75,17 @@ void LevelLogic::load_objects() {
     std::unordered_set<int> templated;   // gol types whose template scripts are loaded
     bool tdkr_start = false;             // a TDKR level-start spawn point found
     start_spawn_id_ = -1;
+    int zone = -1;            // the mission zone whose records these are (-1: none)
+    size_t zone_end = 0;
     for (size_t i = 0; i < level.objects.size(); ++i) {
         const LevelObject& o = level.objects[i];
+        if (o.kind == "zone") {   // [0] a mission zone, [4] its id; it spans its records up to content_end
+            const bool mission = o.fields.size() > 4 && o.fields[0].i == 1 && o.content_end > o.offset;
+            zone = mission ? o.fields[4].i : -1;
+            zone_end = o.content_end;
+        } else if (zone >= 0 && o.offset >= zone_end) {
+            zone = -1;
+        }
         // Scripts: every chunk defines Obj<id>_<Event> functions in the shared state; the
         // object types' templates define Templ<type>_<Event> for objects without their own.
         std::vector<std::string> chunks;
@@ -183,7 +199,6 @@ void LevelLogic::load_objects() {
             obj.position = tf->position;
             obj.yaw = tf->rotation.z;
             obj.enabled = tf->enabled;   // an enabled, invisible object (TDKR's usable planes) can be used
-            obj.home = tf->position;
             obj.visible = tf->visible;
         }
         if (const Value* d = comp(kCompDoor); d && d->size() >= 1) {
@@ -212,6 +227,7 @@ void LevelLogic::load_objects() {
         }
         // An actor starts in its state set's idle state (ActorGetState: "Ranged_Idle", ...).
         if (const Value* st = comp(0x5441A117); st && st->size() > 1 && (*st)[1].type == Value::String) obj.state = (*st)[1].s;
+        obj.zone = zone, obj.home = obj.position, obj.init_enabled = obj.enabled, obj.init_visible = obj.visible;
         objects_[obj.id] = obj;
     }
     stats_.objects = objects_.size();
@@ -339,6 +355,9 @@ void LevelLogic::start(StartMode mode) {
     for (const auto& [type, g] : gol)
         if (g.name == "AIController") load_type_scripts(type);
     load_objects();
+    // Mission zones load when they become the current mission (none yet).
+    for (auto& [id, o] : objects_)
+        if (o.zone >= 0) o.enabled = o.visible = false, o.loaded = false, show(o, false);
     if (mode != StartMode::Section) quests.load(scene.level(), gol);
     mission_zone = -1;
     walkers_.clear();
@@ -350,7 +369,7 @@ void LevelLogic::start(StartMode mode) {
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
     story_request = {};
-    riding = -1, qte_navigation = false, bruce_style = false;
+    riding = -1, hanging_from = -1, qte_navigation = false, bruce_style = false;
     map_icons.clear();
     level_request = {};
     object_sounds.clear();
@@ -477,6 +496,10 @@ bool LevelLogic::link_at(int id, int target, const std::string& node, const glm:
 }
 
 void LevelLogic::unlink(int id) {
+    if (id == 0 && hanging_from >= 0) {   // Batman lets go of the helicopter
+        if (trace) log("lets go of " + std::to_string(hanging_from));
+        hanging_from = -1;
+    }
     for (const Link& l : links_)
         if (l.id == id && l.held && combat) combat->npc_order(id, "imobile", 0, false);
     std::erase_if(links_, [id](const Link& l) { return l.id == id; });
@@ -550,6 +573,7 @@ uint32_t LevelLogic::checkpoint_section() const { return saved_ ? saved_->sectio
 
 void LevelLogic::respawn_at_checkpoint() {
     respawn_pending = false;
+    const int zone = mission_zone;   // the mission it was in stays loaded
     const std::shared_ptr<const Checkpoint> cp = saved_;
     if (!cp) {
         start(StartMode::New);
@@ -564,6 +588,10 @@ void LevelLogic::respawn_at_checkpoint() {
     restoring_ = true;
     runtime_.update(0);
     restoring_ = false;
+    if (zone >= 0 && mission_zone != zone) {
+        if (mission_zone >= 0) load_zone(mission_zone, false);
+        mission_zone = zone, load_zone(zone, true);
+    }
     restore_checkpoint(*cp);
     quests.respawned();
 }
@@ -647,12 +675,44 @@ void LevelLogic::enable_controls(bool on) {
     hud_enabled = on;
 }
 
-// CZonesManager::NextMission: the mission zone changes (the game streams its objects in;
-// here they are all loaded already) and the zone's Obj<id>_Init runs.
+// CZonesManager::NextMission: the mission zone changes. The old one's objects go
+// (UnloadMission), the new one's come in as the level placed them, and its Obj<id>_Init runs.
 void LevelLogic::next_mission(int zone) {
     if (zone == mission_zone) return;
+    if (mission_zone >= 0) load_zone(mission_zone, false);   // CZonesManager::UnloadMission
     mission_zone = zone;
+    if (zone >= 0) load_zone(zone, true);
     if (zone >= 0) start_script("Obj" + std::to_string(zone) + "_Init", zone);
+}
+
+void LevelLogic::unload_mission(int zone) {
+    if (zone < 0 || zone != mission_zone) return;
+    load_zone(zone, false);
+    mission_zone = -1;
+}
+
+void LevelLogic::load_zone(int zone, bool load) {
+    int n = 0;
+    for (auto& [id, o] : objects_) {
+        if (o.zone != zone || o.loaded == load) continue;
+        ++n;
+        if (load) {   // as the level has it
+            o.loaded = true, o.dead = false, o.state = default_state(o, 1);
+            enable(o, o.init_enabled);
+            show(o, o.init_visible);
+            if (o.position != o.home && o.index < scene.level().objects.size()) {   // moved on an earlier visit
+                o.position = o.home;
+                if (const LevelObject& lo = scene.level().objects[o.index]; lo.base) o.yaw = lo.base->rotation.z;
+                scene.set_object_pose(o.index, o.position, o.yaw);
+            }
+        } else {
+            enable(o, false);
+            show(o, false);
+            o.loaded = false;
+            runtime_.stop_owner(id);
+        }
+    }
+    if (trace && n) log(std::string(load ? "mission zone in: " : "mission zone out: ") + std::to_string(zone) + " (" + std::to_string(n) + " objects)");
 }
 
 void LevelLogic::start_script(const std::string& function, int owner) {
@@ -967,8 +1027,8 @@ bool LevelLogic::use() {
     float best_d = 1e30f;
     for (auto& [id, o] : objects_) {
         if (!o.interactive || !o.enabled || !o.interact_enabled || o.dead) continue;
-        const float d = glm::distance(glm::vec2(o.position), glm::vec2(player.center));
-        if (d > o.interact_radius || d > best_d || std::abs(o.position.z - player.center.z) > 3) continue;
+        const float d = id == hanging_from ? 0.0f : glm::distance(glm::vec2(o.position), glm::vec2(player.center));
+        if (id != hanging_from && (d > o.interact_radius || d > best_d || std::abs(o.position.z - player.center.z) > 3)) continue;
         best = &o;
         best_d = d;
     }
@@ -1937,6 +1997,27 @@ void LevelLogic::end_hack(bool won) {
     if (!fn.empty()) start_script(fn, -1);
 }
 
+bool LevelLogic::is_helicopter(int id) const {
+    const auto it = objects_.find(id);
+    return it != objects_.end() && object_component(it->second, kCompHelicopter) != nullptr;
+}
+
+void LevelLogic::grab_helicopter(int id) {
+    Object* o = object(id);
+    if (!o || o->dead || hanging_from == id) return;
+    hanging_from = id;
+    if (trace) log("hangs from helicopter " + std::to_string(id));
+    ai_event(id, "On_Actor_Attached");
+}
+
+void LevelLogic::ai_event(int id, const std::string& event) {
+    const Object* o = object(id);
+    const Value* ai = o ? object_component(*o, kCompNpcAi) : nullptr;
+    if (!ai || ai->size() < 1) return;
+    for (const auto& [type, g] : gol)
+        if (g.name == "AIController") start_script("Templ" + std::to_string(type) + "_" + std::to_string((*ai)[0].i) + "_" + event, id);
+}
+
 void LevelLogic::mount_batpod(int id) {
     Object* o = object(id);
     if (!o || riding == id) return;
@@ -2034,7 +2115,7 @@ bool LevelLogic::is_enemy(int id) const {
     const Object* o = object(id);
     if (!o || o->dead || !o->enabled || !o->visible || o->index >= scene.level().objects.size()) return false;
     if (o->enemy >= 0) return o->enemy != 0;   // NPCSetEnemyFlag
-    if (attack_targets.count(id)) return true;
+    if (auto it = attack_targets.find(id); it != attack_targets.end() && it->second == 0) return true;   // fighting Batman
     // CNpcAIComponent: [0] its behaviour (AI_BEHAVIOR_*), [1] whether it is an enemy (the
     // mercenaries, snipers and thugs; not the civilians or the police).
     const LevelObject& lo = scene.level().objects[o->index];

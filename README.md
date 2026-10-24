@@ -75,7 +75,11 @@ E gets off; `--auto-play` drives it after the objective, tailing a moving one fr
 the same way (`--level Underground.lvc --spawn-at 700002 --exec "StartMainStoryFromQuestId(838)" --exec
 'SetWeaponAmmo("Batarang_01", 10)' --auto-play`); auto-play breaks the objectives' lights with the batarang. A
 storyboard skips on a key or click. The Pit too (`--level ThePit.lvc --auto-play`); at a place marker
-auto-play also presses use (the Pit's valves stand beside their markers).
+auto-play also presses use (the Pit's valves stand beside their markers). Quest 301 (Under Pressure) plays through in
+Gotham with `--level GothamCity.lvc --spawn-at 600101 --exec "StartMainStoryFromQuestId(301)" --exec
+'SetWeaponAmmo("Batarang_01", 10)' --auto-play`; auto-play stands beside an enemy on its own floor (the snipers'
+ledges) and grapnels onto the helicopter from below it, then uses it. It takes the markers in a player's order:
+enemies, then objectives, then the rest (hostages, people to talk to).
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

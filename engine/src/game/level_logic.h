@@ -140,6 +140,8 @@ public:
     // NextMission(zone): the current mission zone (CZonesManager +0x4c); its Obj<zone>_Init runs.
     int mission_zone = -1;
     void next_mission(int zone);
+    void load_zone(int zone, bool load);   // a mission zone's objects in (fresh) or out
+    void unload_mission(int zone);         // UnloadMission: out, if it is the current one
     // CScriptGlobals: script variables kept across levels and saved with the game
     // (RegisterGlobalVar / SetGlobalVar / GetGlobalVar).
     std::map<std::string, int> global_vars;
@@ -164,12 +166,17 @@ public:
     // Obj<waypoint>_OnReach runs and it goes on along the waypoint chain, stopping (Idle) at
     // its end. Cars and helicopters drive the same chains.
     void walk_to(int id, int waypoint, bool run);
+    void start_patrol(int id, int waypoint);   // SpawnObject's (CNpcAIComponent::StartPatrol): the chain from there
     void stop_walking(int id);
     void set_actor_speed(int id, float speed, bool run);
     bool walking(int id) const;
     // NPCGoToActorWithNavmesh / NPCReturnToSavedPosition: to a point (where an actor was), no
     // OnReach there.
     void walk_to_point(int id, const glm::vec3& point, bool run);
+    // NPCPatrolArea(actor, waypoint, radius) (CNpcAIComponent::NPCPatrolArea): it walks from
+    // point to point within the radius of the waypoint, pausing at each, until it is sent
+    // elsewhere or fights.
+    void patrol_area(int id, int center, float radius);
     // LinkObject(object, parent, node, dx, dy, dz, ...) (CGameObject::LinkToObject): carried at the
     // parent's node (or origin) plus the offset, until UnlinkObject.
     bool link_at(int id, int target, const std::string& node, const glm::vec3& offset);
@@ -213,6 +220,15 @@ public:
     // the Batpod Batman rides (-1: on foot); the game drives it (game/batpod.h). Mounting takes
     // the bike's own collision and use button away; getting off puts Batman beside it.
     int riding = -1;
+    // Batman's grapnel at a helicopter (CHelicopterLogic): he hangs under it (Grab_Heli_Idle),
+    // carried along, until UnlinkObject(0) lets go (its use, Templ<heli>_OnScriptEvent: the EMP).
+    // -1: not hanging.
+    int hanging_from = -1;
+    void grab_helicopter(int id);
+    bool is_helicopter(int id) const;
+    // CAIController's behaviour events (CNpcAIComponent [0]: the behaviour): the AIController
+    // type's Templ<type>_<behaviour>_<event>, the actor current.
+    void ai_event(int id, const std::string& event);
     void mount_batpod(int id);
     void dismount_batpod();
     // QTE_StartNavigation / QTE_EndNavigation (PlayerComponent::*QTENavigation): the chase mode,
@@ -405,6 +421,11 @@ public:
         bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
         bool targetable = true;       // ActorGrapnelEnable: Batman may leap or grapple at it
         bool invincible = false;      // SetInvincible: hits leave its health alone
+        // Gotham's mission zones (CZonesManager: a zone record flagged as a mission, its objects
+        // the records it spans): an object of one is loaded only while its zone is the current
+        // mission (NextMission), fresh from the level each time; unloaded, scripts cannot find it.
+        int zone = -1;
+        bool loaded = true, init_enabled = true, init_visible = true;
         int enemy = -1;               // NPCSetEnemyFlag: 1 / 0 overrides its NPC AI's enemy flag (-1: as loaded)
         glm::vec3 home{0};            // where it was placed (NPCReturnToSavedPosition)
         float health = 100;
@@ -758,6 +779,9 @@ private:
         bool to_point = false;       // a point instead of a waypoint
         glm::vec3 point{0};
         float walk_speed = 1.5f, run_speed = 4.5f;
+        int patrol = -1;             // NPCPatrolArea's waypoint
+        bool spawned = false;        // on the chain SpawnObject started it on: it leaves it to fight
+        float patrol_radius = 0, patrol_wait = 0;
     };
     std::vector<Walker> walkers_;
     Walker& walker(int id);

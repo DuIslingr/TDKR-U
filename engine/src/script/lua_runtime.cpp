@@ -129,7 +129,9 @@ void ScriptRuntime::resume(Thread& t) {
     lua_setglobal(t.L, "this");
     lua_pushinteger(t.L, t.owner);   // TDKR's name for it (LuaThread::Resume)
     lua_setglobal(t.L, "CurrentActor");
+    running_ = t.L;
     const int status = lua_resume(t.L, 0);
+    running_ = nullptr;
     t.started = true;
     if (status == LUA_YIELD) {
         // Yielded values: a code, then its arguments (see the header).
@@ -189,6 +191,11 @@ void ScriptRuntime::send_event(const std::string& event, int id) {
 void ScriptRuntime::stop_all() {
     for (Thread& t : threads_)
         if (t.state != Thread::State::Free) finish(t);
+}
+
+void ScriptRuntime::stop_owner(int owner) {
+    for (Thread& t : threads_)
+        if (t.state != Thread::State::Free && t.owner == owner && t.L != running_) finish(t);
 }
 
 }  // namespace tdkr

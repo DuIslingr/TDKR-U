@@ -31,10 +31,7 @@ bool FrontEnd::show(Screen screen) {
         menu_.reset();
         return false;
     }
-    if (screen == Screen::Main) {
-        background_ = std::make_unique<FlashScreen>(vfs_, renderer_, strings_);
-        if (!background_->load("menu_bg_gotham.swf", width_, height_)) background_.reset();
-    }
+    // (the main menu's backdrop is the menu level, drawn by the game behind it)
     screen_ = screen;
     if (screen == Screen::Main) start_screen("main");
     else if (screen == Screen::Pause) start_screen("ingame");

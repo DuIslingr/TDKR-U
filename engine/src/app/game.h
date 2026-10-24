@@ -155,6 +155,11 @@ private:
     void front_action(FrontEnd::Action a);
     void start_mission(int index);
     float menu_dt();
+    bool menu_scene_camera(Camera& cam);
+    std::string menu_camera_level;
+    int menu_camera_object = -1;
+    glm::vec3 menu_eye{0};
+    bool menu_scene_shown = false;   // the last draw_main_menu showed the menu level behind
     std::unique_ptr<FlashScreen> swf_view;   // --swf: a Flash movie over the game (input goes to it)
     float swf_clock = -1;
     void start_swf_view(int w, int h);

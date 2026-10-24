@@ -95,7 +95,9 @@ AnimationLibrary load_animation(const Bytes& raw) {
         for (int32_t k = 0; k < n && base; ++k) {
             const uint32_t s = base + 0x1C * uint32_t(k);
             if (b.i32(s + 12) != 0) throw FormatError("animation segment with relocations");
-            const uint32_t off = b.u32(s + 16);
+            // TDKR: a segment kept in the file (state 1, no size) has its data at the
+            // runtime-pointer field (MM_City_Camera.bdae).
+            const uint32_t off = b.u32(s + 20) == 0 && b.i32(s + 8) == 1 ? b.u32(s + 24) : b.u32(s + 16);
             Segment seg;
             const uint32_t count = b.u32(off);
             for (uint32_t j = 0; j < count; ++j) {

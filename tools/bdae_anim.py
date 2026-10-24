@@ -17,7 +17,8 @@ the animation_track interpreters in the engine):
 * SDefaults: +0x00 flags, +0x04 count, +0x08 float* - the full vector a
   single-axis track writes into, or (for axis-angle rotation) the axis.
 * Root +0x30 -> {count, SAnimationSegment*}: 0x1c bytes each
-  {start ms, end ms, state, reloc count, data offset, data size, runtime ptr}.
+  {start ms, end ms, state, reloc count, data offset, data size, runtime ptr}. In TDKR a
+  segment with state 1 and size 0 holds its data at the runtime-pointer offset instead.
   Each segment's data block is SAnimationData: u32 count, then count x
   {u32 size, i32 offset relative to the offset field}. Samplers index these
   buffers. Key times are absolute on the file's timeline, and each segment
@@ -94,7 +95,9 @@ class AnimationLibrary:
         segs = []
         base = b.ptr(table + 4)
         for i in range(b.i32(table)):
-            start, end, _state, nrel, off, size, _rt = struct.unpack_from("<7i", b.data, base + 0x1C * i)
+            start, end, state, nrel, off, size, rt = struct.unpack_from("<7i", b.data, base + 0x1C * i)
+            if size == 0 and state == 1:   # TDKR: kept in the file, at the runtime-pointer field
+                off = rt
             if nrel:
                 raise NotImplementedError("animation segment with relocations")
             count = b.u32(off)

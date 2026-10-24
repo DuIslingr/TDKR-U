@@ -63,6 +63,8 @@ void Hero::start(Scene& scene, Player& player) {
     // Levels also place Batman as script-driven stand-ins (Gotham: five NPCs and an animated
     // object, for cinematics); the player's Batman replaces them.
     scene.hide_models(model);
+    object_ = kNone;
+    if (to_lower(level).find("l_menu") != std::string::npos) return;   // the menus' backdrop has no player
     object_ = scene.spawn_model(model, false, animations, kIdle);
     clip_ = kIdle;
     facing_ = player.yaw;

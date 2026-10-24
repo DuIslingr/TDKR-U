@@ -415,7 +415,7 @@ int Game::run_screenshot() {
         } else {
             main_menu.open = true;
             shot = draw_main_menu(opt.width, opt.height);
-            scene_hidden = true;
+            scene_hidden = !menu_scene_shown;
         }
     }
     if (!opt.main_menu_keys.empty()) {   // the main menu instead of the view

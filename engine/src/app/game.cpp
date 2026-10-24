@@ -280,14 +280,43 @@ void Game::start_mission(int index) {
     if (opt.scripts && !m.script.empty()) logic.exec(m.script);
 }
 
+// The main menu's backdrop: the menu level (l_menu: the bat symbol shattering over the
+// city) seen through its animated camera (mm_city_camera.bdae's Camera001), as the original.
+bool Game::menu_scene_camera(Camera& cam) {
+    if (menu_camera_level != opt.level) {
+        menu_camera_level = opt.level;
+        menu_camera_object = -1;
+        Scene::CameraView v;
+        for (size_t i = 0; i < scene.level().objects.size() && menu_camera_object < 0; ++i)
+            if (scene.camera_view(i, v)) menu_camera_object = int(i);
+    }
+    Scene::CameraView cv;
+    if (menu_camera_object < 0 || !scene.camera_view(size_t(menu_camera_object), cv)) return false;
+    cam.position = cv.position, cam.directed = true, cam.direction = cv.forward, cam.up = cv.up;
+    cam.fov = glm::degrees(cv.fov), cam.game_fov = false;
+    return true;
+}
+
 FrameParams Game::draw_main_menu(int w, int h) {
     if (flash_menus && front_end.open()) {
+        const float dt = menu_dt();
         loading_overlay.clear();
         loading_sprites.vertices.clear();
         loading_sprites.batches.clear();
-        front_end.update(menu_dt(), w, h);
-        front_end.draw(loading_sprites);
         FrameParams f;
+        menu_scene_shown = false;
+        if (front_end.screen() == FrontEnd::Screen::Main && to_lower(opt.level).find("l_menu") != std::string::npos) {
+            scene.update(dt, menu_eye);
+            Camera cam;
+            if (menu_scene_camera(cam)) {
+                menu_eye = cam.position;
+                f = frame(cam, w, h);
+                scene.cull(f.camera, f.proj * f.view, ZoneSystem::kNone);
+                menu_scene_shown = true;
+            }
+        }
+        front_end.update(dt, w, h);
+        front_end.draw(loading_sprites);
         f.overlay = &loading_overlay;
         f.sprites = &loading_sprites;
         return f;

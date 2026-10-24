@@ -446,7 +446,7 @@ void Game::run_window() {
             SDL_GetWindowSizeInPixels(window, &mw, &mh);
             FrameParams mf = draw_main_menu(mw, mh);
             if (menu.open) menu.draw(loading_overlay, loading_sprites, hud, subtitles, objective_text, {}, settings, mw, mh);
-            renderer.render_to_window({}, mf);
+            renderer.render_to_window(menu_scene_shown ? scene.draws() : std::vector<DrawItem>{}, mf);
             continue;
         }
         if (loading.active) {   // the level waits behind the loading screen

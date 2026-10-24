@@ -12,6 +12,7 @@ namespace {
 
 constexpr uint32_t kFmtRGBA8888 = 0x12;
 constexpr uint32_t kFmtRGB565 = 0x13;
+constexpr uint32_t kFmtRGB888 = 0x15;
 constexpr uint32_t kFmtI8 = 0x16;
 constexpr uint32_t kFmtPVRTC2 = 0x18;
 constexpr uint32_t kFmtPVRTC4 = 0x19;
@@ -235,9 +236,9 @@ Image decode_pvr2(const Bytes& buf) {
         img = decode_etc1(data, size, w, h);
     } else if (fmt == kFmtPVRTC4 || fmt == kFmtPVRTC2) {
         img = decode_pvrtc(data, size, w, h, fmt == kFmtPVRTC4 ? 4 : 2);
-    } else if (fmt == kFmtRGBA8888 || fmt == kFmtRGB565 || fmt == kFmtI8) {
+    } else if (fmt == kFmtRGBA8888 || fmt == kFmtRGB565 || fmt == kFmtRGB888 || fmt == kFmtI8) {
         img = Image{w, h, std::vector<uint8_t>(size_t(w) * h * 4, 255)};
-        const size_t px_size = fmt == kFmtRGBA8888 ? 4 : fmt == kFmtRGB565 ? 2 : 1;
+        const size_t px_size = fmt == kFmtRGBA8888 ? 4 : fmt == kFmtRGB888 ? 3 : fmt == kFmtRGB565 ? 2 : 1;
         check_range(size, 0, size_t(w) * h * px_size);
         for (size_t i = 0; i < size_t(w) * h; ++i) {
             // Twiddled uncompressed data stores pixel i at its Morton index.
@@ -245,6 +246,8 @@ Image decode_pvr2(const Bytes& buf) {
             uint8_t* out = &img.rgba[i * 4];
             if (fmt == kFmtRGBA8888) {
                 std::memcpy(out, data + src * 4, 4);
+            } else if (fmt == kFmtRGB888) {   // Android (chara_Batman_DIFFUSE)
+                std::memcpy(out, data + src * 3, 3);
             } else if (fmt == kFmtRGB565) {
                 const uint32_t v = load_le<uint16_t>(data + src * 2);
                 const uint32_t r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
@@ -314,8 +317,22 @@ Image load_texture(const Bytes& data) {
         Image img = decode_pvr2(rgb);
         if (!alpha.empty()) {
             const Image a = decode_pvr2(alpha);
-            if (a.width != img.width || a.height != img.height) throw FormatError("alpha size mismatch");
-            for (size_t i = 0; i < size_t(img.width) * img.height; ++i) img.rgba[i * 4 + 3] = a.rgba[i * 4 + 1];
+            if (a.width == img.width && a.height == img.height) {
+                for (size_t i = 0; i < size_t(img.width) * img.height; ++i) img.rgba[i * 4 + 3] = a.rgba[i * 4 + 1];
+            } else {
+                // Android's Flash atlases keep their alpha at a smaller size: sample it bilinearly.
+                for (int y = 0; y < img.height; ++y)
+                    for (int x = 0; x < img.width; ++x) {
+                        const float fx = std::max(0.0f, (float(x) + 0.5f) * float(a.width) / float(img.width) - 0.5f);
+                        const float fy = std::max(0.0f, (float(y) + 0.5f) * float(a.height) / float(img.height) - 0.5f);
+                        const int x0 = std::min(int(fx), a.width - 1), y0 = std::min(int(fy), a.height - 1);
+                        const int x1 = std::min(x0 + 1, a.width - 1), y1 = std::min(y0 + 1, a.height - 1);
+                        const float tx = fx - float(x0), ty = fy - float(y0);
+                        auto at = [&](int ax, int ay) { return float(a.rgba[(size_t(ay) * size_t(a.width) + size_t(ax)) * 4 + 1]); };
+                        const float v = (at(x0, y0) * (1 - tx) + at(x1, y0) * tx) * (1 - ty) + (at(x0, y1) * (1 - tx) + at(x1, y1) * tx) * ty;
+                        img.rgba[(size_t(y) * size_t(img.width) + size_t(x)) * 4 + 3] = uint8_t(v + 0.5f);
+                    }
+            }
         }
         return img;
     }

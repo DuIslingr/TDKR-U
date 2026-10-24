@@ -22,6 +22,7 @@ PVR2_MAGIC = b"PVR!"
 
 FMT_RGBA8888 = 0x12
 FMT_RGB565 = 0x13
+FMT_RGB888 = 0x15
 FMT_I8 = 0x16
 FMT_PVRTC2 = 0x18
 FMT_PVRTC4 = 0x19
@@ -225,6 +226,12 @@ def decode_rgb565(data, w, h):
     return out
 
 
+def decode_rgb888(data, w, h):
+    out = np.full((h, w, 4), 255, np.uint8)
+    out[..., :3] = np.frombuffer(data, np.uint8, w * h * 3).reshape(h, w, 3)
+    return out
+
+
 def decode_i8(data, w, h):
     v = np.frombuffer(data, np.uint8, w * h).reshape(h, w)
     out = np.empty((h, w, 4), np.uint8)
@@ -260,6 +267,8 @@ def decode_pvr2(buf):
         img = decode_rgba8888(data, w, h)
     elif fmt == FMT_RGB565:
         img = decode_rgb565(data, w, h)
+    elif fmt == FMT_RGB888:
+        img = decode_rgb888(data, w, h)
     elif fmt == FMT_I8:
         img = decode_i8(data, w, h)
     else:
@@ -282,9 +291,11 @@ def load_texture(path_or_bytes, name="texture"):
             img = decode_pvr2(z.read("rgb.pvr"))
             if "alpha.pvr" in names:
                 alpha = decode_pvr2(z.read("alpha.pvr"))
-                if alpha.shape[:2] != img.shape[:2]:
-                    raise TextureError(f"{name}: alpha size {alpha.shape[:2]} != rgb {img.shape[:2]}")
-                img[..., 3] = alpha[..., 1]
+                a = alpha[..., 1]
+                if a.shape != img.shape[:2]:   # Android's Flash atlases: alpha at half size
+                    from PIL import Image as _Image
+                    a = np.asarray(_Image.fromarray(a).resize((img.shape[1], img.shape[0]), _Image.BILINEAR))
+                img[..., 3] = a
             return img
     return decode_pvr2(buf)
 

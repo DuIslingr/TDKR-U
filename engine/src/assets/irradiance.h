@@ -46,7 +46,12 @@ std::vector<IrradianceVolume> load_irradiance(const Bytes& data, const glm::vec3
 // Light probe at `p`: inside a volume, its trilinear sample; otherwise the nearest
 // volume's, fading to black over its fade distance; with no volumes, the game's
 // default sky/ground light.
-IrradiancePoint sample_irradiance(const std::vector<IrradianceVolume>& volumes, const glm::vec3& p);
+// Outside every volume the nearest fades (over its fade distance) to `fallback`, else to black.
+IrradiancePoint sample_irradiance(const std::vector<IrradianceVolume>& volumes, const glm::vec3& p,
+                                  const IrradiancePoint* fallback = nullptr);
+// A probe for an ambient colour plus one directional light (TDKR's per-zone global illumination,
+// CTemplateGlobalIllumination: ambient RGB, light direction, light RGB).
+IrradiancePoint ambient_probe(const glm::vec3& ambient, const glm::vec3& direction, const glm::vec3& light);
 IrradianceParams irradiance_parameters(const IrradiancePoint& point);
 
 }  // namespace tdkr

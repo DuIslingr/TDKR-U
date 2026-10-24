@@ -19,6 +19,7 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--main-menu") o.main_menu_keys = next();
         else if (a == "--screenshot") o.screenshot = next();
         else if (a == "--walk-test") o.walk_test = std::stof(next());
+        else if (a == "--grapple-test") o.grapple_test = std::stof(next()), o.walk_test = o.grapple_test;
         else if (a == "--time") o.time = std::stof(next());
         else if (a == "--focus") o.focus = next();
         else if (a == "--builtin-shaders") o.builtin_shaders = true;

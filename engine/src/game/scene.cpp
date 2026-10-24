@@ -525,7 +525,7 @@ void Scene::light_instance(Instance& inst, const glm::vec3& center) {
     {
         ObjectLighting& L = inst.lighting;
         L.center = center;
-        L.probe = irradiance_parameters(sample_irradiance(irradiance_, center));
+        L.probe = irradiance_parameters(sample_irradiance(irradiance_, center, global_probe_ ? &*global_probe_ : nullptr));
         int best = -1, second = -1;
         float best_d = 0, second_d = 0;
         for (size_t i = 0; i < lights_.size(); ++i) {
@@ -830,6 +830,18 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
         }
     }
     stats_.irradiance_volumes = irradiance_.size();
+    // TDKR's global-illumination records (one per zone; the first lit one stands for the level):
+    // after the fog and vertical-fog fields, ambient RGB (bytes), a light direction and the light's RGB.
+    global_probe_.reset();
+    for (const LevelObject& o : level_.objects) {
+        if (o.kind != "global_illumination" || o.fields.size() < 38) continue;
+        auto byte = [&](size_t k) { return float(uint8_t(o.fields[k].i)) / 255.0f; };
+        const glm::vec3 ambient{byte(27), byte(28), byte(29)}, light{byte(34), byte(35), byte(36)};
+        const glm::vec3 dir{o.fields[31].as_float(), o.fields[32].as_float(), o.fields[33].as_float()};
+        if (ambient == glm::vec3(0) && light == glm::vec3(0)) continue;
+        global_probe_ = ambient_probe(ambient, dir, light);
+        break;
+    }
     animated_.clear();
     lod_instances_.clear();
     corona_controllers_.clear();

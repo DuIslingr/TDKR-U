@@ -110,8 +110,29 @@ std::vector<IrradianceVolume> load_irradiance(const Bytes& data, const glm::vec3
     return out;
 }
 
-IrradiancePoint sample_irradiance(const std::vector<IrradianceVolume>& volumes, const glm::vec3& p) {
-    if (volumes.empty()) return default_light();
+IrradiancePoint ambient_probe(const glm::vec3& ambient, const glm::vec3& direction, const glm::vec3& light) {
+    // irradiance_parameters: cA.w = c0 * l0, cA.xyz = (-c1 l3, -c1 l1, c1 l2). The character
+    // shaders scale irradiance by 3 (WetMan's fIrradianceFactor) and add the peak as specular,
+    // so the light counts for a sixth along its direction and the peak for a third (matched by
+    // eye to the gameplay footage, where the gliding cape stays dark with soft highlights).
+    const float sqrt_pi = std::sqrt(3.14159265f);
+    const float c0 = 0.5f / sqrt_pi, c1 = std::sqrt(3.0f) / (3 * sqrt_pi);
+    const glm::vec3 d = glm::length(direction) > 0 ? glm::normalize(direction) : glm::vec3(0, 0, 1);
+    IrradiancePoint pt{};
+    for (int ch = 0; ch < 3; ++ch) {
+        float* l = &pt[size_t(ch) * 9];
+        const float L = light[ch] / 6.0f;
+        l[0] = ambient[ch] / c0;
+        l[3] = -d.x * L / c1, l[1] = -d.y * L / c1, l[2] = d.z * L / c1;
+    }
+    pt[27] = d.x, pt[28] = d.y, pt[29] = d.z;
+    pt[30] = light.r / 3.0f, pt[31] = light.g / 3.0f, pt[32] = light.b / 3.0f;
+    return pt;
+}
+
+IrradiancePoint sample_irradiance(const std::vector<IrradianceVolume>& volumes, const glm::vec3& p,
+                                  const IrradiancePoint* fallback) {
+    if (volumes.empty()) return fallback ? *fallback : default_light();
     const IrradianceVolume* nearest = nullptr;
     float best = 0;
     for (const IrradianceVolume& v : volumes) {
@@ -122,7 +143,7 @@ IrradiancePoint sample_irradiance(const std::vector<IrradianceVolume>& volumes, 
     const float t = nearest->fade > 0 ? std::min(best / nearest->fade, 1.0f) : 1.0f;
     IrradiancePoint black{};
     black[29] = 1;
-    return lerp(nearest->sample(p), black, t);
+    return lerp(nearest->sample(p), fallback ? *fallback : black, t);
 }
 
 IrradianceParams irradiance_parameters(const IrradiancePoint& in) {

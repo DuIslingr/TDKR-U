@@ -10,6 +10,7 @@ namespace tdkr {
 struct PlayerInput {
     float forward = 0, right = 0;   // -1..1
     bool jump = false, run = false;
+    bool grapple = false;           // TDKR: fire the grapnel at the aimed edge
 };
 
 class Player {
@@ -36,6 +37,28 @@ public:
     bool jetpack = false;      // the jetpack power: jumping thrusts upwards, falls are slowed
     bool thrusting = false;    // the jetpack firing (the jump held), as of the last update
     bool rushing = false;      // sprinting (run held while moving), as of the last update
+    // TDKR's cape glide (CActorBaseComponent::UpdateNavGlide, CComponentPlayerComponent template
+    // fields +0x4c..+0x54): opened by jumping in the air or after falling a while, it carries the
+    // player along `glide_heading` (turning towards the view) at glide_speed, sinking at
+    // glide_sink. Pushing forward dives, up to dive_speed; with run held it is a plunge. (The
+    // game dives past -20 and plunges past -40 degrees of stick pitch; here the stick is WASD.)
+    bool can_glide = false;
+    bool gliding = false, plunging = false;
+    float glide_speed = 17.0f, dive_speed = 25.0f, glide_sink = 2.5f;
+    float glide_turn_rate = 90.0f;      // degrees per second the heading turns towards the view
+    float glide_after_fall = 0.5f;      // seconds of falling before the cape opens by itself
+    float glide_heading = 0;            // degrees, game convention
+    float air_time = 0;                 // seconds since leaving the ground
+    bool jump_held = false;             // last update's jump input (to see a fresh press)
+    // TDKR's grapnel (CActorBaseComponent::StartGrapplingHook / UpdateNavGrapplingHook): a
+    // shot, then a straight flight to the target, which ends standing on it.
+    bool grappling = false;
+    float grapple_shot = 0.4f;          // seconds the shot takes before the pull
+    float grapple_speed = 25.0f;        // metres per second of the pull
+    float grapple_left = 0;             // seconds of the shot left
+    glm::vec3 grapple_target{0};        // feet position to land on
+    uint32_t grapples = 0;              // bumped by each landing (for the body's climb clip)
+    void grapple_to(const glm::vec3& feet);
     // Wedged (pushing but hardly moving): move by Irrlicht's one-sided rule for a while.
     float stuck_time = 0, escape_time = 0;
 

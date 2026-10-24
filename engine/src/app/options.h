@@ -3,6 +3,7 @@
 //   tdkr [--data DIR] [--level NAME.lvc]                       the main menu, or straight into a level
 //   tdkr ... --screenshot OUT.bmp [--eye X,Y,Z,YAW[,PITCH]] [--size WxH]   render one frame, no window
 //   tdkr ... --walk-test SECONDS [--screenshot OUT.bmp]          simulate walking forward from the start
+//   tdkr ... --grapple-test SECONDS [--pitch DEG]                 fire the grapnel along the view after 1 s
 //   tdkr ... --focus OBJECT[#N] [--time T]                        start looking at the Nth placement of a type
 //
 //   tdkr ... --builtin-shaders                                  draw with the fallback shader, not the game's
@@ -49,6 +50,7 @@ struct Options {
     std::string sound_render;           // headless: mix the run's sounds into this WAV file
     std::string screenshot;
     float walk_test = 0;
+    float grapple_test = 0;             // --grapple-test: like --walk-test, but fire the grapnel after 1 s instead of walking
     bool log_player = false;    // print the player's state every second (interactive)
     float combat_test = 0;      // headless: aim at the nearest enemy and fire for this many seconds
     float grenade_test = -1;    // headless: at this time, throw a grenade at the nearest enemy

@@ -112,9 +112,20 @@ void Game::run_walk_test() {
     glm::vec3 last = player.center;
     for (int i = 0; i <= steps; ++i) {
         PlayerInput in;
-        in.forward = i * kPhysicsStep >= 1.0f ? 1.0f : 0.0f;
+        in.forward = opt.grapple_test > 0 ? 0.0f : i * kPhysicsStep >= 1.0f ? 1.0f : 0.0f;
+        if (opt.grapple_test > 0 && i == int(1.0f / kPhysicsStep)) {
+            player.pitch = 15;   // look a little up, where the roof edges are
+            const float y = glm::radians(player.yaw), p = glm::radians(player.pitch);
+            const glm::vec3 fwd{-std::sin(y) * std::cos(p), std::cos(y) * std::cos(p), std::sin(p)};
+            const bool hooked = hero.try_grapple(player, view_position(player.yaw, player.pitch), fwd);
+            std::printf("grapple test: %s (%zu edges)", hooked ? "hooked" : "no edge in reach", hero.grapple_edges());
+            if (hooked) std::printf(", target (%.1f %.1f %.1f)", player.grapple_target.x, player.grapple_target.y, player.grapple_target.z);
+            std::printf("\n");
+            player.pitch = 0;
+        }
         player.update(scene.collision(), in, kPhysicsStep);
         hero.update(scene, player, in, kPhysicsStep);
+        if (hero.active()) scene.update(kPhysicsStep, view_position(player.yaw, player.pitch));   // animate the body as it goes
         step_logic(kPhysicsStep);
         {   // zone tracking follows the walker
             Camera eye = cam;
@@ -150,10 +161,18 @@ void Game::run_walk_test() {
             std::printf("  stuck near object %u: %s %s id %d\n", owner, o.kind.c_str(), o.name.c_str(), o.base ? o.base->id : -1);
         }
     }
-    std::printf("walk test: start z %.2f, end z %.2f, horizontal distance %.2f m, %s\n", start.z,
-                player.center.z, travelled, player.on_ground ? "on ground" : "in the air");
+    std::printf("walk test: start z %.2f, end z %.2f, horizontal distance %.2f m, %s, ends at (%.2f %.2f %.2f)\n", start.z,
+                player.center.z, travelled, player.on_ground ? "on ground" : "in the air", player.center.x, player.center.y,
+                player.center.z);
+    if (hero.active()) {
+        glm::vec3 lo, hi;
+        if (scene.object_bounds(hero.object(), lo, hi))
+            std::printf("hero: clip %s, bounds (%.2f %.2f %.2f)-(%.2f %.2f %.2f), hidden %d\n", hero.clip().c_str(), lo.x, lo.y,
+                        lo.z, hi.x, hi.y, hi.z, int(scene.object_hidden(hero.object())));
+    }
     cam.position = view_position(player.yaw, player.pitch);
     cam.yaw = player.yaw;
+    if (hero.active()) cam.pitch = hero.view_pitch(player.pitch);
 }
 
 // The screenshot's frame from `base`: the cinematic or limited-control camera while one is
@@ -292,7 +311,8 @@ int Game::run_screenshot() {
         }
         Camera eye = cam;
         if (!opt.have_eye && opt.focus.empty())
-            eye.position = view_position(player.yaw, player.pitch), eye.yaw = player.yaw, eye.pitch = player.pitch;
+            eye.position = view_position(player.yaw, player.pitch), eye.yaw = player.yaw,
+            eye.pitch = hero.active() ? hero.view_pitch(player.pitch) : player.pitch;
         const FrameParams rf = frame(eye, opt.width, opt.height);
         scene.cull(rf.camera, rf.proj * rf.view, opt.scripts ? logic.cinematic_zone() : ZoneSystem::kNone);
         if (opt.every > 0 && t + kPhysicsStep >= float(shots) * opt.every) {   // OUT_000.bmp, OUT_001.bmp, ...
@@ -318,7 +338,7 @@ int Game::run_screenshot() {
     if (run_time > 0 && !opt.have_eye && opt.focus.empty()) {
         cam.position = view_position(player.yaw, player.pitch);
         cam.yaw = player.yaw;
-        cam.pitch = player.pitch;
+        cam.pitch = hero.active() ? hero.view_pitch(player.pitch) : player.pitch;
     }
     scene.update(opt.time, cam.position);
     if (opt.scripts) combat.place_attachments();

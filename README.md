@@ -44,4 +44,5 @@ To check the levels: `python3 tools/lvc.py work/extracted/data/game_config/*.lvc
 
 To run a level in the engine: `engine/build/tdkr --data work/data --level Stadion.lvc --no-scripts` (add
 `--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera, `--walk-test SECONDS` to walk
-forward first). In the window: mouse to look, WASD to move Batman, Shift to sprint, Space to jump.
+forward first, `--grapple-test SECONDS` to fire the grapnel after 1 s). In the window: mouse to look, WASD to move
+Batman, Shift to sprint, Space to jump (again in the air to glide; while gliding W dives, Shift+W plunges), F to grapple.

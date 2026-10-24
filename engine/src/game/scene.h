@@ -4,6 +4,7 @@
 #include <array>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -315,6 +316,7 @@ private:
     std::vector<const GpuMaterial*> draw_materials_;   // per draw: its game-shader material (or null)
     std::vector<DrawInfo> draw_info_;
     std::vector<IrradianceVolume> irradiance_;
+    std::optional<IrradiancePoint> global_probe_;   // TDKR: the level's global illumination, outside the volumes
 
     // Placed instances: their draws and lighting.
     struct Instance {

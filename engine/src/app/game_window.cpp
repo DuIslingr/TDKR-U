@@ -290,6 +290,9 @@ void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F2 && !e.key.repeat) scene.zones().enabled = !scene.zones().enabled;
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && !e.key.repeat) combat_in.reload = true;
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_G && !e.key.repeat && logic.controls.items) combat_in.grenade = true;
+    // TDKR: F fires the grapnel at the edge the view aims at.
+    if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && !e.key.repeat && hero.active())
+        hero.try_grapple(player, cam.position, cam.forward());
     // Grenades or mines on the grenade button (the original's swipe), and the
     // detonation of the mines placed.
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_H && !e.key.repeat && logic.controls.items) combat_in.switch_throwable = true;
@@ -547,6 +550,7 @@ void Game::run_window() {
         SDL_GetWindowSizeInPixels(window, &w, &h);
         clock += dt;
         Camera view = cam;
+        if (hero.active()) view.pitch = hero.view_pitch(view.pitch);
         if (opt.scripts) view.yaw += logic.shake_offset().x, view.pitch += logic.shake_offset().y;
         Scene::CameraView cv;
         const bool cinematic = opt.scripts && logic.cinematic_view(cv);

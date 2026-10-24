@@ -89,7 +89,7 @@ private:
     FrameParams shot_frame(Camera base);
     // Where the view goes for a yaw/pitch: behind Batman (third person), else at the player's eye.
     glm::vec3 view_position(float yaw, float pitch) const {
-        return hero.active() ? hero.camera_position(player, yaw, pitch, scene.collision()) : player.eye();
+        return hero.active() ? hero.camera_position(player, yaw, hero.view_pitch(pitch), scene.collision()) : player.eye();
     }
 
     // The window (game_window.cpp).

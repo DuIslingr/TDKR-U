@@ -77,6 +77,17 @@ and `work/ios/ios_features.jsonl`), then `vtable_match.py`, `match_symbols.py`, 
   with idle/walk/run/sprint/jump/fall/land clips and the hanging cape (`CAPE`, the gliding cape, hidden). A follow camera
   3 m behind at shoulder height, pulled in front of walls by a collision ray. Movement is N.O.V.A. 3's (ellipsoid on the
   collision, camera-relative WASD + mouse). The level's own Batman placements (script stand-ins) are hidden.
+- **Glide** (`Player::gliding`): Batman's states sit in GOL state-set types (`Batman_01_Movement`, `Batman_02_Flying`,
+  `Batman_03_Grapnel`, …), which give the clips; the numbers come from `CComponentPlayerComponent`'s template
+  (field *k* at offset 4+4k): 17 m/s glide, 25 m/s dive, 2.5 m/s sink, and dive/plunge thresholds of −20°/−40° that
+  `CActorBaseComponent::UpdateNavGlide` compares against. Jumping in the air (or falling 0.5 s) opens the cape (the
+  spread `CAPE` node); W dives, Shift+W plunges; the camera eases out to 7 m and tilts 20° down.
+- **Grapnel** (F): `<level>.edge` holds the grapnel edges (big-endian count, then A, B, up, outward normal per edge;
+  Gotham has 6,174). The edge nearest the aim within 50 m and 25° is hooked; a 0.4 s shot, a 25 m/s pull, then the
+  `_158_gp_fly_to_idle_stand2` climb (its root starts 2.4 m below the edge).
+- **Global illumination** fallback: each zone's `CTemplateGlobalIllumination` record has ambient RGB, a light direction
+  and the light's RGB (fields 27–36); outside the irradiance volumes characters fade to a probe made from them.
+- `tools/ghidra_scripts/annotate_dat.py` puts literal-pool values (`DAT_…` → float/int) into decompiled code.
 - Everything else above the asset layer (Lua API, HUD, menus, combat, zones) is still N.O.V.A. 3's and keyed to its
   small component ids, which find nothing in TDKR's data.
 
@@ -159,7 +170,8 @@ segments (buildings, roads, bridges) in the same world space.
 ## Open items found so far
 
 - 46 streamed batches keep the fallback shader (7 effects aren't shipped: `NormalSpecOverbright`, …).
-- Batman's moves beyond locomotion (combat, grapple, glide, Batpod) and the camera's own rules (`CCameraObject`, `DUMMY_CAMERA`).
+- Batman's other moves (combat, wall contact, hang/edge moves, grapnel to gargoyles/enemies/vehicles, Batpod) and the
+  camera's own rules (`CCameraObject`, `DUMMY_CAMERA`). Glide steering and dive input are PC choices, not the game's.
 - The fog texture, vertical fog, rain (`MC_WATER`) and reflection shader variants: their textures aren't wired up.
 - Streaming in the engine loads all of Gotham at LOD 0 at once; the game streams cells (`bih_*`, `CRegularGridStreaming`) and picks
   LODs by distance (`lod_selector`).

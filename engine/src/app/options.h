@@ -13,6 +13,7 @@
 //   tdkr ... --trace-scripts                                      log every script function that starts
 //   tdkr ... --skip-intro                                         (testing) the start spawn point's script does not run
 //   tdkr ... --spawn-at ID|X,Y,Z,YAW                              start at a level object, spawn point, waypoint or position
+//   tdkr ... --mission N|NAME                                    start a mission as the menus do (--list-missions)
 //   tdkr ... --exec "LUA"                                         run a script snippet once the level has started
 //   tdkr ... --hide-models SUBSTR                                 (debugging) hide placements whose model matches
 //   tdkr ... --no-zones                                           draw every zone (no portal culling)
@@ -71,6 +72,9 @@ struct Options {
     float end_screen = -1;      // headless: draw the end-of-level screen this long after it opened    // headless: draw the level's loading screen, 0 loading, 1 loaded
     bool god = false;           // the player takes no damage
     bool list_actors = false;   // print combat targets after the level starts
+    std::string mission;        // --mission N|NAME: start this mission (its level and start script)
+    bool list_missions = false; // print the missions (index, name, level, chapter)
+    bool gamepad = false;       // --gamepad: word prompts for a gamepad (as when one is connected)
     bool skip_intro = false;    // the start spawn point's script (the intro) does not run
     int audit = 0;              // walk this many random nav-mesh paths comparing zone culling on/off
     float time = 0;           // advance animations by this many seconds before a screenshot

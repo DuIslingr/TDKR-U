@@ -178,8 +178,74 @@ void Game::title_music(const char* state) {
     logic.audio->set_state("m_title", state);
 }
 
+float Game::pad_axis(SDL_GamepadAxis axis) const {
+    if (!pad) return 0;
+    const float v = float(SDL_GetGamepadAxis(pad, axis)) / 32767.0f;
+    constexpr float kDead = 0.18f;
+    return std::abs(v) < kDead ? 0.0f : std::clamp((v - std::copysign(kDead, v)) / (1 - kDead), -1.0f, 1.0f);
+}
+
+// Gamepads come and go; button presses go to the menus or to the game.
+void Game::pad_event(const SDL_Event& e) {
+    if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) {
+        pad = SDL_OpenGamepad(e.gdevice.which);
+        if (pad) std::fprintf(stderr, "gamepad: %s\n", SDL_GetGamepadName(pad));
+        logic.gamepad = pad != nullptr;
+        return;
+    }
+    if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
+        SDL_CloseGamepad(pad);
+        pad = nullptr;
+        logic.gamepad = opt.gamepad;
+        return;
+    }
+    if (!pad) return;
+    const bool menus = flash_menus && front_end.open() && (main_menu.open || menu.open);
+    if (menus) {
+        using K = FrontEnd::Key;
+        if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+            switch (e.gbutton.button) {
+                case SDL_GAMEPAD_BUTTON_DPAD_UP: front_end.key(K::Up); break;
+                case SDL_GAMEPAD_BUTTON_DPAD_DOWN: front_end.key(K::Down); break;
+                case SDL_GAMEPAD_BUTTON_DPAD_LEFT: front_end.key(K::Left); break;
+                case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: front_end.key(K::Right); break;
+                case SDL_GAMEPAD_BUTTON_SOUTH: front_end.key(K::Activate); break;
+                case SDL_GAMEPAD_BUTTON_EAST: case SDL_GAMEPAD_BUTTON_START: front_end.key(K::Back); break;
+                default: break;
+            }
+        } else if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION &&
+                   (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX || e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY)) {
+            // The stick steps once each time it is pushed past half way.
+            const glm::vec2 s(pad_axis(SDL_GAMEPAD_AXIS_LEFTX), pad_axis(SDL_GAMEPAD_AXIS_LEFTY));
+            const glm::vec2 dir(std::abs(s.x) > 0.5f ? std::copysign(1.0f, s.x) : 0.0f, std::abs(s.y) > 0.5f ? std::copysign(1.0f, s.y) : 0.0f);
+            if (dir != pad_menu_stick) {
+                if (dir.y < 0 && pad_menu_stick.y >= 0) front_end.key(K::Up);
+                if (dir.y > 0 && pad_menu_stick.y <= 0) front_end.key(K::Down);
+                if (dir.x < 0 && pad_menu_stick.x >= 0) front_end.key(K::Left);
+                if (dir.x > 0 && pad_menu_stick.x <= 0) front_end.key(K::Right);
+                pad_menu_stick = dir;
+            }
+        }
+        front_action(front_end.take_action());
+        return;
+    }
+    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
+        set_menu(true);
+        return;
+    }
+    if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
+        const float t = float(e.gaxis.value) / 32767.0f;
+        if (t > 0.6f && !pad_trigger_held && hero.active()) hero.try_grapple(player, cam.position, cam.forward());
+        pad_trigger_held = t > (pad_trigger_held ? 0.3f : 0.6f);
+    }
+}
+
 void Game::handle_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_QUIT) running = false;
+    if (e.type >= SDL_EVENT_GAMEPAD_AXIS_MOTION && e.type <= SDL_EVENT_GAMEPAD_REMAPPED) {
+        pad_event(e);
+        if (!(e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED)) return;
+    }
     if (swf_view && swf_view->player()) {   // --swf: the movie takes the pointer; Escape quits
         SDL_SetWindowRelativeMouseMode(window, false);
         swf::Player& p = *swf_view->player();
@@ -524,12 +590,16 @@ void Game::run_window() {
             if (!locked) {
                 const LevelLogic::Controls& lc = logic.controls;   // all on without scripts
                 if (lc.move) {   // SetMoveSensitivity scales walking
-                    in.forward = glm::clamp(float(keys[SDL_SCANCODE_W]) - float(keys[SDL_SCANCODE_S]) + touch_in.forward, -1.0f, 1.0f);
-                    in.right = glm::clamp(float(keys[SDL_SCANCODE_D]) - float(keys[SDL_SCANCODE_A]) + touch_in.right, -1.0f, 1.0f);
+                    in.forward = glm::clamp(float(keys[SDL_SCANCODE_W]) - float(keys[SDL_SCANCODE_S]) + touch_in.forward -
+                                                pad_axis(SDL_GAMEPAD_AXIS_LEFTY), -1.0f, 1.0f);
+                    in.right = glm::clamp(float(keys[SDL_SCANCODE_D]) - float(keys[SDL_SCANCODE_A]) + touch_in.right +
+                                              pad_axis(SDL_GAMEPAD_AXIS_LEFTX), -1.0f, 1.0f);
                     in.forward *= logic.move_sensitivity, in.right *= logic.move_sensitivity;
                 }
-                in.jump = lc.jump && !mech && (keys[SDL_SCANCODE_SPACE] || touch_in.jump);
-                in.run = lc.rush && logic.player_rush && !aiming && (keys[SDL_SCANCODE_LSHIFT] || touch_in.run);
+                const bool pad_a = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH);
+                const bool pad_run = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_STICK);
+                in.jump = lc.jump && !mech && (keys[SDL_SCANCODE_SPACE] || touch_in.jump || pad_a);
+                in.run = lc.rush && logic.player_rush && !aiming && (keys[SDL_SCANCODE_LSHIFT] || touch_in.run || pad_run);
                 // Auto-leveling (touch): walking without turning, the view comes back level.
                 if (touch_mode && settings.auto_leveling && touch_in.look == glm::vec2(0) && (in.forward != 0 || in.right != 0))
                     cam.pitch -= std::clamp(cam.pitch, -40.0f * dt, 40.0f * dt);
@@ -537,6 +607,12 @@ void Game::run_window() {
                     const float k = cam.fov / kFov * settings.sensitivity * logic.look_sensitivity;
                     cam.yaw += touch_in.look.x * k;
                     cam.pitch = glm::clamp(cam.pitch + touch_in.look.y * k * (settings.invert_y ? -1.0f : 1.0f), -89.0f, 89.0f);
+                    // The right stick turns the view (degrees per second at full tilt).
+                    constexpr float kPadYaw = 160.0f, kPadPitch = 100.0f;
+                    const float pk = cam.fov / kFov * logic.look_sensitivity * dt;
+                    cam.yaw -= pad_axis(SDL_GAMEPAD_AXIS_RIGHTX) * kPadYaw * pk;
+                    cam.pitch = glm::clamp(cam.pitch - pad_axis(SDL_GAMEPAD_AXIS_RIGHTY) * kPadPitch * pk * (settings.invert_y ? -1.0f : 1.0f),
+                                           -89.0f, 89.0f);
                 }
             }
             if (float ly, lp; opt.scripts && logic.look_target(ly, lp)) cam.yaw = ly, cam.pitch = lp;   // PlayerLookTo

@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s\n", ex.what());
         return 2;
     }
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }

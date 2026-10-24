@@ -174,6 +174,17 @@ public:
     bool level_ended = false;        // EndLevel() was called
     bool level_success = true;       // EndLevel(false): the mission failed
     bool fog_locked = false;         // Fog_SetLock: zone changes keep the current fog
+    // TDKR's objective popup (ShowObjectiveMessage / ClearObjectiveMessage): its text, and a
+    // serial that changes with every show or clear.
+    struct HudObjective {
+        std::string id, text;
+        bool shown = false;
+        int serial = 0;
+    } hud_objective;
+    // A PowerA-style gamepad is in use: tutorial prompts name its buttons (STR_TUTORIAL_POWER_A_...).
+    bool gamepad = false;
+    // The string id ShowObjectiveMessage shows for `id`, as the Android build rewrites it.
+    std::string prompt_id(const std::string& id) const;
     // LoadLevelSections(n): the level should reload with section bit n (0: none pending).
     // The caller reloads the scene and calls start(true).
     uint32_t pending_section = 0;

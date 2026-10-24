@@ -144,6 +144,7 @@ private:
     FlashHud flash_hud;            // TDKR's HUD (BatmanHUD.swf) once Batman is playable
     std::string flash_hud_level;   // the level it was set up for
     float flash_hud_clock = -1;
+    int flash_hud_objective = 0;               // the last hud_objective serial shown
     // TDKR's menus from its Flash movies (title, main menu, chapters, pause); the N.O.V.A. 3
     // menus remain for data without them.
     std::vector<Mission> missions;
@@ -187,6 +188,14 @@ private:
     CombatInput combat_in;
     bool fire_held = false, aim_held = false, aim_toggled = false;
     bool touch_mode = false;
+    // A gamepad (SDL3), laid out as the Android build's PowerA pad: left stick moves, right
+    // stick looks, A jumps / glides, X attacks, Y counters, B batarang, RT grapnel, LT gadget,
+    // Start pauses; in menus the D-pad or left stick moves, A selects, B goes back.
+    SDL_Gamepad* pad = nullptr;
+    bool pad_trigger_held = false;          // RT past its threshold (fires once per pull)
+    glm::vec2 pad_menu_stick{0};            // last left-stick direction sent to a menu
+    void pad_event(const SDL_Event& e);
+    float pad_axis(SDL_GamepadAxis axis) const;   // -1..1, with a dead zone
     bool running = true;
     std::chrono::steady_clock::time_point last;
 };

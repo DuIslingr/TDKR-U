@@ -1,6 +1,8 @@
 #include "swf/player.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <map>
 #include <set>
@@ -418,6 +420,24 @@ bool Instance::get_special(VM& vm, const std::string& n, Value& out) {
 bool Instance::set_special(VM& vm, const std::string& n, const Value& v) {
     if (n.empty()) return false;
     if (n[0] == '_') {
+        // A script that changes the transform takes the clip off its timeline's moves; setting a
+        // value it already has (the Text component's _xscale = 100) does not.
+        const Matrix old_matrix = matrix;
+        const CxForm old_cxform = cxform;
+        const bool old_accept = accept_moves;
+        struct Keep {
+            Instance& i;
+            const Matrix& m;
+            const CxForm& c;
+            bool accept;
+            ~Keep() {
+                auto same = [](float a, float b) { return std::abs(a - b) < 1e-4f * std::max(1.0f, std::abs(a)); };
+                if (!i.accept_moves && accept && same(i.matrix.a, m.a) && same(i.matrix.b, m.b) && same(i.matrix.c, m.c) &&
+                    same(i.matrix.d, m.d) && same(i.matrix.tx, m.tx) && same(i.matrix.ty, m.ty) && i.cxform.mul == c.mul &&
+                    i.cxform.add == c.add && i.kind != Instance::Text)
+                    i.accept_moves = true;
+            }
+        } keep{*this, old_matrix, old_cxform, old_accept};
         const double d = vm.to_number(v);
         const bool num = !std::isnan(d);
         if (n == "_x") { if (num) matrix.tx = float(d) * kTwips; accept_moves = false; }
@@ -578,6 +598,12 @@ void Player::construct(const std::shared_ptr<Instance>& inst, const Value& init)
     if (init.is_object())
         for (const std::string& k : init.o->own_names())
             if (const Property* p = init.o->find_own(k)) vm.set_member(Value(ObjectPtr(inst)), k, p->value);
+    // onClipEvent(construct) and (initialize), then the constructor: components get their
+    // parameters (a Text's style, align...) this way, before their class sets itself up.
+    for (const ClipAction& ca : inst->clip_events)
+        if (ca.events & 0x40000) vm.run_actions(ca.code, inst);
+    for (const ClipAction& ca : inst->clip_events)
+        if (ca.events & 0x200) vm.run_actions(ca.code, inst);
     inst->frame = -1;
     run_frame(inst.get(), 0);
     inst->constructed = true;
@@ -590,7 +616,7 @@ void Player::construct(const std::shared_ptr<Instance>& inst, const Value& init)
     }
     std::weak_ptr<Instance> weak = inst;
     for (const ClipAction& ca : inst->clip_events)
-        if (ca.events & 0x201)   // load / initialize
+        if (ca.events & 0x1)   // load
             queue([this, weak, code = ca.code] {
                 if (auto i = weak.lock(); i && !i->removed) vm.run_actions(code, i);
             });

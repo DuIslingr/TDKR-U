@@ -236,6 +236,24 @@ int api_fog_value(lua_State* L) {   // Fog_SetNear/Far/Density(value, ms)
     ctx(L).fade_fog(What, glm::vec4(float(lua_tonumber(L, 1))), seconds_arg(L, 2));
     return 0;
 }
+// ShowObjectiveMessage(id, ...): the HUD's objective popup (CHUDDisplay::ShowObjectiveMessage);
+// ClearObjectiveMessage([id]) hides it.
+int api_show_objective_message(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const char* id = lua_tostring(L, 1);
+    if (!id) return 0;
+    c.hud_objective.id = c.prompt_id(id);
+    const std::string t = c.strings.find(c.hud_objective.id);
+    c.hud_objective.text = t.empty() ? c.hud_objective.id : t;
+    c.hud_objective.shown = true;
+    ++c.hud_objective.serial;
+    return 0;
+}
+int api_clear_objective_message(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (c.hud_objective.shown) c.hud_objective.shown = false, ++c.hud_objective.serial;
+    return 0;
+}
 int api_teleport_player(lua_State* L) {   // TeleportPlayerToZone(spawn point id)
     if (auto* o = obj(L, 1)) ctx(L).teleport_player(*o);
     return 0;
@@ -1253,6 +1271,8 @@ const Entry kImplemented[] = {
     {"Fog_SetFar", api_fog_value<2>},
     {"Fog_SetDensity", api_fog_value<3>},
     {"TeleportPlayerToZone", api_teleport_player},
+    {"ShowObjectiveMessage", api_show_objective_message},
+    {"ClearObjectiveMessage", api_clear_objective_message},
     {"PlayerMoveToSpawnpoint", api_teleport_player},
     {"EndLevel", api_end_level},
     {"StartEndLevelEffect", api_start_end_level_effect},

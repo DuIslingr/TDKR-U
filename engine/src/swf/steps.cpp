@@ -65,6 +65,9 @@ bool run_step(Player& player, const std::string& s, std::string* error) {
         for (int k = 0, n = std::atoi(arg(0).c_str()); k < n; ++k) player.step_frame();
     } else if (kind == "set") {
         player.set_member(arg(0), arg(1), parse_value(arg(2)));
+    } else if (kind == "get") {
+        const Value v = player.get_member(arg(0), arg(1));
+        std::printf("get %s.%s = %s\n", arg(0).c_str(), arg(1).c_str(), player.vm.to_string(v).c_str());
     } else if (kind == "call") {
         std::vector<Value> args;
         for (size_t k = 2; k < p.size(); ++k) args.push_back(parse_value(p[k]));

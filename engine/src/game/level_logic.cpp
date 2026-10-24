@@ -88,6 +88,10 @@ void LevelLogic::load_objects() {
             strings = StringTable();
             strings.load(scene.vfs(), "MAIN");
             if (o.fields.size() > 24 && o.fields[24].type == Value::String) strings.load(scene.vfs(), o.fields[24].s);
+            // TDKR: the level's table is [10] ("020_gothamcity.xml": strings/020_GothamCity_*.bin).
+            if (o.fields.size() > 10 && o.fields[10].type == Value::String && o.fields[10].s.size() > 4 &&
+                to_lower(o.fields[10].s.substr(o.fields[10].s.size() - 4)) == ".xml")
+                strings.load(scene.vfs(), o.fields[10].s.substr(0, o.fields[10].s.size() - 4));
             continue;
         }
         if (o.kind == "waypoint" && o.fields.size() > 4) {
@@ -820,6 +824,20 @@ void LevelLogic::set_door(Object& o, bool open_now) {
         }
         if (o.visible) scene.set_object_collision(o.index, true);
     }
+}
+
+// ShowObjectiveMessage (Android 1.1.6): with a PowerA pad, STR_TUTORIAL..., STR_SAVE_LUCIUS_OBJ_6...
+// and STR_TURBULENCE_THIEF_MINIGAME... become their _POWER_A versions, when the table has them.
+std::string LevelLogic::prompt_id(const std::string& id) const {
+    if (!gamepad) return id;
+    for (const char* prefix : {"STR_TUTORIAL", "STR_SAVE_LUCIUS_OBJ_6", "STR_TURBULENCE_THIEF_MINIGAME"}) {
+        const std::string p = prefix;
+        if (id.compare(0, p.size(), p) == 0) {
+            const std::string pad = p + "_POWER_A" + id.substr(p.size());
+            return strings.find(pad).empty() ? id : pad;
+        }
+    }
+    return id;
 }
 
 bool LevelLogic::exec(const std::string& code) {

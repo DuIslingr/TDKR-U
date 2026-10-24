@@ -89,9 +89,22 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
         return t.empty() ? id : t;
     };
     flash_menus = vfs.exists("MainMenu.swf") && vfs.exists("MenuPressKey.swf");
+    logic.gamepad = opt.gamepad;
     front_end.play_sound = [this](const std::string& s) {
         if (logic.audio) logic.audio->play(s);
     };
+    if (opt.list_missions)
+        for (size_t i = 0; i < missions.size(); ++i)
+            std::printf("mission %2zu  chapter %d.%d  %-40s %s\n", i, missions[i].chapter, missions[i].number,
+                        missions[i].name.c_str(), missions[i].level.c_str());
+    if (!opt.mission.empty()) {   // a mission's level; its start script runs once the level has started
+        const bool number = opt.mission.find_first_not_of("0123456789") == std::string::npos;
+        for (size_t i = 0; i < missions.size() && mission < 0; ++i)
+            if (number ? int(i) == std::stoi(opt.mission) : to_lower(missions[i].name).find(to_lower(opt.mission)) != std::string::npos)
+                mission = int(i);
+        if (mission < 0) throw std::runtime_error("no mission " + opt.mission);
+        opt.level = missions[size_t(mission)].level;
+    }
     if (!headless && !opt.level_given) {
         if (flash_menus && front_end.show(FrontEnd::Screen::Title)) main_menu.open = true;
         else main_menu.show();
@@ -196,6 +209,11 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
         }
     }
     hero.start(scene, player);
+    logic.gamepad = opt.gamepad || pad != nullptr;
+    if (mission >= 0 && opt.scripts && !missions[size_t(mission)].script.empty()) {
+        std::printf("mission %d: %s\n", mission, missions[size_t(mission)].name.c_str());
+        logic.exec(missions[size_t(mission)].script);
+    }
     for (const std::string& code : opt.exec) logic.exec(code);
     for (const std::string& h : opt.hide_models) std::printf("hid %zu placements of *%s*\n", scene.hide_models(h), h.c_str());
     if (!opt.continue_file.empty() && opt.scripts) {
@@ -450,6 +468,10 @@ void Game::draw_text(FrameParams& f, int w, int h) {
         const float hud_dt = flash_hud_clock < 0 ? 0.0f : std::clamp(clock - flash_hud_clock, 0.0f, 0.25f);
         flash_hud_clock = clock;
         flash_hud.update(hud_dt, fs, w, h);
+        if (logic.hud_objective.serial != flash_hud_objective) {
+            flash_hud_objective = logic.hud_objective.serial;
+            flash_hud.objective(logic.hud_objective.shown, logic.hud_objective.text);
+        }
         if (opt.swf.empty()) flash_hud.draw(hud_sprites);
     }
     if (!opt.swf.empty()) {   // --swf: the movie over everything

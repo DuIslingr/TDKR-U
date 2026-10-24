@@ -54,6 +54,10 @@ To run a level in the engine: `engine/build/tdkr --data work/data --level Stadio
 `--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera, `--walk-test SECONDS` to walk
 forward first, `--grapple-test SECONDS` to fire the grapnel after 1 s). In the window: mouse to look, WASD to move
 Batman, Shift to sprint, Space to jump (again in the air to glide; while gliding W dives, Shift+W plunges), F to grapple.
+A gamepad works too, laid out like the Android build's PowerA pad: left stick moves, right stick looks, A jumps / glides,
+left stick click sprints, right trigger grapples, Start pauses; in the menus the D-pad or left stick moves, A selects,
+B goes back. With a pad connected (or `--gamepad`), tutorial prompts name its buttons.
+`--mission N|NAME` starts a mission as the menus do (its level, then its start script); `--list-missions` lists them.
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

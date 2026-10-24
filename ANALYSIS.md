@@ -208,6 +208,9 @@ The UI is 51 distinct movies, in three resolution archives (`gameswf_hires`, `_n
   and moved so Batman sits at the pivot (`initMap` / `updateMap`): the map's world origin is its `Zero` clip, level
   properties 40 and 41 are pixels per metre and zoom (39 is the movie), the pivot turns with the camera, and
   `CenterMinimap` (the arrow) shows Batman's facing. `SetGrapple` puts `mGraplingHookTarget` over the target.
+- **Clip events**: components get their parameters (a Text's `style`, `align`…) from the placed instance's
+  `onClipEvent(construct)`, which runs before the class constructor. A script setting a transform property to the
+  value it already has (the Text component's `_xscale = 100`) does not take the clip off its timeline's moves.
 - **Menus** (`CMenuManager`, one `RenderFX` per movie): `MainMenu.swf`'s `screenManager.startScreen(type)` with
   `main`, `ingame`, `death`; `CHUDDisplay::SwitchMenu` calls it, `CHUDDisplay::EnterIGM` loads `MainMenu.swf`
   into the HUD's `mHackArea` for the pause (`ingame`) and death screens. The title is `MenuPressKey.swf`; the
@@ -232,6 +235,24 @@ The engine's player (`engine/src/swf/`): `movie` (parser), `tess` (even-odd trap
 MovieClip/TextField/Color/flash.geom, the natives), `library` (resolution and atlases). The renderer side is
 `render/swf_draw` (atlases, gradients, SDL_ttf text) and `game/flash_screen`, `game/flash_hud`. Masks clip to
 the mask's convex outline. All 51 movies play headless without unhandled opcodes (`tdkr-check swf`).
+
+## Level scripts
+
+Missions start as the menus start them: the mission's level, then its start Lua (`--mission N`; the tutorial is
+`Enable(900161) TeleportPlayerToZone(900163)`). The level's string table is level properties field 10
+(`020_gothamcity.xml` → `strings/020_GothamCity_*`; N.O.V.A. 3 used field 24).
+
+**The script API is the big gap.** TDKR's level scripts call **341 native functions; the engine implements 25**
+of them (those N.O.V.A. 3 shares), so 18,574 of 29,973 native calls do nothing yet. The most used missing ones:
+`ActorSetState` (1,760 calls), `ObjectiveRemove` (922), `ActorLookTo`, `NPCSetStance`, `KillActor`, `SpawnObject`,
+`ObjectiveAdd`, `CameraFollowObject`, `NPCAttackTarget`, `NPCGoToPath`, `StartPipeGame`, `GetDistFromMC`,
+interaction, quests (`SetQuestEnabled/Completed/Failed/Accepted`, `StartMainStoryFromQuestId`), traffic, cop AI,
+QTEs, popups. `ShowObjectiveMessage` / `ClearObjectiveMessage` are in (the HUD's `objectiveMessage_popin`).
+
+**Controller prompts** (Android 1.1.6, `ShowObjectiveMessage`): with a PowerA pad connected, ids starting
+`STR_TUTORIAL`, `STR_SAVE_LUCIUS_OBJ_6` and `STR_TURBULENCE_THIEF_MINIGAME` get `_POWER_A` inserted after that
+prefix (an Xperia Play gets `_XPERIA`, or `_XPERIA_JP` in Japan). The PowerA layout is the Xbox one: A jump /
+glide / climb, X attack, Y counter, B batarang, RT grapnel, LT gadget.
 
 ## Levels
 

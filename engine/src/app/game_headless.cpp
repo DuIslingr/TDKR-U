@@ -367,6 +367,10 @@ int Game::run_screenshot() {
         menu.update(1.0f);
     }
     FrameParams shot = shot_frame(cam);
+    if (flash_hud.active()) {   // the HUD's own animations (popups) a moment on, as a window would show them
+        flash_hud.run(1.5f);
+        shot = shot_frame(cam);
+    }
     if (opt.trace_zones) {
         const ZoneSystem& z = scene.zones();
         std::printf("camera %.1f %.1f %.1f zone %d (id %d); visible:", shot.camera.x, shot.camera.y, shot.camera.z,

@@ -39,6 +39,9 @@ public:
         const char* attack = "STRIKE";   // the attack slot's style (STRIKE, TAKEDOWN, COUNTERATTACK)
     };
     void update(float dt, const State& state, int width, int height);
+    // The objective popup (objectiveMessage_popin): show with text, or hide.
+    void objective(bool shown, const std::string& text);
+    void run(float seconds);   // play the movie on (headless screenshots)
     void draw(ParticleList& out);
     swf::Player* player() { return screen_.player(); }
 

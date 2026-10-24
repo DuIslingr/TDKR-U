@@ -119,6 +119,24 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     screen_.update(dt, width, height);
 }
 
+void FlashHud::run(float seconds) {
+    if (swf::Player* p = screen_.player())
+        for (float t = 0; t < seconds; t += 1.0f / 30) p->advance(1.0f / 30);
+}
+
+// CHUDDisplay::ShowObjectiveMessage / ClearObjectiveMessage.
+void FlashHud::objective(bool shown, const std::string& text) {
+    swf::Player* p = screen_.player();
+    if (!p) return;
+    p->set_visible("objectiveMessage_popin", true);
+    if (shown) {
+        p->goto_and_play("objectiveMessage_popin", "show");
+        p->invoke("objectiveMessage_popin.tObjectiveText", "setText", {swf::Value(text)});
+    } else {
+        p->goto_and_play("objectiveMessage_popin", "hide");
+    }
+}
+
 void FlashHud::button(const std::string& slot, const std::string& style, bool enabled) {
     swf::Player* p = screen_.player();
     if (!p) return;

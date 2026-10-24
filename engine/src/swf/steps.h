@@ -1,7 +1,7 @@
 // Scripted steps against a running movie (tdkr-check swf and tdkr --swf use them to reach a
 // menu or HUD state): goto=PATH:LABEL  stop=PATH:LABEL  call=PATH:METHOD[:ARG...]  hide=PATH
 // show=PATH  set=PATH:MEMBER:VALUE  text=PATH:TEXT  load=PATH:MOVIE  frames=N  tree=PATH[:DEPTH]
-// click=X:Y  move=X:Y (screen pixels)
+// click=X:Y  move=X:Y (screen pixels)  get=PATH:MEMBER
 #pragma once
 
 #include <string>

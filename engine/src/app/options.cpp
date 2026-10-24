@@ -67,6 +67,9 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--touch-test") o.touch_test = std::stof(next()), o.touch = true;
         else if (a == "--god") o.god = true;
         else if (a == "--list-actors") o.list_actors = true;
+        else if (a == "--mission") o.mission = next(), o.level_given = true;
+        else if (a == "--list-missions") o.list_missions = true;
+        else if (a == "--gamepad") o.gamepad = true;
         else if (a == "--audit") o.audit = std::stoi(next());
         else if (a == "--size") std::sscanf(next().c_str(), "%dx%d", &o.width, &o.height), o.size_given = true;
         else if (a == "--eye") {

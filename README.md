@@ -38,3 +38,5 @@ engine/build/tdkr-check models work/data models.txt
 
 `work/data` is the IPA's `Payload/TDKR.app` (its `data/` and `textures/` folders are mounted).
 To preview a model: `python3 tools/bdae2gltf.py MODEL.bdae -o out.glb --data work/extracted/data`.
+To check the levels: `python3 tools/lvc.py work/extracted/data/game_config/*.lvc`; to preview one:
+`python3 tools/level2gltf.py work/extracted/data/game_config/Stadion.lvc -o stadion.glb`.

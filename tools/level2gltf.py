@@ -27,6 +27,7 @@ import numpy as np  # noqa: E402
 import bdae  # noqa: E402
 import bdae2gltf  # noqa: E402
 import lvc  # noqa: E402
+import streaming  # noqa: E402
 
 
 def _qmul(a, b):
@@ -100,6 +101,9 @@ def main(argv=None):
     ap.add_argument("--no-library", action="store_true",
                     help="only place objects whose mesh is stored in the level itself")
     ap.add_argument("--no-models", action="store_true", help="leave out the visible models")
+    ap.add_argument("--no-stream", action="store_true",
+                    help="leave out the streamed city geometry (<Level>.zip, Gotham's buildings and roads)")
+    ap.add_argument("--stream-lod", type=int, default=0, help="LOD of the streamed geometry (0 = most detailed)")
     args = ap.parse_args(argv)
 
     gol = lvc.load_gol(args.gol)
@@ -145,6 +149,11 @@ def main(argv=None):
                 g["nodes"][index]["children"] = kids
             root_children.append(index)
     extra = []
+    if not args.no_stream:
+        for zp in Path(args.data).rglob(f"{Path(args.level).stem}.zip"):
+            n = streaming.export(streaming.LevelStream(zp), builder, tex_index, warnings.append,
+                                 args.stream_lod, root_children)
+            extra.append(f"streamed: {n} segments from {zp.name}")
     g["nodes"][0]["children"] = root_children
 
     out = builder.glb()

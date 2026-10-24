@@ -105,10 +105,11 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
                 scene.shader_compiler().compiled, scene.shader_compiler().cache_hits);
     std::printf("%s: %zu placements, %zu models (%zu missing), %zu textures (%zu missing), %zu draws, "
                 "%zu collision objects (%zu triangles, %zu missing), %zu animated (%zu animations missing), "
-                "%zu draws hidden by LOD, %zu irradiance volumes, %zu lights, %zu skyboxes, loaded in %.2fs\n",
+                "%zu draws hidden by LOD, %zu irradiance volumes, %zu lights, %zu skyboxes, %zu Beast lightmapped, loaded in %.2fs\n",
                 opt.level.c_str(), st.placements, st.models, st.missing_models, st.textures,
                 st.missing_textures, st.draws, st.collision_objects, st.collision_triangles,
-                st.missing_collision, st.animated, st.missing_animations, st.lod_hidden, st.irradiance_volumes, st.lights, st.skyboxes, st.load_seconds);
+                st.missing_collision, st.animated, st.missing_animations, st.lod_hidden, st.irradiance_volumes, st.lights, st.skyboxes,
+                st.beast_lightmapped, st.load_seconds);
     player.spawn(scene.start_position, scene.start_yaw);
     if (opt.touch) logic.input = InputScheme::Touch;
     if ((!headless && !opt.mute) || !opt.sound_render.empty()) {

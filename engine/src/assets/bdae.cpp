@@ -40,6 +40,18 @@ constexpr int kSlotPosition = 0, kSlotNormal = 1, kSlotColor = 2, kSlotTexcoord0
               kSlotBinormal0 = 12;
 constexpr uint8_t kNoSlot = 0xFF;
 
+// TDKR's streamed-city materials name no effect file, only an inline effect id
+// ("#LightMapDC-fx_<hash>"): use the effect file of that name. StandardDiffuse* and
+// SimpleModulate* effects ship together in ...All.bdae.
+std::string effect_from_id(const std::string& id) {
+    std::string name = id.substr(id.rfind('#') == 0 ? 1 : 0);
+    if (const auto fx = name.find("-fx"); fx != std::string::npos) name.erase(fx);
+    else return {};
+    if (name.rfind("StandardDiffuse", 0) == 0) return "StandardDiffuseAll.bdae";
+    if (name.rfind("SimpleModulate", 0) == 0) return "SimpleModulateAll.bdae";
+    return name + ".bdae";
+}
+
 bool contains_any(const std::string& s, std::initializer_list<const char*> needles) {
     const std::string l = to_lower(s);
     return std::any_of(needles.begin(), needles.end(), [&](const char* n) { return l.find(n) != std::string::npos; });
@@ -97,6 +109,7 @@ private:
             Material m;
             m.id = b.cstr(o);
             m.effect = b.cstr(o + 8);
+            if (m.effect.empty()) m.effect = effect_from_id(b.cstr(o + 0xC));
             for (uint32_t p : b.array(o, kMaterialParams)) {
                 // +0 name, +8 type, +0xC count, +0x14 value.
                 const uint32_t type = b.u32(p + 8), count = std::max<uint32_t>(b.u32(p + 0xC), 1);

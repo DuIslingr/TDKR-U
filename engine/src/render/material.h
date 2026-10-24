@@ -36,6 +36,7 @@ enum class Semantic : uint8_t {
     // Material parameters the game overwrites per object (CNovaSceneManager::UpdateLights);
     // without lighting data the material's own value stays.
     SpecDirection, SpecColor, RimFactor, L0PositionObject, L0PositionWorld, L0Color, L0Attenuation, L0Scale,
+    LightMapAtlas,   // TDKR: an object's region of its Beast lightmap atlas (CBeastObjectComponent)
 };
 
 // Recognise a uniform name as an engine semantic; `light` gets the light index (or the
@@ -69,6 +70,7 @@ struct GpuMaterial {
     // The fragment sampler that reads the screen behind (ScreenTextureSampler: the arms'
     // distortion), bound to a copy of the frame so far; -1 if none.
     int screen_slot = -1;
+    int lightmap_slot = -1;                                    // the fragment sampler "LightMap", or -1
     std::string name;                                          // effect/technique, for diagnostics
 };
 

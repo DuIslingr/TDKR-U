@@ -29,6 +29,7 @@ struct SceneStats {
     size_t animated = 0, missing_animations = 0;
     size_t lod_hidden = 0;    // draws hidden because another level of detail shows
     size_t irradiance_volumes = 0, lights = 0, skyboxes = 0;
+    size_t beast_lightmapped = 0;   // TDKR: objects given their Beast lightmap
     size_t corona_controllers = 0, coronas_shown = 0;   // shown: last update
     double load_seconds = 0;
 };

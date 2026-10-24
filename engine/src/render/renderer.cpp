@@ -78,6 +78,7 @@ struct DrawContext {
     glm::mat4 world{1};
     glm::mat4 view_proj{1};
     const ObjectLighting* lighting = nullptr;
+    const glm::vec4* beast_atlas = nullptr;     // LightMapAtlas override
     glm::vec3 center{0};                        // draw bounds centre (world)
     glm::vec2 viewport{1};                      // the target's size, pixels
     int lights[2] = {-2, -2};                   // Light0/Light1: indices into frame.lights, -1 none, -2 not chosen yet
@@ -208,6 +209,10 @@ struct DrawContext {
             case Semantic::L0Scale:
                 if (!lighting || !lighting->has_light) return;
                 vec(glm::vec4(lighting->l0_scale, 0));
+                break;
+            case Semantic::LightMapAtlas:
+                if (!beast_atlas) return;
+                vec(*beast_atlas);
                 break;
         }
         write_uniform(block, s.offset, s.type, v, n);
@@ -833,7 +838,8 @@ void Renderer::encode_scene(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, S
             SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
             bound = it.model;
         }
-        DrawContext ctx{frame, it.world, view_proj, it.lighting, it.center, glm::vec2(float(w), float(h))};
+        DrawContext ctx{frame, it.world, view_proj, it.lighting, it.beast_lightmap ? &it.beast_atlas : nullptr, it.center,
+                        glm::vec2(float(w), float(h))};
         vertex_block = m.vertex_uniforms;
         for (const SemanticSlot& s : m.vertex_semantics) ctx.write(vertex_block, s);
         fragment_block = m.fragment_uniforms;
@@ -873,6 +879,10 @@ void Renderer::encode_scene(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, S
         };
         bind(m.vertex_textures, true);
         bind(m.fragment_textures, false);
+        if (m.lightmap_slot >= 0 && it.beast_lightmap) {
+            const SDL_GPUTextureSamplerBinding lm{it.beast_lightmap->texture, sampler_};
+            SDL_BindGPUFragmentSamplers(pass, uint32_t(m.lightmap_slot), &lm, 1);
+        }
         if (m.screen_slot >= 0 && screen_copy_) {   // the frame behind (see the split before the view model)
             const SDL_GPUTextureSamplerBinding screen{screen_ready_ ? screen_copy_ : white_.texture, clamp_sampler_};
             SDL_BindGPUFragmentSamplers(pass, uint32_t(m.screen_slot), &screen, 1);

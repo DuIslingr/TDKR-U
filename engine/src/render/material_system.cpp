@@ -89,12 +89,17 @@ void MaterialSystem::fill_stage(const Effect& fx, const EffectPass& pass, const 
             slots.push_back({u.offset, u.type, u.array, sem, light});
             continue;
         }
-        // TDKR shaders dequantize s16 texcoords with Coord<n>_scaleoffset (and map the Beast
-        // lightmap atlas with LightMapAtlas); the loader already dequantizes, so these are the
-        // identity until per-object lightmap atlases are wired up.
-        if ((u.name.size() > 12 && u.name.compare(u.name.size() - 12, 12, "_scaleoffset") == 0) || u.name == "LightMapAtlas") {
+        // TDKR shaders dequantize s16 texcoords with Coord<n>_scaleoffset; the loader already
+        // has, so these are the identity.
+        if (u.name.size() > 12 && u.name.compare(u.name.size() - 12, 12, "_scaleoffset") == 0) {
             fields.push_back({u.name, fragment, u});
             write(u, {1.0f, 1.0f, 0.0f, 0.0f});
+            continue;
+        }
+        if (u.name == "LightMapAtlas") {   // TDKR: the lightmap's region of its atlas; the identity when unset
+            slots.push_back({u.offset, u.type, u.array, Semantic::LightMapAtlas, 0});   // per-object (Beast) value
+            const MaterialParam* mp = material_value(u.name);
+            write(u, mp && mp->value.size() >= 4 ? mp->value : std::vector<float>{1.0f, 1.0f, 0.0f, 0.0f});
             continue;
         }
         const EffectParam* ep = bound_param(u.name);
@@ -157,8 +162,10 @@ const GpuMaterial* MaterialSystem::get(const Material& m, bool skinned) {
                        gm.param_fields, false);
             fill_stage(*fx, pass, m, prog->fragment_iface, gm.fragment_uniforms, gm.fragment_semantics,
                        gm.fragment_textures, gm.param_fields, true);
-            for (size_t k = 0; k < prog->fragment_iface.samplers.size(); ++k)
+            for (size_t k = 0; k < prog->fragment_iface.samplers.size(); ++k) {
                 if (prog->fragment_iface.samplers[k] == "ScreenTextureSampler") gm.screen_slot = int(k);
+                if (prog->fragment_iface.samplers[k] == "LightMap") gm.lightmap_slot = int(k);
+            }
             // The offsets are in screen texture space. On the landscape iPhone the reference
             // footage comes from, the rotated techniques (O90/O270) turn both outward (the
             // shield's ripple squeezes the view in, edges torn); upright, the vertical one

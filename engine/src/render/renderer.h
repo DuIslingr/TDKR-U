@@ -59,6 +59,9 @@ struct DrawItem {
     bool viewmodel = false;                     // first-person hands and weapon: drawn last, in front of the world
     bool hud = false;                           // the 3D HUD (NV_hud.bdae): drawn in the HUD pass with its own camera
     const std::vector<struct ParamOverride>* overrides = nullptr;   // animated material parameters
+    // TDKR: a Beast lightmap for this object (CBeastObjectComponent), replacing the material's.
+    const GpuTexture* beast_lightmap = nullptr;
+    glm::vec4 beast_atlas{1, 1, 0, 0};          // LightMapAtlas: scale u, scale v, offset u, offset v
 };
 
 // An animated material parameter value for one object: components [first, first + count).

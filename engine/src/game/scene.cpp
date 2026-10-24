@@ -853,6 +853,24 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
         ++stats_.placements;
         if (const LoadedModel* lm = model(p.model)) object_instances_[p.object_index] = add_instance(*lm, placement_matrix(p.transform), &p);
     }
+    // TDKR: objects lit by Beast carry their lightmap in CBeastObjectComponent: the atlas region
+    // (scale u, scale v, offset u, offset v) and texture, then the same for the low-end atlas.
+    constexpr int kCompBeastObject = 0x365CFD67;
+    for (const auto& [object, instance] : object_instances_) {
+        const LevelObject& o = level_.objects[object];
+        auto beast = o.components.find(kCompBeastObject);
+        if (beast == o.components.end() || beast->second.size() < 5) continue;
+        const Value& v = beast->second;
+        const GpuTexture* atlas = texture(v[4].s);
+        if (!atlas) continue;
+        const Instance& in = instances_[instance];
+        for (size_t d = in.first_draw; d < in.first_draw + in.draw_count; ++d) {
+            draws_[d].beast_lightmap = atlas;
+            draws_[d].beast_atlas = {v[0].as_float(), v[1].as_float(), v[2].as_float(), v[3].as_float()};
+            draws_[d].lightmap = atlas;
+        }
+        ++stats_.beast_lightmapped;
+    }
     // TDKR: Gotham's buildings and roads are streamed (CLevelStreaming) from <Level>.zip, not
     // placed; draw the whole city at its most detailed LOD, in world space.
     if (const std::string zip = stem + ".zip"; vfs_.exists(zip)) {

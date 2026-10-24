@@ -1,0 +1,73 @@
+// Keyframe animation from BDAE files. See tools/bdae_anim.py for the format.
+//
+// Every track in a file shares one timeline (milliseconds); named clips are
+// ranges on it. Key data is split into time segments whose buffers the
+// samplers index; key times are absolute 30 fps frames (or ms).
+#pragma once
+
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+#include "core/bytes.h"
+
+namespace tdkr {
+
+struct AnimTrack {
+    enum class Property : uint8_t { Translation, Rotation, Scale } property;
+    int component = -1;               // -1: all components; 0/1/2: single axis
+    bool axis_angle = false;          // rotation stored as an angle (radians) about `defaults`
+    std::vector<float> times;         // ms
+    std::vector<float> values;        // times.size() * stride
+    int stride = 0;
+    glm::vec3 defaults{0};            // full vector for single-axis tracks, or the rotation axis
+    bool has_defaults = false;
+};
+
+// Animated values other than node transforms: material parameters (channel 114:
+// target material id, parameter name, mask of the components written), light
+// colours (channel 19: target light id, RGB bytes) and node visibility (channel 24:
+// target node id, 0/1 held until the next key), camera fields of view (14) and morph
+// target weights (18: target controller id, the low byte at +8 = the target's index).
+struct ValueTrack {
+    bool light = false;
+    bool visibility = false;
+    bool camera_fov = false;          // a camera's field of view (radians); target "<camera>-camera"
+    bool morph = false;               // a morph target's weight (channel 18): target "<mesh>-morpher", first = target
+    std::string target, param;
+    int first = 0;                    // first component written (lowest bit of the channel's mask)
+    int stride = 0;                   // components per key
+    std::vector<float> times;         // ms
+    std::vector<float> values;
+};
+
+struct AnimClip {
+    std::string name;
+    float start = 0, end = 0;         // ms
+};
+
+struct AnimationLibrary {
+    std::vector<AnimClip> clips;
+    std::unordered_map<std::string, std::vector<AnimTrack>> tracks;   // by target node id
+    std::vector<ValueTrack> values;
+    float timeline_start = 0, timeline_end = 0;
+
+    const AnimClip* clip(const std::string& name) const;
+};
+
+AnimationLibrary load_animation(const Bytes& bdae);
+
+// A node's local transform at time `t` (ms), starting from its rest pose.
+struct NodePose {
+    glm::vec3 translation;
+    glm::quat rotation;
+    glm::vec3 scale;
+};
+void sample_tracks(const std::vector<AnimTrack>& tracks, float t, NodePose& pose);
+// A value track at time `t` (ms): writes `track.stride` floats.
+void sample_value(const ValueTrack& track, float t, float* out);
+
+}  // namespace tdkr

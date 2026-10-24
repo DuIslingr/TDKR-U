@@ -23,6 +23,7 @@ namespace {
 constexpr int kCompTrigger = 0x37F7A8AE;  // CTriggerComponent
 constexpr int kCompRunScript = 0x1E;      // CRunScriptComponent (OnDead)
 constexpr int kCompHelicopter = 0x786F6ECB;   // CHelicopterLogic
+constexpr int kCompGroup = 0x2AD2A046;        // CGroupObject's builtin data: its members
 constexpr int kCompInteractive = 0x34747EBE;   // CInteractionComponent: radius, ?, script (OnScriptEvent), button frame
 constexpr int kCompDoor = 0x61;           // CDoorAIComponent
 constexpr int kCompEffects = 0x92;        // CEffectsComponent: [[effect, node, autostart, ...], ...]
@@ -228,6 +229,9 @@ void LevelLogic::load_objects() {
         // An actor starts in its state set's idle state (ActorGetState: "Ranged_Idle", ...).
         if (const Value* st = comp(0x5441A117); st && st->size() > 1 && (*st)[1].type == Value::String) obj.state = (*st)[1].s;
         obj.zone = zone, obj.home = obj.position, obj.init_enabled = obj.enabled, obj.init_visible = obj.visible;
+        // A group (CGroupObject::ReadBuiltinData: c c [member ids]).
+        if (auto gc = o.components.find(kCompGroup); gc != o.components.end() && gc->second.size() >= 3)
+            for (const Value& m : gc->second[2].list) groups_[obj.id].push_back(m.type == Value::Int ? m.i : m.size() ? m[0].i : -1);
         objects_[obj.id] = obj;
     }
     stats_.objects = objects_.size();
@@ -337,6 +341,7 @@ void LevelLogic::start(StartMode mode) {
     if (!keep_player) controls = Controls{}, hud_enabled = true, interface_in_cinematic = false, weapon_state.clear(), objectives = {},
                       path_marker = {}, objective_markers.clear();
     objects_.clear();
+    groups_.clear();
     triggers_.clear();
     doors_.clear();
     delayed_.clear();
@@ -355,6 +360,7 @@ void LevelLogic::start(StartMode mode) {
     for (const auto& [type, g] : gol)
         if (g.name == "AIController") load_type_scripts(type);
     load_objects();
+    find_cameras();
     // Mission zones load when they become the current mission (none yet).
     for (auto& [id, o] : objects_)
         if (o.zone >= 0) o.enabled = o.visible = false, o.loaded = false, show(o, false);
@@ -370,6 +376,7 @@ void LevelLogic::start(StartMode mode) {
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
     story_request = {};
     riding = -1, hanging_from = -1, qte_navigation = false, bruce_style = false;
+    scene.show_coronas(true);
     map_icons.clear();
     level_request = {};
     object_sounds.clear();
@@ -538,6 +545,7 @@ void LevelLogic::save_checkpoint(int spawn_id) {
         return;
     }
     auto cp = std::make_shared<Checkpoint>();
+    cp->globals = runtime_.save_globals();
     cp->spawn = spawn_id;
     cp->section = scene.section();
     for (const auto& [id, o] : objects_) {
@@ -551,6 +559,9 @@ void LevelLogic::save_checkpoint(int spawn_id) {
         cp->objects[id] = std::move(so);
     }
     for (const Trigger& t : triggers_) cp->trigger_runs.push_back(t.runs_left);
+    cp->ammo.assign(weapon_ammo.begin(), weapon_ammo.end());
+    for (const auto& [id, cam] : cameras_)   // CSurveillanceCameraComponent::SaveSave
+        if (cam.off) cp->cameras_off.push_back(id);
     for (const Door& d : doors_) cp->doors.push_back({d.state, d.locked, d.keep_unlocked, d.forced_open});
     for (const Mover& m : movers_) cp->movers.emplace_back(m.id, m.position);
     for (const auto& [id, v] : vehicles_) cp->vehicles.push_back({id, v.position, v.yaw});
@@ -585,6 +596,7 @@ void LevelLogic::respawn_at_checkpoint() {
     quests.carry_over = true;   // the quests and the main story stay where they were
     start(StartMode::Respawn);
     if (combat) combat->start(true);
+    runtime_.restore_globals(cp->globals);   // (CLevel::RespawnInit: LoadCurrentProgress, the scripts' _G)
     restoring_ = true;
     runtime_.update(0);
     restoring_ = false;
@@ -623,6 +635,9 @@ void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
         }
     }
     for (size_t i = 0; i < triggers_.size() && i < cp.trigger_runs.size(); ++i) triggers_[i].runs_left = cp.trigger_runs[i], triggers_[i].inside = false;
+    weapon_ammo.clear();
+    for (const auto& [weapon, n] : cp.ammo) weapon_ammo[weapon] = n;
+    for (auto& [id, cam] : cameras_) cam.off = std::find(cp.cameras_off.begin(), cp.cameras_off.end(), id) != cp.cameras_off.end(), cam.seen = 0;
     for (size_t i = 0; i < doors_.size() && i < cp.doors.size(); ++i) {
         const Checkpoint::SavedDoor& sd = cp.doors[i];
         doors_[i].locked = sd.locked, doors_[i].keep_unlocked = sd.keep_unlocked, doors_[i].forced_open = sd.forced_open;
@@ -1979,6 +1994,7 @@ void LevelLogic::update(float dt) {
     update_button_qte(dt);
     if (script_cam_.on) script_cam_.t += dt;
     update_walkers(dt);
+    update_cameras(dt);
     update_triggers();
     update_doors(dt);
     update_zone_fog();

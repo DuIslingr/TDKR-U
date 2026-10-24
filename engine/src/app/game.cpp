@@ -788,6 +788,9 @@ void Game::auto_play(float dt) {
         return t == "kill" ? 0 : t == "objective" ? 1 : 2;
     };
     std::stable_sort(goals.begin(), goals.end(), [&](const auto& a, const auto& b) { return rank(a.text) < rank(b.text); });
+    if (goals.empty() && logic.mission_zone < 0)   // out of a mission, a quest giver on the map
+        for (const auto& [id, icon] : logic.map_icons)
+            if (icon.rfind("questGiver", 0) == 0 && logic.object(id)) goals = {{id, icon, ""}};
     if (goals.empty()) {
         float best = 40;
         for (const auto& [id, o] : logic.objects())

@@ -10,6 +10,7 @@
 // The globals `this` and (TDKR) `CurrentActor` hold the owning object's id while a coroutine runs.
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -53,6 +54,22 @@ public:
     // must be registered and chunks loaded again.
     void reset();
     size_t thread_count() const;
+
+    // The scripts' data in the globals, as a checkpoint keeps it (CLuaScriptManager::SaveSave
+    // writes _G): numbers, strings, booleans and tables of them. Functions are the chunks',
+    // loaded again; the standard libraries are left out.
+    struct SavedValue {
+        enum class Type : uint8_t { Nil, Bool, Number, String, Table } type = Type::Nil;
+        bool b = false;
+        double n = 0;
+        std::string s;
+        std::vector<SavedValue> table;   // key, value, key, value, ...
+    };
+    using Globals = std::vector<std::pair<std::string, SavedValue>>;
+    Globals save_globals() const;
+    // Put them back over a fresh load (a table of data replaces the chunks' one; one holding
+    // functions gets the saved entries merged in).
+    void restore_globals(const Globals& globals);
 
     lua_State* state() const { return L_; }
     std::function<void(const std::string&)> log = [](const std::string&) {};

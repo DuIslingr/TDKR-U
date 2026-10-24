@@ -465,6 +465,30 @@ What it needed:
   (walks from point to point within the radius, pausing), `PlayerIsFighting()` (true and the target's id while Batman
   fights), `UnloadMission(zone)`. NPCs targeting other NPCs (the police at the thugs) are not Batman's enemies.
 
+**The Power Station** (quest 601, after Under Pressure): Gordon calls; Batman meets him on a roof (a quest-giver map
+icon, `AddGenericObjectOnMap(502396, "questGiver1")`), and within 7 m `NextMission(703128)` starts it: the briefing
+cinematic, then three sub-generator panels (502381, 502383, 502423), each covered by two snipers and a gang, one by
+an alarm post that arms electric turrets, and two surveillance cameras that call a van of thugs; the central fight,
+the prisoner's talk, the guards on the cooling tower and Selina; "The Power Station" win screen, `UnloadMission`, and
+the story moves on to quest 25 (Save Lucius). What it needed:
+
+- **Checkpoints keep the scripts' globals.** The game's checkpoint writes Lua's `_G` (`CLuaScriptManager::SaveSave`,
+  `WriteLuaTableToStream`) and a respawn reads it back over the freshly loaded scripts (`CLevel::RespawnInit`:
+  `ResetUserDefinedGlobalVars`, `LoadCurrentProgress`). The power plant's `Running` lives on tables its `Accepted`
+  builds (`c_PP_ObjectiveArray`); without them a death broke the quest. Numbers, strings, booleans and tables of them
+  are kept (in the save file too); functions come from the chunks, and Lua's own libraries are left out. The
+  checkpoint also keeps the ammo (`CInventory::SaveSaveGlobal`): a death no longer costs the batarangs thrown since.
+- **Surveillance cameras** (`CSurveillanceCameraComponent` `0x62353C58`: `[0]` sweep degrees, `[6]` range in metres,
+  `[7]` ms to spot, ..., the `OnCamDetectTarget` script): a camera that sees Batman within its cone for that long runs
+  `Obj<id>_OnCamDetectTarget` (`OnCamLostTarget` when he is gone); `DisableSurveillanceCamera` switches it off, a
+  batarang breaks it (1 health), and the checkpoint keeps which are off. The lens looks along the model's +X turned by
+  its yaw (camera 502387 at 109 degrees faces its panel). The sweep, the `camera` node turning, is not done yet.
+- **Groups** (`CGroupObject`, the builtin `c c [members]`): `GetWaypointsInGroup` / `GetGroupsInGroup` return a
+  group's own members that are waypoints / groups (the bomb side missions' spawn sets).
+- `NPCSavePosition` (where `NPCReturnToSavedPosition` goes back to), `ShowCoronas`, `CameraResetFOV` (70 degrees),
+  `ExitTheBat` (as `ExitBatPod`). `GenerateDistrict` and `ClearCrimeAreaMessage` are accepted: the crime hot spots
+  (`CCrimeHotSpotComponent`) are not played yet.
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it

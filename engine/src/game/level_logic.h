@@ -229,6 +229,16 @@ public:
     // CAIController's behaviour events (CNpcAIComponent [0]: the behaviour): the AIController
     // type's Templ<type>_<behaviour>_<event>, the actor current.
     void ai_event(int id, const std::string& event);
+    // Groups (CGroupObject): a group's members, in the level's order (GetWaypointsInGroup,
+    // GetGroupsInGroup); empty for what is not a group.
+    const std::vector<int>& group_members(int id) const {
+        static const std::vector<int> none;
+        auto it = groups_.find(id);
+        return it == groups_.end() ? none : it->second;
+    }
+    bool is_group(int id) const { return groups_.count(id) != 0; }
+    // Surveillance cameras (game/surveillance.cpp): DisableSurveillanceCamera(camera, off).
+    void disable_camera(int id, bool off);
     void mount_batpod(int id);
     void dismount_batpod();
     // QTE_StartNavigation / QTE_EndNavigation (PlayerComponent::*QTENavigation): the chase mode,
@@ -313,6 +323,7 @@ public:
     void disable_color_grading() { grading_.on = false, grading_.dirty = true; }
     // SetFOV(fov, ms) / ResetFOV(ms): the field of view moves to a target (game units, 70
     // by default). SetZFar, SetMoveSensitivity, PlayerEnableRush.
+    static constexpr float kGameFov = 70;   // degrees, the game's own (CCameraMgr::ResetFOV)
     void set_fov(float fov, float ms) { fov_from_ = game_fov(), fov_to_ = fov, fov_len_ = ms / 1000.0f, fov_t_ = 0; }
     float game_fov() const { return fov_len_ > 0 && fov_t_ < fov_len_ ? fov_from_ + (fov_to_ - fov_from_) * fov_t_ / fov_len_ : fov_to_; }
     static constexpr int kPlayerId = 123456;   // the scripts' id for the player
@@ -783,6 +794,15 @@ private:
         bool spawned = false;        // on the chain SpawnObject started it on: it leaves it to fight
         float patrol_radius = 0, patrol_wait = 0;
     };
+    struct Camera {
+        float range = 40, spot = 0.5f;   // metres, seconds of seeing Batman
+        float seen = 0;
+        bool detected = false, off = false;
+    };
+    std::unordered_map<int, Camera> cameras_;
+    void find_cameras();
+    void update_cameras(float dt);
+    std::unordered_map<int, std::vector<int>> groups_;
     std::vector<Walker> walkers_;
     Walker& walker(int id);
     void update_walkers(float dt);
@@ -876,7 +896,7 @@ private:
         float factor = 1, from = 1, to = 1, in = 0, hold = 0, out = 0;
         float t = -1;   // ms since set; < 0: steady
     } slow_;
-    float fov_from_ = 70, fov_to_ = 70, fov_len_ = 0, fov_t_ = 0;
+    float fov_from_ = kGameFov, fov_to_ = kGameFov, fov_len_ = 0, fov_t_ = 0;
     struct Vehicle {
         int id = 0;
         size_t index = 0;

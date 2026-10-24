@@ -718,6 +718,48 @@ int api_get_district_completion(lua_State* L) {
     lua_pushinteger(L, o && c.object_component(*o, kCompDistrict) ? 0 : -1);
     return 1;
 }
+// GetWaypointsInGroup(group) / GetGroupsInGroup(group) (CGroupObject::GetWaypointsIds /
+// GetSubGroupsIds): the group's own members that are waypoints / groups, as values.
+int api_group_members(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const bool groups = lua_tointeger(L, lua_upvalueindex(2)) != 0;
+    int n = 0;
+    for (int id : c.group_members(int_arg(L, 1))) {
+        const LevelLogic::Object* m = c.object(id);
+        if (!m || (groups ? !c.is_group(id) : m->type != "waypoint")) continue;
+        lua_pushinteger(L, id);
+        ++n;
+    }
+    return n;
+}
+// GenerateDistrict(district, count) (CDistrictComponent::GenerateDistrictCrimeZones): the
+// district's crime hot spots, `count` of them, on the map. The hot spots are not played yet.
+int api_generate_district(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (c.trace) c.log("district " + std::to_string(int_arg(L, 1)) + ": " + std::to_string(int_arg(L, 2)) + " crime zones (not played yet)");
+    return 0;
+}
+// NPCSavePosition(actor) (CNpcAIComponent::StartRecordingPath): where it stands now is where
+// NPCReturnToSavedPosition takes it back.
+int api_npc_save_position(lua_State* L) {
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1)); o && !o->dead) o->home = o->position;
+    return 0;
+}
+// ShowCoronas(on): the lights' coronas drawn or not.
+int api_show_coronas(lua_State* L) {
+    ctx(L).scene.show_coronas(bool_arg(L, 1));
+    return 0;
+}
+// CameraResetFOV([ms]) (CCameraMgr::ResetFOV): back to the game's field of view.
+int api_camera_reset_fov(lua_State* L) {
+    ctx(L).set_fov(LevelLogic::kGameFov, lua_gettop(L) >= 1 ? float(lua_tonumber(L, 1)) : 0.0f);
+    return 0;
+}
+// DisableSurveillanceCamera(camera, off) (CSurveillanceCameraComponent::SetDisabledFromScript).
+int api_disable_surveillance_camera(lua_State* L) {
+    ctx(L).disable_camera(int_arg(L, 1), lua_gettop(L) < 2 || bool_arg(L, 2));
+    return 0;
+}
 // UnloadMission(zone) (CZonesManager::UnloadMission): the mission zone's objects go.
 int api_unload_mission(lua_State* L) {
     ctx(L).unload_mission(int_arg(L, 1));
@@ -1421,6 +1463,15 @@ const Entry kTdkr[] = {
     {"PlayerIsFighting", api_player_is_fighting},
     {"UnloadMission", api_unload_mission},
     {"GetDistrictCompletion", api_get_district_completion},
+    {"GenerateDistrict", api_generate_district},
+    {"GetWaypointsInGroup", api_group_members, 0},
+    {"GetGroupsInGroup", api_group_members, 1},
+    {"NPCSavePosition", api_npc_save_position},
+    {"ShowCoronas", api_show_coronas},
+    {"CameraResetFOV", api_camera_reset_fov},
+    {"DisableSurveillanceCamera", api_disable_surveillance_camera},
+    {"ExitTheBat", api_exit_batpod},          // (PlayerComponent::ExitTheBatOrBatPod, as ExitBatPod)
+    {"ClearCrimeAreaMessage", api_nothing},   // (no crime area message is shown yet)
     {"NPCSetAIBehavior", api_nothing},
     {"NPCCombatSet", api_nothing},
     {"SetObjectSlowMotion", api_nothing},

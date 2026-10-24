@@ -26,7 +26,113 @@ int lua_print(lua_State* L) {
     return 0;
 }
 
+// The globals a checkpoint leaves alone: Lua's own and the per-coroutine ones.
+bool kept_out(const std::string& name) {
+    static const char* const kNames[] = {"_G", "_VERSION", "package", "string", "table", "math", "os", "io",
+                                         "coroutine", "debug", "this", "CurrentActor"};
+    return std::find(std::begin(kNames), std::end(kNames), name) != std::end(kNames);
+}
+
+bool save_value(lua_State* L, int index, ScriptRuntime::SavedValue& out, std::vector<const void*>& seen) {
+    using T = ScriptRuntime::SavedValue::Type;
+    switch (lua_type(L, index)) {
+    case LUA_TBOOLEAN: out.type = T::Bool, out.b = lua_toboolean(L, index); return true;
+    case LUA_TNUMBER: out.type = T::Number, out.n = lua_tonumber(L, index); return true;
+    case LUA_TSTRING: out.type = T::String, out.s = lua_tostring(L, index); return true;
+    case LUA_TTABLE: {
+        const void* p = lua_topointer(L, index);
+        if (std::find(seen.begin(), seen.end(), p) != seen.end() || seen.size() >= 16) return false;   // cycles, depth
+        seen.push_back(p);
+        out.type = T::Table;
+        const int t = index < 0 ? lua_gettop(L) + index + 1 : index;
+        lua_pushnil(L);
+        while (lua_next(L, t)) {
+            ScriptRuntime::SavedValue k, v;
+            const int kt = lua_type(L, -2);
+            if ((kt == LUA_TNUMBER || kt == LUA_TSTRING || kt == LUA_TBOOLEAN) && save_value(L, -2, k, seen) &&
+                save_value(L, -1, v, seen))
+                out.table.push_back(std::move(k)), out.table.push_back(std::move(v));
+            lua_pop(L, 1);
+        }
+        seen.pop_back();
+        return true;
+    }
+    default: return false;   // functions, userdata, coroutines
+    }
+}
+
+void push_value(lua_State* L, const ScriptRuntime::SavedValue& v);
+
+// The table at the top of the stack gets the saved table's entries; nested tables merge too.
+void merge_table(lua_State* L, const ScriptRuntime::SavedValue& v) {
+    for (size_t i = 0; i + 1 < v.table.size(); i += 2) {
+        push_value(L, v.table[i]);
+        if (v.table[i + 1].type == ScriptRuntime::SavedValue::Type::Table) {
+            lua_pushvalue(L, -1);
+            lua_rawget(L, -3);
+            if (lua_istable(L, -1)) {
+                merge_table(L, v.table[i + 1]);
+                lua_pop(L, 2);
+                continue;
+            }
+            lua_pop(L, 1);
+        }
+        push_value(L, v.table[i + 1]);
+        lua_rawset(L, -3);
+    }
+}
+
+void push_value(lua_State* L, const ScriptRuntime::SavedValue& v) {
+    using T = ScriptRuntime::SavedValue::Type;
+    switch (v.type) {
+    case T::Bool: lua_pushboolean(L, v.b); break;
+    case T::Number: lua_pushnumber(L, v.n); break;
+    case T::String: lua_pushlstring(L, v.s.data(), v.s.size()); break;
+    case T::Table: lua_newtable(L), merge_table(L, v); break;
+    default: lua_pushnil(L);
+    }
+}
+
 }  // namespace
+
+ScriptRuntime::Globals ScriptRuntime::save_globals() const {
+    Globals out;
+    std::vector<const void*> seen;
+    lua_pushnil(L_);
+    while (lua_next(L_, LUA_GLOBALSINDEX)) {
+        if (lua_type(L_, -2) == LUA_TSTRING) {
+            const std::string name = lua_tostring(L_, -2);
+            SavedValue v;
+            if (!kept_out(name) && save_value(L_, -1, v, seen)) out.emplace_back(name, std::move(v));
+        }
+        lua_pop(L_, 1);
+    }
+    return out;
+}
+
+void ScriptRuntime::restore_globals(const Globals& globals) {
+    // A table of functions (a module the chunks define) keeps them; a table of data is replaced.
+    auto has_functions = [this] {
+        bool any = false;
+        lua_pushnil(L_);
+        while (lua_next(L_, -2)) {
+            any = any || lua_isfunction(L_, -1);
+            lua_pop(L_, 1);
+        }
+        return any;
+    };
+    for (const auto& [name, v] : globals) {
+        lua_getglobal(L_, name.c_str());
+        if (v.type == SavedValue::Type::Table && lua_istable(L_, -1) && has_functions()) {
+            merge_table(L_, v);
+            lua_pop(L_, 1);
+            continue;
+        }
+        lua_pop(L_, 1);
+        push_value(L_, v);
+        lua_setglobal(L_, name.c_str());
+    }
+}
 
 ScriptRuntime::ScriptRuntime() {
     threads_.resize(kMaxThreads);

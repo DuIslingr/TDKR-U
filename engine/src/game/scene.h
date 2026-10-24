@@ -61,6 +61,8 @@ public:
 
     // Level objects (by index into level().objects), for game logic.
     void set_object_visible(size_t object, bool visible);
+    // ShowCoronas(on) (the corona controllers' nodes): off, no corona is drawn.
+    void show_coronas(bool on) { coronas_on_ = on; }
     bool object_hidden(size_t object) const;   // hidden with set_object_visible (or no such object)
     void set_object_collision(size_t object, bool enabled) { collision_.set_owner_enabled(uint32_t(object), enabled); }
     // Debugging: hide every placement whose model name contains `substring`; returns how many.
@@ -366,6 +368,7 @@ private:
         float fade;                                 // ms, 0..200
     };
     std::vector<Corona> coronas_;
+    bool coronas_on_ = true;
     struct CoronaController {
         glm::mat4 world{1}, inverse{1};
         float min_dist = 25, max_dist = 50, min_scale = 0.5f;   // coronasMin/Max/MinScale

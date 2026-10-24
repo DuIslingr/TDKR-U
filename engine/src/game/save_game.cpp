@@ -13,7 +13,7 @@ namespace tdkr {
 namespace {
 
 constexpr char kMagic[4] = {'N', '3', 'S', 'V'};
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;   // 2: the scripts' globals, the cameras switched off, the ammo
 
 // Little-endian fields; strings and lists carry their lengths.
 struct Writer {
@@ -124,6 +124,36 @@ bool read_combat(const std::vector<uint8_t>& in, size_t& at, Combat::Saved& s) {
     return r.ok;
 }
 
+// The scripts' globals (CLuaScriptManager::SaveSave): a type byte, then the value; a table
+// its entry count and keys and values.
+void write_value(Writer& w, const ScriptRuntime::SavedValue& v) {
+    using T = ScriptRuntime::SavedValue::Type;
+    w.out.push_back(uint8_t(v.type));
+    if (v.type == T::Bool) w.flag(v.b);
+    else if (v.type == T::Number) w.raw(&v.n, 8);
+    else if (v.type == T::String) w.str(v.s);
+    else if (v.type == T::Table) {
+        w.u32(uint32_t(v.table.size()));
+        for (const ScriptRuntime::SavedValue& e : v.table) write_value(w, e);
+    }
+}
+
+bool read_value(Reader& r, ScriptRuntime::SavedValue& v, int depth = 0) {
+    using T = ScriptRuntime::SavedValue::Type;
+    uint8_t type = 0;
+    if (depth > 32 || !r.raw(&type, 1) || type > uint8_t(T::Table)) return false;
+    v.type = T(type);
+    if (v.type == T::Bool) v.b = r.flag();
+    else if (v.type == T::Number) r.raw(&v.n, 8);
+    else if (v.type == T::String) v.s = r.str();
+    else if (v.type == T::Table) {
+        v.table.resize(r.count(2));
+        for (ScriptRuntime::SavedValue& e : v.table)
+            if (!read_value(r, e, depth + 1)) return false;
+    }
+    return r.ok;
+}
+
 std::vector<uint8_t> LevelLogic::checkpoint_data() const {
     std::vector<uint8_t> out;
     if (!saved_) return out;
@@ -160,6 +190,12 @@ std::vector<uint8_t> LevelLogic::checkpoint_data() const {
     w.str(cp.grading), w.flag(cp.grading_on);
     w.i32(cp.mech), w.i32(cp.vehicle), w.i32(cp.gun);
     write_combat(out, cp.combat);
+    w.u32(uint32_t(cp.cameras_off.size()));
+    for (int id : cp.cameras_off) w.i32(id);
+    w.u32(uint32_t(cp.ammo.size()));
+    for (const auto& [weapon, n] : cp.ammo) w.str(weapon), w.i32(n);
+    w.u32(uint32_t(cp.globals.size()));
+    for (const auto& [name, v] : cp.globals) w.str(name), write_value(w, v);
     return out;
 }
 
@@ -201,6 +237,13 @@ bool LevelLogic::load_checkpoint_data(const std::vector<uint8_t>& data) {
     cp->grading = r.str(), cp->grading_on = r.flag();
     cp->mech = r.i32(), cp->vehicle = r.i32(), cp->gun = r.i32();
     if (!r.ok || !read_combat(data, at, cp->combat)) return false;
+    cp->cameras_off.resize(r.count(4));
+    for (int& id : cp->cameras_off) id = r.i32();
+    cp->ammo.resize(r.count(8));
+    for (auto& [weapon, n] : cp->ammo) weapon = r.str(), n = r.i32();
+    cp->globals.resize(r.count(6));
+    for (auto& [name, v] : cp->globals)
+        if (name = r.str(); !read_value(r, v)) return false;
     checkpoint_ = cp->spawn;
     saved_ = std::move(cp);
     return true;

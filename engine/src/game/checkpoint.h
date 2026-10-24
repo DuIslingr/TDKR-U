@@ -28,6 +28,8 @@ struct LevelLogic::Checkpoint {
     };
     std::unordered_map<int, SavedObject> objects;
     std::vector<int> trigger_runs;      // CTriggerComponent::SaveSave
+    std::vector<int> cameras_off;       // CSurveillanceCameraComponent::SaveSave: those switched off
+    std::vector<std::pair<std::string, int>> ammo;   // CInventory::SaveSaveGlobal: the batarangs, ...
     struct SavedDoor {
         Door::State state = Door::State::Closed;
         bool locked = false, keep_unlocked = false, forced_open = false;   // CDoorAIComponent::SaveSave
@@ -52,6 +54,7 @@ struct LevelLogic::Checkpoint {
     bool grading_on = false;
     int mech = -1, vehicle = -1, gun = -1;   // PlayerComponent::SaveSave: what the player is in
     Combat::Saved combat;
+    ScriptRuntime::Globals globals;     // CLuaScriptManager::SaveSave: the scripts' _G
 };
 
 }  // namespace tdkr

@@ -79,7 +79,8 @@ auto-play also presses use (the Pit's valves stand beside their markers). Quest 
 Gotham with `--level GothamCity.lvc --spawn-at 600101 --exec "StartMainStoryFromQuestId(301)" --exec
 'SetWeaponAmmo("Batarang_01", 10)' --auto-play`; auto-play stands beside an enemy on its own floor (the snipers'
 ledges) and grapnels onto the helicopter from below it, then uses it. It takes the markers in a player's order:
-enemies, then objectives, then the rest (hostages, people to talk to).
+enemies, then objectives, then the rest (hostages, people to talk to); with no marker it goes to a quest giver on the
+map (Gordon, for quest 601: the same command with `StartMainStoryFromQuestId(601)`).
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

@@ -706,7 +706,7 @@ void Scene::update(float dt, const glm::vec3& camera) {
     // over 200 ms, blocked it fades out four times faster.
     for (Corona& c : coronas_) {
         DrawItem& d = draws_[c.draw];
-        bool seen = d.visible && !d.hidden && !d.anim_hidden && !d.zone_hidden;
+        bool seen = coronas_on_ && d.visible && !d.hidden && !d.anim_hidden && !d.zone_hidden;
         if (seen) {
             const glm::vec3 to = d.center + glm::normalize(camera - d.center) * 0.3f;
             float t = 1;
@@ -723,7 +723,7 @@ void Scene::update(float dt, const glm::vec3& camera) {
         bool seen = false;
         for (const auto& [di, local] : c.draws) {
             const DrawItem& d = draws_[di];
-            seen = seen || (d.visible && !d.hidden && !d.anim_hidden && !d.zone_hidden);
+            seen = seen || (coronas_on_ && d.visible && !d.hidden && !d.anim_hidden && !d.zone_hidden);
         }
         const glm::vec3 pos(c.world[3]);
         const float dist = glm::distance(camera, pos);

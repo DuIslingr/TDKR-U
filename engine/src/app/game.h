@@ -18,6 +18,7 @@
 #include "core/vfs.h"
 #include "game/combat.h"
 #include "game/death_screen.h"
+#include "game/display_options.h"
 #include "game/end_level_screen.h"
 #include "game/flash_hud.h"
 #include "game/flash_screen.h"
@@ -176,6 +177,7 @@ private:
     const std::string settings_path;
     Settings settings;
     PauseMenu menu;
+    UpscalerSupport upscalers;   // what the renderer can run (the Display options' upscaler rows)
     Shop shop;                                 // the Military Shop on the pause page
     const std::string save_path;
     LensFlares flares;

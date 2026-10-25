@@ -97,6 +97,19 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
     front_end.play_sound = [this](const std::string& s) {
         if (logic.audio) logic.audio->play(s);
     };
+    // The Display options in both menus (game/display_options.h).
+    upscalers = renderer.upscaler_support();
+    menu.upscalers = &upscalers;
+    front_end.display_rows = [this] {
+        std::vector<std::string> rows;
+        for (const DisplayOption& o : display_options(settings, upscalers)) rows.push_back(title_case(o.name + ": " + o.value));
+        return rows;
+    };
+    front_end.display_press = [this](int row) {
+        const bool window = step_display_option(settings, row, 0, upscalers);
+        settings.save(settings_path);
+        if (window && this->window) apply_display();
+    };
     if (opt.list_missions)
         for (size_t i = 0; i < missions.size(); ++i)
             std::printf("mission %2zu  chapter %d.%d  %-40s %s\n", i, missions[i].chapter, missions[i].number,
@@ -377,6 +390,13 @@ FrameParams Game::frame(const Camera& cam_in, int w, int h) {
     f.time = clock;
     f.lights = scene.lights();
     f.post = post_params;
+    Settings s = settings;   // (with this run's --upscaler and so on)
+    if (opt.upscaler >= 0) s.upscaler = Settings::Upscaler(opt.upscaler);
+    if (opt.upscale_mode >= 0) s.upscale_mode = Settings::UpscaleMode(opt.upscale_mode);
+    if (opt.sharpness >= 0) s.sharpness = opt.sharpness;
+    f.upscale.kind = UpscalerKind(int(active_upscaler(s, upscalers)));   // (the same order)
+    f.upscale.ratio = upscale_ratio(s.upscale_mode);
+    f.upscale.sharpness = s.sharpness;
     return f;
 }
 
@@ -459,6 +479,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             if (logic.audio) logic.audio->play("m_mission_complete");
         }
         FlashHud::State fs;
+        fs.touch = touch_mode;
         fs.visible = !menu.open && !death.open && !end_screen.open && !storyboard.active();
         fs.cinematic = opt.scripts && logic.player_locked();
         if (opt.scripts) fs.frame = logic.hud_state;

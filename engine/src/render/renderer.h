@@ -2,6 +2,7 @@
 // One code path for Vulkan, Direct3D 12 and Metal (SPIR-V shaders for now).
 #pragma once
 
+#include "render/upscaler.h"
 #include <array>
 #include <memory>
 #include <string>
@@ -18,6 +19,8 @@
 #include "shader/shader_compiler.h"
 
 namespace tdkr {
+
+class Fsr3;
 
 struct GpuTexture {
     SDL_GPUTexture* texture = nullptr;
@@ -178,6 +181,7 @@ struct FrameParams {
     // The 3D HUD: items flagged `hud`, seen through their own camera, over the finished frame.
     bool hud3d = false;
     glm::mat4 hud_view{1}, hud_proj{1};
+    Upscale upscale;   // the scene drawn smaller and upscaled (render/upscaler.h); the HUD at full size
 };
 
 class Renderer {
@@ -198,6 +202,8 @@ public:
     // V-Sync on: presents wait for the display; off: the lowest-latency mode there is
     // (mailbox, else immediate), the frame rate as high as it goes.
     void set_vsync(bool on);
+    // What this device can run (the Display options list the rest as unavailable).
+    UpscalerSupport upscaler_support() const;
     const GpuTexture* white() const { return &white_; }
     const GpuTexture* white_cube() const { return &white_cube_; }
     const GpuProgram* create_program(const CompiledProgram& compiled);
@@ -250,6 +256,35 @@ private:
         SDL_GPUGraphicsPipeline* final = nullptr;
     };
     const PostPipelines& post_pipelines_for(SDL_GPUTextureFormat format);
+    SDL_GPUGraphicsPipeline* fullscreen_pipeline(SDL_GPUShader* fs, SDL_GPUTextureFormat format);   // vs_post_'s triangle
+    SDL_GPUTexture* make_offscreen(uint32_t w, uint32_t h);
+    // FSR 1 (render/upscaler.h): the finished render-size frame (post_out_, upright), EASU's
+    // output-size one (upscaled_); RCAS sharpens into the target.
+    void ensure_upscale_targets(uint32_t rw, uint32_t rh, uint32_t w, uint32_t h);
+    std::unique_ptr<Fsr3> fsr3_;   // FSR 3 (render/fsr3.h): null where it cannot run
+    // FSR 3's motion vectors for what moved on its own (skinned, or placed elsewhere than the
+    // frame before), over the camera's: the items' previous placements by their index in the
+    // list (forgotten when it changes size) and their previous joints by palette.
+    void encode_motion(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* motion, uint32_t w, uint32_t h,
+                       const std::vector<DrawItem>& items, const FrameParams& frame, const glm::mat4& now,
+                       const glm::mat4& before, bool reset);
+    SDL_GPUShader* vs_motion_ = nullptr;
+    SDL_GPUShader* fs_motion_ = nullptr;
+    SDL_GPUGraphicsPipeline* motion_pipeline_ = nullptr;
+    std::vector<glm::mat4> world_before_;
+    std::vector<const GpuModel*> model_before_;
+    std::unordered_map<const glm::mat4*, std::vector<glm::mat4>> joints_before_;
+    SDL_GPUShader* fs_easu_ = nullptr;
+    SDL_GPUShader* fs_rcas_ = nullptr;
+    SDL_GPUGraphicsPipeline* easu_pipeline_ = nullptr;
+    std::unordered_map<int, SDL_GPUGraphicsPipeline*> rcas_pipelines_;
+    SDL_GPUTexture* post_out_ = nullptr;
+    SDL_GPUTexture* upscaled_ = nullptr;
+    uint32_t post_out_w_ = 0, post_out_h_ = 0, upscaled_w_ = 0, upscaled_h_ = 0;
+    // The HUD scene's depth when it is drawn at the output size and the world smaller (swapped
+    // with depth_ around it, so neither is remade each frame).
+    SDL_GPUTexture* hud_depth_ = nullptr;
+    uint32_t hud_depth_w_ = 0, hud_depth_h_ = 0;
     const Pipelines& pipelines_for(SDL_GPUTextureFormat format);
     SDL_GPUShader* load_shader(const std::string& path, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms);
     void ensure_depth(uint32_t w, uint32_t h);
@@ -297,6 +332,10 @@ private:
     SDL_GPUTransferBuffer* overlay_transfer_ = nullptr;
     uint32_t overlay_capacity_ = 0;                    // vertices
     SDL_GPUSampler* sampler_ = nullptr;
+    // The world's textures upscaled: sharper mips (a negative LOD bias), by the bias in quarters.
+    SDL_GPUSampler* scene_sampler_ = nullptr;   // this frame's: sampler_ or one of these
+    std::unordered_map<int, SDL_GPUSampler*> biased_samplers_;
+    SDL_GPUSampler* biased_sampler(float bias);
     SDL_GPUTexture* depth_ = nullptr;
     uint32_t depth_w_ = 0, depth_h_ = 0;
     std::unordered_map<int, Pipelines> pipelines_;

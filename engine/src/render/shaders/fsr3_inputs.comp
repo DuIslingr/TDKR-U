@@ -1,0 +1,26 @@
+#version 450
+
+// FSR 3's motion vectors and depth (render/fsr3.cpp): the scene's depth reprojected into the
+// previous frame's camera (what moved on its own is drawn over this, render/shaders/motion.*).
+// The motion is in UV units, from this frame's unjittered position back to the previous one.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D depth_tex;
+layout(set = 1, binding = 0, rg16f) uniform writeonly image2D motion;
+layout(set = 1, binding = 1, r32f) uniform writeonly image2D depth_out;
+layout(set = 2, binding = 0) uniform Params {
+    mat4 reproject;   // previous view-projection (unjittered) * inverse(this one, jittered)
+    vec4 size;        // render width, height, 1 / width, 1 / height
+    vec4 jitter;      // this frame's jitter in NDC (xy)
+};
+
+void main() {
+    const ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= int(size.x) || p.y >= int(size.y)) return;
+    const float d = texelFetch(depth_tex, p, 0).r;
+    const vec2 ndc = vec2((float(p.x) + 0.5) * size.z * 2.0 - 1.0, 1.0 - (float(p.y) + 0.5) * size.w * 2.0);
+    const vec4 prev = reproject * vec4(ndc, d, 1.0);
+    const vec2 moved = prev.xy / prev.w - (ndc - jitter.xy);
+    imageStore(motion, p, vec4(moved * vec2(0.5, -0.5), 0.0, 0.0));
+    imageStore(depth_out, p, vec4(d));
+}

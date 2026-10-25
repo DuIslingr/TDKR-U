@@ -17,7 +17,7 @@ FrontEnd::FrontEnd(const Vfs& vfs, Renderer& renderer, const StringTable* string
 FrontEnd::~FrontEnd() = default;
 
 bool FrontEnd::show(Screen screen) {
-    focus_ = nullptr;
+    focus_ = nullptr, display_row_ = -1;
     focus_ref_.reset();
     pending_menu_.clear();
     pending_chapters_.clear();
@@ -43,13 +43,72 @@ void FrontEnd::close() {
     screen_ = Screen::None;
     menu_.reset();
     background_.reset();
-    focus_ = nullptr;
+    focus_ = nullptr, display_row_ = -1;
 }
 
 void FrontEnd::start_screen(const char* type) {
     if (!menu_ || !menu_->player()) return;
     menu_->update(0, width_, height_);
+    install_display_page();
     menu_->player()->invoke("screenManager", "startScreen", {swf::Value(type)});
+}
+
+// MainMenu.swf's Options (scr.screen.options, screenOptions; optionsIGM in the pause menu)
+// builds its list in screenInit: bL.addButton(label, screen, action), then bL.animate(0). The
+// wrapper adds a DISPLAY row before the list animates in (its action reaches the game through
+// registerInGameEvent(action, "RELEASE"), as the original's actions do). The DISPLAY page is
+// the other options screen (screenOptions from the pause menu, screenOptionsIGM from the main
+// menu) built with the display rows instead; its Back returns to Options.
+void FrontEnd::install_display_page() {
+    swf::Player* p = menu_ ? menu_->player() : nullptr;
+    if (!p || !display_rows) return;
+    swf::VM& vm = p->vm;
+    const swf::Value proto = vm.get_member(vm.get_member(vm.get_member(vm.get_member(swf::Value(vm.global), "scr"), "screen"), "options"), "prototype");
+    const swf::Value original = vm.get_member(proto, "screenInit");
+    if (!proto.is_object() || !original.function() || vm.get_member(proto, "tdkrDisplay").type == swf::Value::Boolean) return;
+    vm.set_member(proto, "tdkrDisplay", swf::Value(true));
+    vm.set_member(proto, "screenInit", swf::Value(vm.native([this, original](swf::VM& vm, swf::CallArgs& a) -> swf::Value {
+        const swf::Value self = a.self, list = vm.get_member(self, "bL");
+        display_row_ = -1, focus_ = nullptr;   // (the screen before may still be up, animating out)
+        if (display_next_) {   // the DISPLAY page: its title, a row per setting
+            display_next_ = false;
+            vm.set_member(self, "idx", swf::Value(0));
+            vm.set_member(vm.get_member(vm.get_member(self, "headerText"), "txt"), "text", swf::Value("DISPLAY"));
+            vm.set_member(list, "horizontal", swf::Value(false));
+            const std::vector<std::string> rows = display_rows();
+            vm.set_member(list, "size", swf::Value(rows.size() > 5 ? 110 : 140));   // (Options' rows are at 160)
+            for (size_t i = 0; i < rows.size(); ++i)
+                vm.call_method(list, "addButton", {swf::Value(rows[i]), swf::Value(), swf::Value("TDKR_DISPLAY_" + std::to_string(i))});
+            vm.call_method(list, "animate", {swf::Value(0)});
+            return {};
+        }
+        // Options: the original's rows, then DISPLAY (added as the list starts to animate).
+        const swf::Value animate = vm.get_member(list, "animate");
+        if (list.is_object() && animate.function()) {
+            list.object()->set_own("animate", swf::Value(vm.native([list, animate](swf::VM& vm, swf::CallArgs& b) -> swf::Value {
+                list.object()->remove_own("animate");
+                vm.call_method(list, "addButton", {swf::Value("Display"), swf::Value(), swf::Value("TDKR_DISPLAY")});
+                return vm.call(animate, list, b.args);
+            })));
+        }
+        return vm.call(original, self, a.args);
+    })));
+}
+
+// After a press on the DISPLAY page: every row's text again (listButton.writeText).
+void FrontEnd::relabel_display_page() {
+    swf::Player* p = menu_ ? menu_->player() : nullptr;
+    if (!p || !display_rows) return;
+    swf::VM& vm = p->vm;
+    const swf::Value screen = vm.get_member(vm.get_member(swf::Value(vm.global), "screenManager"), "currentScreen");
+    const swf::Value buttons = vm.get_member(vm.get_member(screen, "bL"), "buttons");
+    swf::ArrayObject* list = buttons.object() ? buttons.object()->as_array() : nullptr;
+    if (!list) return;
+    const std::vector<std::string> rows = display_rows();
+    for (size_t i = 0; i < rows.size() && i < list->items.size(); ++i) {
+        vm.set_member(list->items[i], "t", swf::Value(rows[i]));
+        vm.call_method(list->items[i], "writeText", {swf::Value(rows[i]), swf::Value(1)});
+    }
 }
 
 FrontEnd::Action FrontEnd::take_action() {
@@ -107,6 +166,14 @@ swf::Value FrontEnd::native(const std::string& name, swf::CallArgs& a) {
         if (screen_ == Screen::Pause) action_ = {Action::Resume};
     } else if (event == "BACK_FROM_ROOT" || event == "BUTTON_IGM") {
         if (screen_ == Screen::Pause) action_ = {Action::Resume};
+    } else if (event == "TDKR_DISPLAY") {   // Options' DISPLAY row (the action, then "RELEASE"): the page
+        display_next_ = true;
+        swf::Player* p = menu_ ? menu_->player() : nullptr;
+        if (p) p->invoke("screenManager", "jumpTo", {swf::Value(screen_ == Screen::Pause ? "screenOptions" : "screenOptionsIGM")});
+    } else if (event.rfind("TDKR_DISPLAY_", 0) == 0) {   // a row of the DISPLAY page
+        display_row_ = std::atoi(event.c_str() + 13);
+        if (display_press) display_press(display_row_);
+        relabel_display_page();
     } else {
         std::fprintf(stderr, "menu event %s(%s)\n", event.c_str(), arg.c_str());
     }
@@ -142,6 +209,20 @@ void FrontEnd::fill_chapters(const std::string& path) {
     }
 }
 
+const void* FrontEnd::focus_row(int row) {
+    swf::Player* p = menu_ ? menu_->player() : nullptr;
+    if (!p || row < 0) return nullptr;
+    const std::string name = ".bT_" + std::to_string(row) + ".";
+    for (const auto& b : p->buttons())
+        if (b.clip->target_path().find(name) != std::string::npos) {
+            focus_ = b.clip;
+            focus_ref_ = b.clip->shared_from_this();
+            p->hover(focus_);
+            return focus_;
+        }
+    return nullptr;
+}
+
 void FrontEnd::focus_move(glm::vec2 dir) {
     swf::Player* p = menu_ ? menu_->player() : nullptr;
     if (!p) return;
@@ -149,6 +230,9 @@ void FrontEnd::focus_move(glm::vec2 dir) {
     if (buttons.empty()) return;
     const swf::Player::Button* current = nullptr;
     if (focus_ && !focus_ref_.expired())
+        for (const auto& b : buttons)
+            if (b.clip == focus_) current = &b;
+    if (!current && focus_row(display_row_))
         for (const auto& b : buttons)
             if (b.clip == focus_) current = &b;
     const swf::Player::Button* best = nullptr;
@@ -165,6 +249,19 @@ void FrontEnd::focus_move(glm::vec2 dir) {
                 if (!best || b.center.y + b.center.x * 0.2f < best->center.y + best->center.x * 0.2f) best = &b;
             }
     } else {
+        // Up and down a list (listButtons' bT_N): the next row by its number, wherever its
+        // label has put its hit zone.
+        const std::string path = current->clip->target_path();
+        const size_t at = path.rfind(".bT_");
+        if (dir.x == 0 && at != std::string::npos) {
+            const size_t end = path.find('.', at + 4);
+            const int n = std::atoi(path.c_str() + at + 4) + (dir.y > 0 ? 1 : -1);
+            const std::string next = path.substr(0, at) + ".bT_" + std::to_string(n) + (end == std::string::npos ? "" : path.substr(end));
+            for (const auto& b : buttons)
+                if (n >= 0 && b.clip->target_path() == next && (b.center.y - current->center.y) * dir.y > 4.0f) best = &b;   // (a vertical list)
+        }
+    }
+    if (current && !best) {
         float best_score = 1e30f;
         for (const auto& b : buttons) {
             if (&b == current) continue;
@@ -195,7 +292,7 @@ void FrontEnd::key(Key k) {
         case Key::Left: focus_move({-1, 0}); break;
         case Key::Right: focus_move({1, 0}); break;
         case Key::Activate:
-            if (!focus_ || focus_ref_.expired()) focus_move({0, 1});
+            if ((!focus_ || focus_ref_.expired()) && !focus_row(display_row_)) focus_move({0, 1});
             else p->press(focus_);
             break;
         case Key::Back: {
@@ -203,7 +300,7 @@ void FrontEnd::key(Key k) {
             const swf::Value r = p->get_member("screenManager", "goBack");
             if (r.function()) p->invoke("screenManager", "goBack");
             else if (screen_ == Screen::Pause) action_ = {Action::Resume};
-            focus_ = nullptr;
+            focus_ = nullptr, display_row_ = -1;
             break;
         }
     }

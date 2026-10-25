@@ -29,6 +29,25 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--trace-scripts") o.trace_scripts = true;
         else if (a == "--skip-intro") o.skip_intro = true;
         else if (a == "--run") o.run = std::stof(next());
+        else if (a == "--window-test") o.window_test = std::stof(next());
+        else if (a == "--fps-limit") o.fps_limit = std::stoi(next());
+        else if (a == "--upscaler" || a == "--upscale-mode") {
+            static const char* const kUpscalers[] = {"off", "fsr1", "fsr3", "dlss", "metalfx"};
+            static const char* const kModes[] = {"native", "quality", "balanced", "performance", "ultra"};
+            const bool modes = a == "--upscale-mode";
+            const std::string v = next();
+            int& out = modes ? o.upscale_mode : o.upscaler;
+            for (int i = 0; i < 5; ++i)
+                if (v == (modes ? kModes : kUpscalers)[i]) out = i;
+            if (out < 0) throw std::runtime_error(a + ": unknown " + v);
+        }
+        else if (a == "--sharpness") o.sharpness = std::stof(next());
+        else if (a == "--shot-frames") o.shot_frames = std::stoi(next());
+        else if (a == "--shot-turn") {
+            const std::string v = next();
+            o.shot_turn = std::stof(v);
+            if (const size_t comma = v.find(','); comma != std::string::npos) o.shot_tilt = std::stof(v.substr(comma + 1));
+        }
         else if (a == "--every") o.every = std::stof(next());
         else if (a == "--spawn-at") o.spawn_at = next();
         else if (a == "--exec") o.exec.push_back(next());

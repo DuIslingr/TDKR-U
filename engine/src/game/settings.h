@@ -21,6 +21,12 @@ struct Settings {
     enum class DisplayMode { Windowed, Fullscreen, Borderless } display = DisplayMode::Windowed;
     bool vsync = true;
     int fps_limit = 0;          // frames per second; 0: unlocked
+    // Upscaling: the scene drawn at a lower resolution and upscaled (FSR 1: spatial; FSR 3,
+    // DLSS, MetalFX: temporal), or at full resolution and anti-aliased (Native AA, DLAA). The
+    // HUD is always drawn at full resolution.
+    enum class Upscaler { Off, Fsr1, Fsr3, Dlss, MetalFx } upscaler = Upscaler::Off;
+    enum class UpscaleMode { NativeAa, Quality, Balanced, Performance, UltraPerformance } upscale_mode = UpscaleMode::Quality;
+    float sharpness = 0.5f;     // the upscaler's sharpening (RCAS), 0..1
     // Campaign progress: how many chapters the player has reached (chapter select).
     int chapters = 1;
     // The difficulty (0 Easy, 1 Normal, 2 Hard), and whether Hard is offered (the campaign

@@ -205,6 +205,7 @@ int Game::run_screenshot() {
     glm::vec3 touch_from{0};
     float touch_yaw = 0;
     bool touching = false;
+    int warm_steps = 0;
     for (float t = 0; t < run_time; t += kPhysicsStep) {   // stand still and let the scripts run
         PlayerInput pin;
         if (opt.touch_test > 0 && t >= run_time - opt.touch_test) {
@@ -342,6 +343,12 @@ int Game::run_screenshot() {
             std::printf("t=%.2f %s: eye (%.1f %.1f %.1f) yaw %.0f pitch %.0f\n", t, path.c_str(), sf.camera.x, sf.camera.y,
                         sf.camera.z, player.yaw, player.pitch);
         }
+        // --shot-frames (no --shot-turn): the run's last frames drawn too, at 60 a second, as
+        // a temporal upscaler's history of what moved
+        const int frame_steps = int(std::lround(1.0f / (60.0f * kPhysicsStep)));
+        if (opt.shot_frames > 1 && opt.shot_turn == 0 && opt.shot_tilt == 0 &&
+            t + kPhysicsStep * float(frame_steps * opt.shot_frames) >= run_time && ++warm_steps % frame_steps == 0)
+            renderer.render_to_image(scene.draws(), shot_frame(eye), opt.width, opt.height);
     }
     if (!opt.sound_render.empty() && logic.audio) {
         if (!save_wav(rendered, logic.audio->rate(), opt.sound_render)) throw std::runtime_error("cannot write " + opt.sound_render);
@@ -481,6 +488,15 @@ int Game::run_screenshot() {
         for (int k = 0; k < 10 && loading.loaded; ++k) loading.update(0.1f);
         shot = draw_loading(opt.width, opt.height);
         scene_hidden = true;
+    }
+    if (opt.shot_frames > 1 && (opt.shot_turn != 0 || opt.shot_tilt != 0) && !scene_hidden) {
+        for (int i = opt.shot_frames - 1; i > 0; --i) {
+            Camera turned = cam;
+            turned.yaw += opt.shot_turn * float(i);
+            turned.pitch += opt.shot_tilt * float(i);
+            renderer.render_to_image(scene.draws(), shot_frame(turned), opt.width, opt.height);
+        }
+        shot = shot_frame(cam);
     }
     const Image img = renderer.render_to_image(scene_hidden ? std::vector<DrawItem>{} : scene.draws(), shot, opt.width, opt.height);
     if (!save_bmp(img, opt.screenshot)) throw std::runtime_error("cannot write " + opt.screenshot);

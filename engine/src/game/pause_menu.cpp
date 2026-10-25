@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "game/combat.h"
+#include "game/display_options.h"
 #include "game/shop.h"
 #include "render/text.h"
 
@@ -34,13 +35,6 @@ constexpr int kArrowLeft = 193, kArrowLeftOn = 194, kArrowRight = 195, kArrowRig
 // and the credits bar.
 constexpr int kShopTab = 189, kShopTabOn = 190, kDrum = 191, kCoin = 192, kCreditsBar = 252;
 constexpr int kShopRow = 3;   // Row::slot of the shop's tabs and BUY
-
-// The display choices: 16:9 sizes, modes, frame-rate caps (0: unlocked).
-struct Size {
-    int w, h;
-};
-constexpr Size kResolutions[] = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160}};
-constexpr int kFrameRates[] = {0, 60, 75, 90, 120, 144, 165, 240};
 
 template <typename T, size_t N>
 int step(const T (&)[N], int index, int direction) {
@@ -187,30 +181,14 @@ std::vector<PauseMenu::Row> PauseMenu::rows(const Settings& s) {
                 choice("AIM (RIGHT MOUSE BUTTON)", s.aim_toggle ? "TOGGLE" : "HOLD",
                        [](Settings& st, int) { return st.aim_toggle = !st.aim_toggle, Action::Changed; });
             break;
-        case Page::Display: {
-            int res = 1;
-            for (int i = 0; i < int(std::size(kResolutions)); ++i)
-                if (kResolutions[i].w == s.width && kResolutions[i].h == s.height) res = i;
-            char size[32];
-            std::snprintf(size, sizeof size, "%d x %d", s.width, s.height);
-            choice("RESOLUTION", size, [res](Settings& st, int d) {
-                const int i = step(kResolutions, res, d);
-                st.width = kResolutions[i].w, st.height = kResolutions[i].h;
-                return Action::DisplayChanged;
-            });
-            static const char* const kModes[] = {"WINDOWED", "FULLSCREEN", "BORDERLESS"};
-            choice("DISPLAY MODE", kModes[int(s.display)], [](Settings& st, int d) {
-                st.display = Settings::DisplayMode(step(kModes, int(st.display), d));
-                return Action::DisplayChanged;
-            });
-            toggle("V-SYNC", s.vsync, [](Settings& st) { st.vsync = !st.vsync; }, Action::DisplayChanged);
-            int rate = 0;
-            for (int i = 0; i < int(std::size(kFrameRates)); ++i)
-                if (kFrameRates[i] == s.fps_limit) rate = i;
-            choice("FRAME RATE LIMIT", s.fps_limit == 0 ? "UNLOCKED" : std::to_string(s.fps_limit) + " FPS", [rate](Settings& st, int d) {
-                st.fps_limit = kFrameRates[step(kFrameRates, rate, d)];
-                return Action::DisplayChanged;
-            });
+        case Page::Display: {   // (game/display_options.h: the same rows as the Flash options' DISPLAY page)
+            static const UpscalerSupport kNone;
+            const UpscalerSupport& sup = upscalers ? *upscalers : kNone;
+            const std::vector<DisplayOption> rows_now = display_options(s, sup);
+            for (int i = 0; i < int(rows_now.size()); ++i)
+                choice(rows_now[size_t(i)].name, rows_now[size_t(i)].value, [i, &sup](Settings& st, int d) {
+                    return step_display_option(st, i, d, sup) ? Action::DisplayChanged : Action::Changed;
+                });
             break;
         }
         case Page::Advanced:

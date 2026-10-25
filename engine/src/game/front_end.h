@@ -52,12 +52,25 @@ public:
     void draw(ParticleList& out);
 
     std::function<void(const std::string& sound)> play_sound;
+    // The port's DISPLAY page in the Flash options (game/display_options.h): a DISPLAY row at
+    // the end of Options opens it, a row per setting reading "NAME: VALUE"; a press steps the
+    // setting and the rows are written again. The game supplies the rows and takes the presses.
+    std::function<std::vector<std::string>()> display_rows;
+    std::function<void(int row)> display_press;
     // A native the menus call that the front end does not handle itself (logged otherwise).
     swf::Value native(const std::string& name, swf::CallArgs& args);
     swf::Player* player() { return menu_ ? menu_->player() : nullptr; }
 
 private:
     void start_screen(const char* type);
+    // The options screens' screenInit, wrapped: the DISPLAY row, or the DISPLAY page itself.
+    void install_display_page();
+    void relabel_display_page();
+    bool display_next_ = false;   // the next options screen built is the DISPLAY page
+    // The DISPLAY row last pressed (-1 none): a press replays the row's release animation, which
+    // drops the focus, so the keys pick it up again from there.
+    int display_row_ = -1;
+    const void* focus_row(int row);   // the list's row `row` focused (its button clip), or null
     void fill_chapters(const std::string& path);
     void focus_move(glm::vec2 dir);
 

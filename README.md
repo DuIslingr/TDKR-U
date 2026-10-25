@@ -59,6 +59,35 @@ A held use (the C4 disarms) runs on its own once started, under its progress bar
 not attacked. The hacking game is played with the mouse or a finger. With a pad connected (or `--gamepad`), the
 tutorial prompts name its buttons. `--touch` plays with the original's touch controls instead.
 
+## Display
+
+Options → Display (in the main menu's and the pause menu's Flash options, and the C++ pause menu's Display page) holds
+this port's display settings, saved with the others:
+
+| Setting | Values |
+| --- | --- |
+| Resolution | 16:9, 1280x720 up to 3840x2160 |
+| Display mode | windowed, fullscreen, borderless |
+| V-Sync | on, off |
+| Frame rate limit | 30, 45, 60, 75, 90, 120 fps or unlocked. The game's logic steps at a fixed 120 Hz whatever the frame rate, so it never runs faster or slower |
+| Upscaler | off; AMD FSR 1 (spatial); AMD FSR 3 (temporal, Vulkan); NVIDIA DLSS and Apple MetalFX are listed but not built yet (see below) |
+| Upscaler mode | Native AA (FSR 3's anti-aliasing at full size; FSR 1 only sharpens), Quality (1.5x), Balanced (1.7x), Performance (2x), Ultra Performance (3x) |
+| Sharpness | 0-100% (RCAS) |
+
+With an upscaler, the world and its post effects are drawn at the smaller size and the HUD at full size. FSR 3
+jitters the camera by a sub-pixel each frame and accumulates the frames with the depth and motion vectors: the
+camera's motion everywhere, plus what moved on its own (skinned characters, moving objects). Its passes are AMD's
+FidelityFX SDK shaders as shipped (`engine/third_party/fidelityfx`, MIT; see its `LICENSE.txt`), compiled to SPIR-V
+compute for SDL's GPU API. DLSS and MetalFX need the native Vulkan / Metal objects behind SDL's GPU API, which SDL
+3.4 does not hand out, plus NVIDIA's SDK (DLSS) or a Mac (MetalFX).
+
+For a run without changing the settings: `--fps-limit N` (0 unlocked), `--upscaler off|fsr1|fsr3|dlss|metalfx`,
+`--upscale-mode native|quality|balanced|performance|ultra`, `--sharpness 0..1`. `--window-test SECONDS` plays in a
+window and reports game time against wall time. Headless, `--shot-frames N` draws the run's last N frames (or, with
+`--shot-turn YAW[,PITCH]`, the shot turned that many degrees a frame) so a temporal upscaler's screenshot has its
+history; `TDKR_FSR3_DEBUG=1` shows FSR 3's own debug view (motion, masks, depth). The touch controls' buttons and
+joystick are hidden unless `--touch`.
+
 ## Checking the data
 
 ```bash

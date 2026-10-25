@@ -582,6 +582,7 @@ void Game::run_window() {
     apply_sound();
     if (main_menu.open) SDL_SetWindowRelativeMouseMode(window, false);
     last = std::chrono::steady_clock::now();
+    if (opt.fps_limit >= 0) settings.fps_limit = opt.fps_limit;   // --fps-limit: this run's cap
     while (running) {
         if (touch_mode) {
             int pw = 0, ph = 0;
@@ -596,6 +597,22 @@ void Game::run_window() {
         // motion stays smooth, which keeps the total time the same.
         const float raw_dt = std::min(std::chrono::duration<float>(now - last).count(), 0.1f);
         last = now;
+        // --window-test: the frame rate must not change the game's speed. After the seconds of
+        // play asked for, the game time the logic stepped against the wall time that passed.
+        if (opt.window_test > 0 && !main_menu.open && !loading.active) {
+            static auto test_start = now;
+            static double game_start = logic.play_time;
+            static long frames = 0;
+            ++frames;
+            const double wall = std::chrono::duration<double>(now - test_start).count();
+            if (wall >= opt.window_test) {
+                std::printf("window test: %.2f s wall, %.2f s game time, %ld frames (%.1f fps), cap %s\n", wall,
+                            logic.play_time - game_start, frames, double(frames) / wall,
+                            settings.fps_limit > 0 ? std::to_string(settings.fps_limit).c_str() : "unlocked");
+                std::fflush(stdout);
+                running = false;
+            }
+        }
         static std::array<float, 8> recent{};
         static size_t recent_n = 0;
         recent[recent_n++ % recent.size()] = raw_dt;
@@ -615,6 +632,7 @@ void Game::run_window() {
         }
         if (loading.active) {   // the level waits behind the loading screen
             loading.update(raw_dt);
+            if (opt.window_test > 0) loading.press();   // (the test does not wait for a key)
             title_music("loading");
             int lw = 0, lh = 0;
             SDL_GetWindowSizeInPixels(window, &lw, &lh);

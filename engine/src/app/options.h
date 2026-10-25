@@ -57,6 +57,17 @@ struct Options {
     float grenade_test = -1;    // headless: at this time, throw a grenade at the nearest enemy
     float mine_test = -1;       // headless: at this time, throw a mine at the nearest enemy; detonate 2 s later
     float power_test = -1;      // headless: at this time, use Repel at the nearest enemy
+    float window_test = 0;      // in a window: quit after this many seconds of play, reporting game time against wall time
+    int fps_limit = -1;         // --fps-limit N: this run's frame-rate cap (0 unlocked), not saved
+    // This run's upscaler, not saved (-1: the settings'): --upscaler off|fsr1|fsr3|dlss|metalfx,
+    // --upscale-mode native|quality|balanced|performance|ultra, --sharpness 0..1.
+    int upscaler = -1, upscale_mode = -1;
+    float sharpness = -1;
+    // --shot-frames N: the screenshot is the Nth frame drawn (a temporal upscaler's history):
+    // the run's last frames, or with --shot-turn YAW[,PITCH] the shot's scene with the camera
+    // turned that many degrees a frame before it, towards it.
+    int shot_frames = 1;
+    float shot_turn = 0, shot_tilt = 0;
     float touch_test = 0;       // headless, touch scheme: for the run's last seconds, hold the pad up and swipe to turn
     std::string sprite_sheet;   // debugging: draw frames of this .bsprite (numbered) over the view
     std::string menu_keys;      // headless: open the in-game menu and press these (u d l r e=enter b=back .=none)

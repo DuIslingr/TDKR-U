@@ -1,7 +1,10 @@
 #include "render/renderer.h"
 
+#include "render/fsr3.h"
+
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdio>
 #include <cmath>
 #include <cstring>
@@ -12,6 +15,7 @@
 #include <SDL3_shadercross/SDL_shadercross.h>
 #endif
 #include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 namespace tdkr {
@@ -250,6 +254,12 @@ Renderer::Renderer(SDL_Window* window, const std::string& shader_dir) : window_(
     fs_particle_ = load_shader(shader_dir + "/particle.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
     fs_post_blur_ = load_shader(shader_dir + "/post_blur.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
     fs_post_final_ = load_shader(shader_dir + "/post_final.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 1);
+    fs_easu_ = load_shader(shader_dir + "/fsr1_easu.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    fs_rcas_ = load_shader(shader_dir + "/fsr1_rcas.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    vs_motion_ = load_shader(shader_dir + "/motion.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 3);
+    fs_motion_ = load_shader(shader_dir + "/motion.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
+    fsr3_ = std::make_unique<Fsr3>(device_, shader_dir);
+    if (!fsr3_->ok()) fsr3_.reset();
 
     SDL_GPUSamplerCreateInfo si{};
     si.min_filter = SDL_GPU_FILTER_LINEAR;
@@ -261,6 +271,7 @@ Renderer::Renderer(SDL_Window* window, const std::string& shader_dir) : window_(
     si.enable_anisotropy = true;
     sampler_ = SDL_CreateGPUSampler(device_, &si);
     if (!sampler_) fail("SDL_CreateGPUSampler");
+    scene_sampler_ = sampler_;
     SDL_GPUSamplerCreateInfo csi{};   // post effects: screen images, no wrapping or mips
     csi.min_filter = csi.mag_filter = SDL_GPU_FILTER_LINEAR;
     csi.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
@@ -305,6 +316,7 @@ Renderer::Renderer(SDL_Window* window, const std::string& shader_dir) : window_(
 Renderer::~Renderer() {
     if (!device_) return;
     SDL_WaitForGPUIdle(device_);
+    fsr3_.reset();
     for (auto& m : models_) {
         SDL_ReleaseGPUBuffer(device_, m->vertices);
         if (m->owns_indices) SDL_ReleaseGPUBuffer(device_, m->indices);
@@ -339,8 +351,16 @@ Renderer::~Renderer() {
         SDL_ReleaseGPUGraphicsPipeline(device_, p.blur);
         SDL_ReleaseGPUGraphicsPipeline(device_, p.final);
     }
-    for (SDL_GPUTexture* t : {scene_color_, screen_copy_, blur_a_, blur_b_, grading_})
+    if (easu_pipeline_) SDL_ReleaseGPUGraphicsPipeline(device_, easu_pipeline_);
+    for (auto& [format, p] : rcas_pipelines_) SDL_ReleaseGPUGraphicsPipeline(device_, p);
+    for (auto& [bias, s] : biased_samplers_) SDL_ReleaseGPUSampler(device_, s);
+    for (SDL_GPUTexture* t : {scene_color_, screen_copy_, blur_a_, blur_b_, grading_, post_out_, upscaled_, hud_depth_})
         if (t) SDL_ReleaseGPUTexture(device_, t);
+    if (motion_pipeline_) SDL_ReleaseGPUGraphicsPipeline(device_, motion_pipeline_);
+    SDL_ReleaseGPUShader(device_, vs_motion_);
+    SDL_ReleaseGPUShader(device_, fs_motion_);
+    SDL_ReleaseGPUShader(device_, fs_easu_);
+    SDL_ReleaseGPUShader(device_, fs_rcas_);
     if (grading_transfer_) SDL_ReleaseGPUTransferBuffer(device_, grading_transfer_);
     SDL_ReleaseGPUShader(device_, vs_post_);
     SDL_ReleaseGPUShader(device_, vs_particle_);
@@ -793,7 +813,8 @@ void Renderer::encode_scene(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, S
     // the frame so far: a second pass that keeps the depth.
     if (!hud_pass_) screen_ready_ = false;
     const bool split = target == scene_color_ && !hud_pass_ && reads_screen(items, 0);
-    depth.store_op = split ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
+    // (kept when split, and offscreen: the post effects and FSR 3 read it)
+    depth.store_op = split || target == scene_color_ ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
     depth.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
     depth.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &color, 1, &depth);
@@ -882,14 +903,14 @@ void Renderer::encode_scene(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, S
         auto bind = [&](const std::vector<const GpuTexture*>& textures, bool vertex) {
             if (textures.empty()) return;
             samplers.clear();
-            for (const GpuTexture* t : textures) samplers.push_back({t->texture, sampler_});
+            for (const GpuTexture* t : textures) samplers.push_back({t->texture, scene_sampler_});
             if (vertex) SDL_BindGPUVertexSamplers(pass, 0, samplers.data(), uint32_t(samplers.size()));
             else SDL_BindGPUFragmentSamplers(pass, 0, samplers.data(), uint32_t(samplers.size()));
         };
         bind(m.vertex_textures, true);
         bind(m.fragment_textures, false);
         if (m.lightmap_slot >= 0 && it.beast_lightmap) {
-            const SDL_GPUTextureSamplerBinding lm{it.beast_lightmap->texture, sampler_};
+            const SDL_GPUTextureSamplerBinding lm{it.beast_lightmap->texture, scene_sampler_};
             SDL_BindGPUFragmentSamplers(pass, uint32_t(m.lightmap_slot), &lm, 1);
         }
         if (m.screen_slot >= 0 && screen_copy_) {   // the frame behind (see the split before the view model)
@@ -918,8 +939,8 @@ void Renderer::encode_scene(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, S
         mu.flags = glm::vec4(it.lightmap ? 1.0f : 0.0f, it.alpha_test ? 0.5f : 0.0f, 0, 0);
         SDL_PushGPUFragmentUniformData(cmd, 0, &mu, sizeof mu);
         SDL_GPUTextureSamplerBinding tex[2] = {
-            {(it.diffuse ? it.diffuse : &white_)->texture, sampler_},
-            {(it.lightmap ? it.lightmap : &white_)->texture, sampler_},
+            {(it.diffuse ? it.diffuse : &white_)->texture, scene_sampler_},
+            {(it.lightmap ? it.lightmap : &white_)->texture, scene_sampler_},
         };
         SDL_BindGPUFragmentSamplers(pass, 0, tex, 2);
         SDL_DrawGPUIndexedPrimitives(pass, it.range.index_count, 1, it.range.first_index, it.range.vertex_offset, 0);
@@ -948,7 +969,7 @@ void Renderer::encode_scene(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, S
         for (const ParticleBatch& b : particles->batches) {
             SDL_BindGPUGraphicsPipeline(pass, b.additive ? pipes.particles_additive : pipes.particles_alpha);
             SDL_PushGPUVertexUniformData(cmd, 0, &view_proj, sizeof view_proj);
-            SDL_GPUTextureSamplerBinding tex{b.texture->texture, sampler_};
+            SDL_GPUTextureSamplerBinding tex{b.texture->texture, scene_sampler_};
             SDL_BindGPUFragmentSamplers(pass, 0, &tex, 1);
             SDL_DrawGPUPrimitives(pass, b.count, 1, b.first, 0);
         }
@@ -1042,45 +1063,188 @@ void Renderer::ensure_post_targets(uint32_t w, uint32_t h) {
     if (scene_color_ && post_w_ == w && post_h_ == h) return;
     for (SDL_GPUTexture** t : {&scene_color_, &screen_copy_, &blur_a_, &blur_b_})
         if (*t) SDL_ReleaseGPUTexture(device_, *t), *t = nullptr;
-    auto make = [&](uint32_t tw, uint32_t th) {
-        SDL_GPUTextureCreateInfo ti{};
-        ti.type = SDL_GPU_TEXTURETYPE_2D;
-        ti.format = kOffscreenFormat;
-        ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        ti.width = std::max(tw, 1u);
-        ti.height = std::max(th, 1u);
-        ti.layer_count_or_depth = 1;
-        ti.num_levels = 1;
-        SDL_GPUTexture* t = SDL_CreateGPUTexture(device_, &ti);
-        if (!t) fail("post-effect target");
-        return t;
-    };
-    scene_color_ = make(w, h);
-    screen_copy_ = make(w, h);
-    blur_a_ = make(w / 4, h / 4);   // the blur works at a quarter of the screen size
-    blur_b_ = make(w / 4, h / 4);
+    scene_color_ = make_offscreen(w, h);
+    screen_copy_ = make_offscreen(w, h);
+    blur_a_ = make_offscreen(w / 4, h / 4);   // the blur works at a quarter of the screen size
+    blur_b_ = make_offscreen(w / 4, h / 4);
     post_w_ = w, post_h_ = h;
 }
 
-const Renderer::PostPipelines& Renderer::post_pipelines_for(SDL_GPUTextureFormat format) {
-    auto it = post_pipelines_.find(int(format));
-    if (it != post_pipelines_.end()) return it->second;
-    auto make = [&](SDL_GPUShader* fs, SDL_GPUTextureFormat target) {
+SDL_GPUTexture* Renderer::make_offscreen(uint32_t w, uint32_t h) {
+    SDL_GPUTextureCreateInfo ti{};
+    ti.type = SDL_GPU_TEXTURETYPE_2D;
+    ti.format = kOffscreenFormat;
+    ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    ti.width = std::max(w, 1u);
+    ti.height = std::max(h, 1u);
+    ti.layer_count_or_depth = 1;
+    ti.num_levels = 1;
+    SDL_GPUTexture* t = SDL_CreateGPUTexture(device_, &ti);
+    if (!t) fail("post-effect target");
+    return t;
+}
+
+void Renderer::ensure_upscale_targets(uint32_t rw, uint32_t rh, uint32_t w, uint32_t h) {
+    if (!post_out_ || post_out_w_ != rw || post_out_h_ != rh) {
+        if (post_out_) SDL_ReleaseGPUTexture(device_, post_out_);
+        post_out_ = make_offscreen(rw, rh);
+        post_out_w_ = rw, post_out_h_ = rh;
+    }
+    if ((rw != w || rh != h) && (!upscaled_ || upscaled_w_ != w || upscaled_h_ != h)) {
+        if (upscaled_) SDL_ReleaseGPUTexture(device_, upscaled_);
+        upscaled_ = make_offscreen(w, h);
+        upscaled_w_ = w, upscaled_h_ = h;
+    }
+}
+
+void Renderer::encode_motion(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* motion, uint32_t w, uint32_t h,
+                             const std::vector<DrawItem>& items, const FrameParams& frame, const glm::mat4& now,
+                             const glm::mat4& before, bool reset) {
+    if (reset || world_before_.size() != items.size()) {
+        world_before_.assign(items.size(), glm::mat4(1));
+        model_before_.assign(items.size(), nullptr);
+        joints_before_.clear();
+    }
+    if (!motion_pipeline_) {
+        SDL_GPUVertexBufferDescription vb{};
+        vb.pitch = sizeof(Vertex);
+        vb.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+        const SDL_GPUVertexAttribute attrs[3] = {
+            {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, uint32_t(offsetof(Vertex, position))},
+            {5, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4, uint32_t(offsetof(Vertex, joints))},
+            {6, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, uint32_t(offsetof(Vertex, weights))},
+        };
         SDL_GPUColorTargetDescription ct{};
-        ct.format = target;
+        ct.format = SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT;
         SDL_GPUGraphicsPipelineCreateInfo pi{};
-        pi.vertex_shader = vs_post_;
-        pi.fragment_shader = fs;
+        pi.vertex_shader = vs_motion_;
+        pi.fragment_shader = fs_motion_;
+        pi.vertex_input_state.vertex_buffer_descriptions = &vb;
+        pi.vertex_input_state.num_vertex_buffers = 1;
+        pi.vertex_input_state.vertex_attributes = attrs;
+        pi.vertex_input_state.num_vertex_attributes = 3;
         pi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         pi.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
         pi.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
         pi.target_info.color_target_descriptions = &ct;
         pi.target_info.num_color_targets = 1;
-        SDL_GPUGraphicsPipeline* p = SDL_CreateGPUGraphicsPipeline(device_, &pi);
-        if (!p) fail("SDL_CreateGPUGraphicsPipeline (post)");
-        return p;
-    };
-    return post_pipelines_[int(format)] = PostPipelines{make(fs_post_blur_, kOffscreenFormat), make(fs_post_final_, format)};
+        motion_pipeline_ = SDL_CreateGPUGraphicsPipeline(device_, &pi);
+        if (!motion_pipeline_) fail("SDL_CreateGPUGraphicsPipeline (motion)");
+    }
+    struct {
+        glm::mat4 view_proj, now, before, model, model_before;
+        glm::vec4 flags;
+    } u;
+    u.view_proj = frame.proj * frame.view, u.now = now, u.before = before;
+    SDL_GPURenderPass* pass = nullptr;
+    const GpuModel* bound = nullptr;
+    std::unordered_map<const glm::mat4*, std::vector<glm::mat4>> joints_now;
+    for (size_t i = 0; i < items.size(); ++i) {
+        const DrawItem& it = items[i];
+        const glm::mat4 was = model_before_[i] == it.model ? world_before_[i] : it.world;
+        world_before_[i] = it.world, model_before_[i] = it.model;
+        const glm::mat4* joints_was = it.joints;
+        if (it.joints) {
+            std::vector<glm::mat4>& copy = joints_now[it.joints];
+            if (copy.empty()) copy.assign(it.joints, it.joints + kMaxJoints);
+            if (const auto b = joints_before_.find(it.joints); b != joints_before_.end()) joints_was = b->second.data();
+        }
+        if (!it.visible || it.hidden || it.anim_hidden || it.zone_hidden || it.occluded || !it.model->vertices || it.sky ||
+            it.hud || it.viewmodel || (it.material ? it.material->state.blend : it.blend))
+            continue;
+        if (!it.joints && was == it.world) continue;   // (the camera's motion holds)
+        if (!pass) {
+            SDL_GPUColorTargetInfo ct{};
+            ct.texture = motion;
+            ct.load_op = SDL_GPU_LOADOP_LOAD;
+            ct.store_op = SDL_GPU_STOREOP_STORE;
+            pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+            const SDL_GPUViewport vp{0, 0, float(w), float(h), 0, 1};
+            SDL_SetGPUViewport(pass, &vp);
+            SDL_BindGPUGraphicsPipeline(pass, motion_pipeline_);
+            const SDL_GPUTextureSamplerBinding depth{depth_, clamp_sampler_};
+            SDL_BindGPUFragmentSamplers(pass, 0, &depth, 1);
+        }
+        if (it.model != bound) {
+            SDL_GPUBufferBinding vb{it.model->vertices, 0};
+            SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+            SDL_GPUBufferBinding ib{it.model->indices, 0};
+            SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            bound = it.model;
+        }
+        u.model = it.world, u.model_before = was;
+        u.flags = glm::vec4(it.joints ? 1.0f : 0.0f, 0, 0, 0);
+        SDL_PushGPUVertexUniformData(cmd, 0, &u, sizeof u);
+        if (it.joints) {
+            SDL_PushGPUVertexUniformData(cmd, 1, it.joints, sizeof(glm::mat4) * kMaxJoints);
+            SDL_PushGPUVertexUniformData(cmd, 2, joints_was, sizeof(glm::mat4) * kMaxJoints);
+        }
+        SDL_DrawGPUIndexedPrimitives(pass, it.range.index_count, 1, it.range.first_index, it.range.vertex_offset, 0);
+    }
+    if (pass) SDL_EndGPURenderPass(pass);
+    joints_before_ = std::move(joints_now);
+}
+
+SDL_GPUSampler* Renderer::biased_sampler(float bias) {
+    const int quarters = int(std::lround(bias * 4));
+    if (quarters == 0) return sampler_;
+    SDL_GPUSampler*& s = biased_samplers_[quarters];
+    if (!s) {
+        SDL_GPUSamplerCreateInfo si{};   // (as sampler_)
+        si.min_filter = si.mag_filter = SDL_GPU_FILTER_LINEAR;
+        si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+        si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        si.max_lod = 1000.0f;
+        si.max_anisotropy = 8.0f;
+        si.enable_anisotropy = true;
+        si.mip_lod_bias = float(quarters) / 4.0f;
+        s = SDL_CreateGPUSampler(device_, &si);
+        if (!s) fail("SDL_CreateGPUSampler (LOD bias)");
+    }
+    return s;
+}
+
+UpscalerSupport Renderer::upscaler_support() const {
+    UpscalerSupport s;
+    s.fsr1 = fs_easu_ && fs_rcas_;
+    s.fsr3 = fsr3_ != nullptr;
+    s.fsr3_why = "VULKAN ONLY";   // (its passes are SPIR-V compute)
+    // DLSS needs an NVIDIA RTX card and NVIDIA's runtime, MetalFX Apple's Metal; neither runs
+    // through SDL's GPU API here.
+    const char* name = nullptr;
+    const SDL_PropertiesID props = SDL_GetGPUDeviceProperties(device_);
+    if (props) name = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_NAME_STRING, nullptr);
+    const bool nvidia = name && (SDL_strcasestr(name, "nvidia") || SDL_strcasestr(name, "geforce") || SDL_strcasestr(name, "rtx"));
+    s.dlss_why = nvidia ? "NOT IN THIS BUILD" : "NVIDIA RTX ONLY";
+#ifdef __APPLE__
+    s.metalfx_why = "NOT IN THIS BUILD";
+#else
+    s.metalfx_why = "MACOS ONLY";
+#endif
+    return s;
+}
+
+const Renderer::PostPipelines& Renderer::post_pipelines_for(SDL_GPUTextureFormat format) {
+    auto it = post_pipelines_.find(int(format));
+    if (it != post_pipelines_.end()) return it->second;
+    return post_pipelines_[int(format)] =
+               PostPipelines{fullscreen_pipeline(fs_post_blur_, kOffscreenFormat), fullscreen_pipeline(fs_post_final_, format)};
+}
+
+SDL_GPUGraphicsPipeline* Renderer::fullscreen_pipeline(SDL_GPUShader* fs, SDL_GPUTextureFormat format) {
+    SDL_GPUColorTargetDescription ct{};
+    ct.format = format;
+    SDL_GPUGraphicsPipelineCreateInfo pi{};
+    pi.vertex_shader = vs_post_;
+    pi.fragment_shader = fs;
+    pi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    pi.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    pi.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    pi.target_info.color_target_descriptions = &ct;
+    pi.target_info.num_color_targets = 1;
+    SDL_GPUGraphicsPipeline* p = SDL_CreateGPUGraphicsPipeline(device_, &pi);
+    if (!p) fail("SDL_CreateGPUGraphicsPipeline (post)");
+    return p;
 }
 
 void Renderer::encode_hud(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format, uint32_t w,
@@ -1091,18 +1255,45 @@ void Renderer::encode_hud(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL
     hf.camera = glm::vec3(glm::inverse(frame.hud_view)[3]);
     hf.post = nullptr, hf.particles = nullptr;
     hf.fog_density = 0, hf.fog_start = 1e9f, hf.fog_end = 2e9f;
+    const bool own_depth = depth_w_ != w || depth_h_ != h;   // the world drawn smaller (upscaled)
+    if (own_depth) std::swap(depth_, hud_depth_), std::swap(depth_w_, hud_depth_w_), std::swap(depth_h_, hud_depth_h_);
     hud_pass_ = true;
     encode_scene(cmd, target, format, w, h, items, hf, true);
     hud_pass_ = false;
+    if (own_depth) std::swap(depth_, hud_depth_), std::swap(depth_w_, hud_depth_w_), std::swap(depth_h_, hud_depth_h_);
 }
 
 void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format, uint32_t w,
-                      uint32_t h, const std::vector<DrawItem>& items, const FrameParams& frame) {
+                      uint32_t h, const std::vector<DrawItem>& items, const FrameParams& unjittered) {
+    // FSR 1 upscales (or at the full size only sharpens) the finished frame; FSR 3 accumulates
+    // it over frames, each drawn with the camera a sub-pixel off (jittered). Both work on the
+    // offscreen path, at the render size up to the combined frame.
+    const bool fsr1 = unjittered.upscale.kind == UpscalerKind::Fsr1 && fs_easu_ && fs_rcas_;
+    const bool fsr3 = unjittered.upscale.kind == UpscalerKind::Fsr3 && fsr3_ && fs_rcas_;
+    const uint32_t ow = w, oh = h;
+    if (fsr1 || fsr3) {
+        const float ratio = std::max(unjittered.upscale.ratio, 1.0f);
+        w = std::max(uint32_t(std::lround(float(ow) / ratio)), 1u);
+        h = std::max(uint32_t(std::lround(float(oh) / ratio)), 1u);
+        ensure_upscale_targets(w, h, fsr1 ? ow : w, fsr1 ? oh : h);
+    }
+    FrameParams jittered;
+    glm::vec2 jitter(0);
+    if (fsr3) {
+        jitter = fsr3_->next_jitter(w, ow);
+        jittered = unjittered;
+        jittered.proj = glm::translate(glm::mat4(1), glm::vec3(2.0f * jitter.x / float(w), -2.0f * jitter.y / float(h), 0)) *
+                        unjittered.proj;
+    }
+    const FrameParams& frame = fsr3 ? jittered : unjittered;
+    // Textures as sharp as the output size wants (AMD's advice: FSR 1 log2(render / output),
+    // FSR 3 one level more, as its frames add up the detail).
+    scene_sampler_ = fsr1 || fsr3 ? biased_sampler(std::log2(float(w) / float(ow)) - (fsr3 ? 1.0f : 0.0f)) : sampler_;
     const PostParams* post = frame.post && frame.post->active() ? frame.post : nullptr;
     // A view model reading the screen behind it needs the scene in a texture it can copy:
     // the offscreen path, with no effect (its final pass is then a plain copy).
     static const PostParams kNoEffects;
-    if (!post && reads_screen(items)) post = &kNoEffects;
+    if (!post && (fsr1 || fsr3 || reads_screen(items))) post = &kNoEffects;
     if (!post) {
         encode_scene(cmd, target, format, w, h, items, frame, !frame.hud3d);
         if (frame.hud3d) encode_hud(cmd, target, format, w, h, items, frame);
@@ -1110,7 +1301,8 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
     }
 
     // Scene to a texture, then the blur (quarter size, horizontal then vertical, as the
-    // game's RenderBlur), then everything combined into the target, then the HUD.
+    // game's RenderBlur), then everything combined into the target, then the HUD. Upscaled,
+    // the combined frame goes to post_out_ and FSR brings it to the target.
     ensure_post_targets(w, h);
     if (!grading_) {
         SDL_GPUTextureCreateInfo ti{};
@@ -1137,15 +1329,15 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
         SDL_EndGPUCopyPass(copy);
     }
     encode_scene(cmd, scene_color_, kOffscreenFormat, w, h, items, frame, false);
-    const PostPipelines& pp = post_pipelines_for(format);
-    auto run = [&](SDL_GPUTexture* out, uint32_t ow, uint32_t oh, SDL_GPUGraphicsPipeline* pipe,
+    const PostPipelines& pp = post_pipelines_for(fsr1 || fsr3 ? kOffscreenFormat : format);
+    auto run = [&](SDL_GPUTexture* out, uint32_t pw, uint32_t ph, SDL_GPUGraphicsPipeline* pipe,
                    std::initializer_list<SDL_GPUTexture*> inputs, const void* uniforms, uint32_t size, bool hud) {
         SDL_GPUColorTargetInfo ct{};
         ct.texture = out;
         ct.load_op = SDL_GPU_LOADOP_DONT_CARE;
         ct.store_op = SDL_GPU_STOREOP_STORE;
         SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-        SDL_GPUViewport vp{0, 0, float(ow), float(oh), 0, 1};
+        SDL_GPUViewport vp{0, 0, float(pw), float(ph), 0, 1};
         SDL_SetGPUViewport(pass, &vp);
         SDL_BindGPUGraphicsPipeline(pass, pipe);
         std::vector<SDL_GPUTextureSamplerBinding> tex;
@@ -1153,7 +1345,7 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
         SDL_BindGPUFragmentSamplers(pass, 0, tex.data(), uint32_t(tex.size()));
         SDL_PushGPUFragmentUniformData(cmd, 0, uniforms, size);
         SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
-        if (hud) draw_screen_overlay(pass, cmd, pipelines_for(format), w, h, frame.overlay, frame.sprites);
+        if (hud) draw_screen_overlay(pass, cmd, pipelines_for(format), ow, oh, frame.overlay, frame.sprites);
         SDL_EndGPURenderPass(pass);
     };
     const bool blur = post->dof && post->blur_step > 0;
@@ -1179,9 +1371,49 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
     u.grading = glm::vec4(post->grading ? 1.0f : 0.0f, 0, 0, 0);
     const bool heat = post->heat_haze && post->heat_texture;
     u.heat = heat ? glm::vec4(post->heat_strength, post->heat_overbright, post->heat_blend, post->heat_time) : glm::vec4(0, 1, 1, -1);
-    run(target, w, h, pp.final, {scene_color_, blur ? blur_b_ : scene_color_, depth_, grading_, heat ? post->heat_texture->texture : grading_}, &u,
-        sizeof u, !frame.hud3d);
-    if (frame.hud3d) encode_hud(cmd, target, format, w, h, items, frame);
+    run(fsr1 || fsr3 ? post_out_ : target, w, h, pp.final,
+        {scene_color_, blur ? blur_b_ : scene_color_, depth_, grading_, heat ? post->heat_texture->texture : grading_}, &u, sizeof u,
+        !frame.hud3d && !fsr1 && !fsr3);
+    if (fsr1) {
+        // EASU (when smaller), then RCAS with the HUD over it, at the output size. Both work in
+        // pixels of the frame the final pass wrote.
+        SDL_GPUTexture* sharpen = post_out_;
+        if (w != ow || h != oh) {
+            if (!easu_pipeline_) easu_pipeline_ = fullscreen_pipeline(fs_easu_, kOffscreenFormat);
+            const auto bits = [](float f) { return std::bit_cast<uint32_t>(f); };
+            const float sx = float(w) / float(ow), sy = float(h) / float(oh), ix = 1.0f / float(w), iy = 1.0f / float(h);
+            const uint32_t easu[16] = {   // ffxFsrPopulateEasuConstants (fsr1/ffx_fsr1.h)
+                bits(sx), bits(sy), bits(0.5f * sx - 0.5f), bits(0.5f * sy - 0.5f),
+                bits(ix), bits(iy), bits(ix), bits(-iy),
+                bits(-ix), bits(2 * iy), bits(ix), bits(2 * iy),
+                bits(0), bits(4 * iy), 0, 0};
+            run(upscaled_, ow, oh, easu_pipeline_, {post_out_}, easu, sizeof easu, false);
+            sharpen = upscaled_;
+        }
+        auto& rcas = rcas_pipelines_[int(format)];
+        if (!rcas) rcas = fullscreen_pipeline(fs_rcas_, format);
+        // Sharpness 1 is RCAS's strongest (0 stops), down to 2 stops less; 0 none.
+        const float s = std::clamp(frame.upscale.sharpness, 0.0f, 1.0f);
+        const uint32_t con[4] = {s > 0 ? std::bit_cast<uint32_t>(std::exp2(-(1.0f - s) * 2.0f)) : 0u, 0, 0, 0};
+        run(target, ow, oh, rcas, {sharpen}, con, sizeof con, !frame.hud3d);
+    }
+    if (fsr3) {
+        Fsr3::Frame f;
+        f.color = post_out_, f.depth = depth_;
+        f.render_w = w, f.render_h = h, f.output_w = ow, f.output_h = oh;
+        f.view = unjittered.view, f.proj = unjittered.proj, f.jitter = jitter;
+        f.sharpness = frame.upscale.sharpness, f.reset = frame.upscale.reset;
+        SDL_GPUTexture* motion = fsr3_->prepare(cmd, f);
+        encode_motion(cmd, motion, w, h, items, frame, unjittered.proj * unjittered.view, fsr3_->reprojected_from(), fsr3_->reset());
+        SDL_GPUTexture* upscaled = fsr3_->upscale(cmd, f);
+        // to the target with the HUD over it (RCAS with no sharpening: a copy; FSR 3 sharpened)
+        auto& copy = rcas_pipelines_[int(format)];
+        if (!copy) copy = fullscreen_pipeline(fs_rcas_, format);
+        const uint32_t none[4] = {0, 0, 0, 0};
+        run(target, ow, oh, copy, {upscaled}, none, sizeof none, !frame.hud3d);
+    }
+    scene_sampler_ = sampler_;   // (the HUD's own)
+    if (frame.hud3d) encode_hud(cmd, target, format, ow, oh, items, frame);
 }
 
 void Renderer::upload_vertices(SDL_GPUCommandBuffer* cmd, const ParticleList& p, DynamicBuffer& b) {

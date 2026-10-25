@@ -227,6 +227,15 @@ The UI is 51 distinct movies, in three resolution archives (`gameswf_hires`, `_n
 - **HUD buttons** restyle through the slot's `button`: `switchStyle(STYLE)` (`hudAS.hudID` maps a style to its
   icon and action: STRIKE, TAKEDOWN, COUNTERATTACK, GRAPNEL, JUMP/GLIDE/PLUNGE, gadgets…),
   `setNumber(n)`, `enableButton()` / `disableButton()` (60% alpha).
+- **Options** (`scr.screen.options`; the pause menu's `optionsIGM` inherits it, both exported as `screenOptions` /
+  `screenOptionsIGM`): `screenInit` builds its list with `bL.addButton(label, screen, action)` then `bL.animate(0)`;
+  a pressed row's `onEndAnim` reports `registerInGameEvent(action, "RELEASE")` when it has an action, else jumps
+  to `screen`. `listButton.writeText` relabels a row. The port wraps `screenInit` to add a Display row and builds its
+  page on the other options screen (`game/front_end.cpp`).
+- **Touch HUD**: `bJump`, `bAttack`, `bGrapnel`, `bCounterAttack`, `bUtility`, `bSonar`, `bInteract`,
+  `mPauseButtonInstance`, `gadgetWheel`, the joystick (`bJoystickBase`, `bJoystickStick`), the slider
+  (`bSliderBack`, `bSliderButton`), `bSkipCutscene`, `mTapAnimationInstance` and the vehicle interfaces are the touch
+  controls; the port hides them unless it plays with touch.
 - The footage's Android `MainMenu.swf` puts Tech Shop on a white banner; iOS's (1.0.4 and 1.0.5) makes it
   yellow text.
 

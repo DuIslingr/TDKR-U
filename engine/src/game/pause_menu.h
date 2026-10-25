@@ -25,6 +25,8 @@
 
 namespace tdkr {
 
+struct UpscalerSupport;
+
 class Combat;
 class Shop;
 class TextRenderer;
@@ -40,6 +42,7 @@ public:
     // The Military Shop on the pause page (without them, the objectives there instead).
     const Shop* shop = nullptr;
     Combat* combat = nullptr;
+    const UpscalerSupport* upscalers = nullptr;   // what the Display page's upscaler rows can offer
     void update(float dt);   // the shop's drum turning
 
     enum class Action { None, Resume, Changed, DisplayChanged, RestartCheckpoint, RestartLevel, Exit };

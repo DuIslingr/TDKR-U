@@ -64,6 +64,7 @@ public:
         glm::vec2 qte_at{0};
         float enemy_health = -1;         // AddHealthBar (baneHealthBar): 0..1, -1 none
         float progress = -1;             // a held use (disarmInstance's bar): 0..1, -1 none
+        bool touch = false;              // played by touch: the on-screen buttons show
     };
     void update(float dt, const State& state, int width, int height);
     // The objective popup (objectiveMessage_popin): show with text, or hide.
@@ -106,6 +107,7 @@ private:
     std::map<int, std::string> marker_frames_;   // marker id -> the frame its icon shows
     std::string dialog_;
     // CHUDDisplay::SetButtonStyle: the slot's button switches style and (dis)ables, once per change.
+    void hide_touch(const State& state);
     void button(const std::string& slot, const std::string& style, bool enabled);
     std::map<std::string, std::pair<std::string, int>> buttons_;   // slot -> (style, enabled)
     FlashScreen screen_;

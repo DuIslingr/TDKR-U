@@ -138,6 +138,7 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         start_hack(state.hack);
     }
     if (win_open_) {   // the win screen alone
+        hide_touch(state);
         screen_.update(dt, width, height);
         return;
     }
@@ -154,6 +155,7 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         }
         if (state.cinematic != cinematic_) cinematic(state.cinematic);
         if (state.dialog != dialog_) dialog(state.dialog);
+        hide_touch(state);
         screen_.update(dt, width, height);
         return;
     }
@@ -205,6 +207,7 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     };
     bar("baneHealthBar", "indicator", state.enemy_health);
     bar("disarmInstance", "fill.fill", state.progress);
+    hide_touch(state);
     screen_.update(dt, width, height);
 }
 
@@ -380,6 +383,18 @@ void FlashHud::objective(bool shown, const std::string& text) {
     } else {
         p->goto_and_play("objectiveMessage_popin", "hide");
     }
+}
+
+// Played with a keyboard, mouse or pad: the touch screen's buttons, stick and sliders are not
+// there (the QTE prompt and the grapnel target stay: they show where to press and aim).
+void FlashHud::hide_touch(const State& state) {
+    if (state.touch) return;
+    swf::Player& p = *screen_.player();
+    for (const char* name : {"bJump", "bAttack", "bGrapnel", "bCounterAttack", "bUtility", "bSonar", "bInteract",
+                             "mPauseButtonInstance", "gadgetWheel", "bJoystickBase", "bJoystickStick", "bSliderBack",
+                             "bSliderButton", "bSkipCutscene", "mTapAnimationInstance", "mCarInterfaceInstance",
+                             "mVehicleInterface"})
+        p.set_visible(name, false);
 }
 
 void FlashHud::button(const std::string& slot, const std::string& style, bool enabled) {

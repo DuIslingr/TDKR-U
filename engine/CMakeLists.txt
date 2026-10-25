@@ -41,7 +41,8 @@ if(NOT GLSLC)
         message(FATAL_ERROR "glslc not found: install shaderc (or the Vulkan SDK) on the build machine")
     endif()
 endif()
-file(GLOB SHADER_SOURCES RELATIVE ${CMAKE_SOURCE_DIR} CONFIGURE_DEPENDS src/render/shaders/*.vert src/render/shaders/*.frag)
+file(GLOB SHADER_SOURCES RELATIVE ${CMAKE_SOURCE_DIR} CONFIGURE_DEPENDS src/render/shaders/*.vert src/render/shaders/*.frag
+     src/render/shaders/*.comp)
 set(SHADER_OUTPUTS)
 foreach(src ${SHADER_SOURCES})
     get_filename_component(name ${src} NAME)
@@ -50,6 +51,54 @@ foreach(src ${SHADER_SOURCES})
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/shaders
         COMMAND ${GLSLC} -O ${CMAKE_SOURCE_DIR}/${src} -o ${out}
         DEPENDS ${src} VERBATIM)
+    list(APPEND SHADER_OUTPUTS ${out})
+endforeach()
+# HLSL ones (the FidelityFX passes, around third_party/fidelityfx's MIT sources): NAME.STAGE.hlsl
+# -> NAME.STAGE.spv, separate textures and samplers folded into combined ones as SDL's GPU API
+# binds them.
+file(GLOB HLSL_SOURCES RELATIVE ${CMAKE_SOURCE_DIR} CONFIGURE_DEPENDS src/render/shaders/*.hlsl)
+file(GLOB_RECURSE FFX_HEADERS CONFIGURE_DEPENDS third_party/fidelityfx/*.h)
+foreach(src ${HLSL_SOURCES})
+    get_filename_component(name ${src} NAME)
+    string(REGEX REPLACE "\\.hlsl$" "" base ${name})
+    string(REGEX MATCH "[a-z]+$" stage ${base})
+    set(out ${CMAKE_BINARY_DIR}/shaders/${base}.spv)
+    add_custom_command(OUTPUT ${out}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/shaders
+        COMMAND ${GLSLC} -x hlsl -fshader-stage=${stage} -fentry-point=main -fauto-combined-image-sampler -O
+                -I${CMAKE_SOURCE_DIR}/third_party/fidelityfx/gpu ${CMAKE_SOURCE_DIR}/${src} -o ${out}
+        DEPENDS ${src} ${FFX_HEADERS} VERBATIM)
+    list(APPEND SHADER_OUTPUTS ${out})
+endforeach()
+# FSR 3's upscaler passes as they ship (third_party/fidelityfx/shaders), as compute shaders in
+# SDL's layout: its textures (t) in set 0, storage images (u) in set 1, constants (b) in set 2.
+# Render-size motion vectors, reversed depth; accumulate also with sharpening (then RCAS); the
+# pyramids' downsampling (SPD) through group memory, not subgroup operations (Vulkan 1.1).
+set(FFX_REGISTERS)
+foreach(i RANGE 15)
+    list(APPEND FFX_REGISTERS t${i} 0 ${i} u${i} 1 ${i})
+endforeach()
+foreach(i RANGE 3)
+    list(APPEND FFX_REGISTERS b${i} 2 ${i})
+endforeach()
+foreach(pass prepare_inputs luma_pyramid shading_change_pyramid shading_change prepare_reactivity luma_instability
+             accumulate accumulate_sharpen rcas debug_view)
+    string(REGEX REPLACE "_sharpen$" "" source ${pass})
+    set(sharpen 0)
+    if(pass STREQUAL "accumulate_sharpen")
+        set(sharpen 1)
+    endif()
+    set(src third_party/fidelityfx/shaders/ffx_fsr3upscaler_${source}_pass.hlsl)
+    set(out ${CMAKE_BINARY_DIR}/shaders/fsr3_${pass}.comp.spv)
+    add_custom_command(OUTPUT ${out}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/shaders
+        COMMAND ${GLSLC} -x hlsl -fshader-stage=comp -fentry-point=CS -fauto-combined-image-sampler -fhlsl-offsets -O
+                -I${CMAKE_SOURCE_DIR}/third_party/fidelityfx/gpu -DFFX_GPU=1 -DFFX_HLSL=1 -DFFX_HALF=0
+                -DFFX_SPD_NO_WAVE_OPERATIONS=1
+                -DFFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS=1 -DFFX_FSR3UPSCALER_OPTION_INVERTED_DEPTH=1
+                -DFFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING=${sharpen} -fresource-set-binding ${FFX_REGISTERS}
+                ${CMAKE_SOURCE_DIR}/${src} -o ${out}
+        DEPENDS ${src} ${FFX_HEADERS} VERBATIM)
     list(APPEND SHADER_OUTPUTS ${out})
 endforeach()
 add_custom_target(shaders DEPENDS ${SHADER_OUTPUTS})

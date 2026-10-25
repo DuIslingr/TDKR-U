@@ -744,6 +744,45 @@ glm::vec3 Game::on_floor(const glm::vec3& p) const {
 // it), or else to the nearest usable thing.
 void Game::auto_play(float dt) {
     if (logic.riding >= 0) return;   // on the Batpod: auto_drive() steers
+    // Aloft from a fan it jumped up: the view, which the glide turns to, on the first marker.
+    // On the way, the fans not yet risen on that are nearer the marker: through their updrafts.
+    if (auto_fan_flight && !player.gliding && player.on_ground) auto_fan_flight = false, auto_fans_used.clear();
+    if (auto_fan_flight && player.gliding) {
+        const glm::vec2 at(player.center);
+        if (player.fan_rise)
+            for (int id : logic.fan_ids())
+                if (const LevelLogic::Object* f = logic.object(id); f && glm::distance(glm::vec2(f->position), at) < logic.fan_radius(id) + 1.0f)
+                    auto_fans_used.insert(id);
+        for (const LevelLogic::ObjectiveMarker& m : logic.objective_markers)
+            if (const LevelLogic::Object* o = logic.object(m.id); o && !o->dead) {
+                glm::vec2 goal(o->position);
+                int via = logic.is_fan(m.id) && !auto_fans_used.count(m.id) ? m.id : -1;
+                float best = 90.0f;
+                for (int id : logic.fan_ids())
+                    if (const LevelLogic::Object* f = logic.object(id); f && !auto_fans_used.count(id)) {
+                        const glm::vec2 fp(f->position);
+                        if (const float d = glm::distance(fp, at); d < best && glm::distance(fp, glm::vec2(o->position)) < glm::distance(at, glm::vec2(o->position)))
+                            best = d, goal = fp, via = id;
+                    }
+                // Over that fan: down onto its top, to go up it again (a test's shortcut: a player
+                // would glide down onto it).
+                const LevelLogic::Object* f = via >= 0 ? logic.object(via) : nullptr;
+                float top = 0;
+                if (f && !player.fan_rise && glm::distance(glm::vec2(f->position), at) < logic.fan_radius(via) &&
+                    scene.collision().ray_down(f->position + glm::vec3(0, 0, 8.0f), 12.0f, top) && player.center.z > top + 3.0f) {
+                    std::printf("[auto-play] down onto fan %d\n", via);
+                    player.center = glm::vec3(f->position.x, f->position.y, top + 0.05f + player.radius.z);
+                    player.gliding = player.plunging = false, player.on_ground = true;
+                    player.vertical_speed = player.fall_speed = 0;
+                    auto_fan_flight = false, auto_play_wait = 0.5f;
+                    return;
+                }
+                const glm::vec2 d = goal - at;
+                if (glm::length(d) > 1.0f) player.yaw = glm::degrees(std::atan2(-d.x, d.y));
+                break;
+            }
+        return;
+    }
     // On the way: half a metre a step along the line, through whatever is in between (the
     // triggers on the way fire), then the use.
     if (!auto_play_path.empty()) {
@@ -802,6 +841,26 @@ void Game::auto_play(float dt) {
         if (!o || o->dead) continue;   // (a marker on a disabled object is still a place to go)
         if (auto_play_stale[m.id] >= 6 && goals.size() > 1) continue;   // been there, nothing came of it: the next
         const bool use = o->interactive && o->interact_enabled && o->enabled;
+        // A fan: on its top, a jump up its updraft (the glide then heads for the next marker).
+        if (logic.is_fan(m.id)) {
+            if (player.on_ground && player.lift.z >= 2.0f &&
+                glm::distance(glm::vec2(o->position), glm::vec2(player.center)) < logic.fan_radius(m.id)) {
+                std::printf("[auto-play] up fan %d\n", m.id);
+                auto_jump = auto_fan_flight = true;
+                auto_fans_used.insert(m.id);
+                auto_play_wait = 1.0f;
+                return;
+            }
+            float top = 0;
+            if (scene.collision().ray_down(o->position + glm::vec3(0, 0, 8.0f), 12.0f, top)) {
+                const glm::vec3 from = player.center - glm::vec3(0, 0, player.radius.z), to(o->position.x, o->position.y, top + 0.05f);
+                const int n = std::max(int(glm::distance(to, from) / 0.5f), 1);
+                std::printf("[auto-play] to %d (fan top) at (%.1f %.1f %.1f)\n", m.id, to.x, to.y, to.z);
+                for (int k = 1; k <= n; ++k) auto_play_path.push_back(k == n ? to : on_floor(glm::mix(from, to, float(k) / float(n))));
+                auto_play_use = -1;
+                return;
+            }
+        }
         // A helicopter: the grapnel at it from within reach, then (hanging from it) its use.
         if (logic.is_helicopter(m.id)) {
             if (logic.hanging_from == m.id) {

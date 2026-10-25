@@ -13,7 +13,7 @@ namespace tdkr {
 namespace {
 
 constexpr char kMagic[4] = {'N', '3', 'S', 'V'};
-constexpr uint32_t kVersion = 2;   // 2: the scripts' globals, the cameras switched off, the ammo
+constexpr uint32_t kVersion = 2;   // 2: the scripts' globals, the cameras switched off, the ammo, the quests
 
 // Little-endian fields; strings and lists carry their lengths.
 struct Writer {
@@ -194,6 +194,9 @@ std::vector<uint8_t> LevelLogic::checkpoint_data() const {
     for (int id : cp.cameras_off) w.i32(id);
     w.u32(uint32_t(cp.ammo.size()));
     for (const auto& [weapon, n] : cp.ammo) w.str(weapon), w.i32(n);
+    w.u32(uint32_t(cp.quests.statuses.size()));
+    for (const auto& [id, status] : cp.quests.statuses) w.i32(id), w.i32(status);
+    w.i32(cp.quests.story_index), w.i32(cp.quests.story_started), w.flag(cp.quests.briefed), w.flag(cp.quests.finished);
     w.u32(uint32_t(cp.globals.size()));
     for (const auto& [name, v] : cp.globals) w.str(name), write_value(w, v);
     return out;
@@ -241,6 +244,9 @@ bool LevelLogic::load_checkpoint_data(const std::vector<uint8_t>& data) {
     for (int& id : cp->cameras_off) id = r.i32();
     cp->ammo.resize(r.count(8));
     for (auto& [weapon, n] : cp->ammo) weapon = r.str(), n = r.i32();
+    cp->quests.statuses.resize(r.count(8));
+    for (auto& [id, status] : cp->quests.statuses) id = r.i32(), status = r.i32();
+    cp->quests.story_index = r.i32(), cp->quests.story_started = r.i32(), cp->quests.briefed = r.flag(), cp->quests.finished = r.flag();
     cp->globals.resize(r.count(6));
     for (auto& [name, v] : cp->globals)
         if (name = r.str(); !read_value(r, v)) return false;

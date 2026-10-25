@@ -13,7 +13,7 @@ void Player::spawn(const glm::vec3& feet, float yaw_deg) {
     vertical_speed = 0, landing_speed = 0, fall_speed = 0, jump_left = 0;
     on_ground = false;
     stuck_time = escape_time = 0;
-    gliding = plunging = false, air_time = 0;
+    gliding = plunging = fan_rise = false, air_time = 0;
 }
 
 glm::vec3 Player::view_forward() const {
@@ -22,7 +22,7 @@ glm::vec3 Player::view_forward() const {
 }
 
 void Player::grapple_to(const glm::vec3& feet) {
-    grappling = true, gliding = plunging = false;
+    grappling = true, gliding = plunging = fan_rise = false;
     grapple_left = grapple_shot;
     grapple_target = feet;
     vertical_speed = fall_speed = jump_left = 0;
@@ -59,12 +59,26 @@ void Player::update(const CollisionWorld& world, const PlayerInput& in, float dt
     const bool jump_pressed = in.jump && !jump_held;
     jump_held = in.jump;
     air_time = on_ground ? 0.0f : air_time + dt;
+    if (can_glide && jump_pressed && lift.z >= 2.0f && !fan_rise) {   // up the fan's column
+        gliding = fan_rise = true, on_ground = false, glide_heading = yaw, jump_left = 0;
+    }
     if (can_glide && !on_ground && !gliding &&
         ((jump_pressed && jump_left <= 0) || (vertical_speed < 0 && air_time > glide_after_fall))) {
         gliding = true;
         // Carry on where the run was going, else where the view looks.
         const glm::vec2 moving = glm::vec2(wish);
         glide_heading = glm::length(moving) > 0.1f ? glm::degrees(std::atan2(-moving.x, moving.y)) : yaw;
+    }
+    if (gliding && fan_rise) {
+        if (lift.z <= glide_sink + 0.5f) {
+            fan_rise = false, glide_heading = yaw;   // the top of the lift: off it glides, where the view looks
+        } else {
+            vertical_speed = lift.z - glide_sink, fall_speed = 0;
+            const auto r = world.move(center, radius, glm::vec3(0), glm::vec3(0, 0, vertical_speed * dt));
+            if (!r.falling && r.position.z <= center.z + 1e-4f) fan_rise = false;   // a ceiling
+            center = r.position, on_ground = false;
+            return;
+        }
     }
     if (gliding) {
         float d = std::fmod(yaw - glide_heading, 360.0f);
@@ -77,11 +91,11 @@ void Player::update(const CollisionWorld& world, const PlayerInput& in, float dt
         const float sink = plunging ? dive_speed : glide_sink + (dive_speed * 0.5f - glide_sink) * dive;
         const float h = glm::radians(glide_heading);
         const glm::vec3 along(-std::sin(h), std::cos(h), 0);
-        vertical_speed = -sink, fall_speed = sink, jump_left = 0;
-        const auto r = world.move(center, radius, along * (plunging ? speed * 0.4f : speed) * dt, glm::vec3(0, 0, -sink * dt));
+        vertical_speed = lift.z - sink, fall_speed = std::max(sink - lift.z, 0.0f), jump_left = 0;
+        const auto r = world.move(center, radius, along * (plunging ? speed * 0.4f : speed) * dt, glm::vec3(0, 0, vertical_speed * dt));
         on_ground = !r.falling;
         if (on_ground) landing_speed = sink, vertical_speed = 0, fall_speed = 0;
-        if (on_ground || r.hit) gliding = plunging = false;   // landed, or flew into a wall
+        if (on_ground || r.hit) gliding = plunging = fan_rise = false;   // landed, or flew into a wall
         center = r.position;
         return;
     }

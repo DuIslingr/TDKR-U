@@ -392,6 +392,8 @@ int api_enable_interaction(lua_State* L) {
 }
 // SetInteractionParams(object, radius, target, button frame) (CInteractionComponent::
 // SetInteractionParams): its radius, and the object using it enables (OnInteract).
+// SetInteractionParamsProgress(object, radius, target, button frame, ms, text, win text,
+// lose text): the same, the use taking `ms` (0: at once) under a progress bar.
 int api_set_interaction_params(lua_State* L) {
     LevelLogic& c = ctx(L);
     LevelLogic::Object* o = c.object(int_arg(L, 1));
@@ -399,6 +401,7 @@ int api_set_interaction_params(lua_State* L) {
     o->interactive = true;
     o->interact_radius = float(lua_tointeger(L, 2));
     o->interact_target = lua_isnumber(L, 3) ? int_arg(L, 3) : -1;
+    o->interact_hold = lua_gettop(L) >= 5 ? float(lua_tointeger(L, 5)) / 1000.0f : 0.0f;
     o->interact_enabled = true;
     return 0;
 }
@@ -758,6 +761,15 @@ int api_camera_reset_fov(lua_State* L) {
 // DisableSurveillanceCamera(camera, off) (CSurveillanceCameraComponent::SetDisabledFromScript).
 int api_disable_surveillance_camera(lua_State* L) {
     ctx(L).disable_camera(int_arg(L, 1), lua_gettop(L) < 2 || bool_arg(L, 2));
+    return 0;
+}
+int api_move_group(lua_State* L) {   // MoveGroup(group, destination, reference)
+    ctx(L).move_group(int_arg(L, 1), int_arg(L, 2), int_arg(L, 3));
+    return 0;
+}
+// EnableExhaustFan(fan, on) (CExhaustFanComponent::SetActive): its updraft on or off.
+int api_enable_exhaust_fan(lua_State* L) {
+    ctx(L).enable_fan(int_arg(L, 1), bool_arg(L, 2));
     return 0;
 }
 // UnloadMission(zone) (CZonesManager::UnloadMission): the mission zone's objects go.
@@ -1462,6 +1474,10 @@ const Entry kTdkr[] = {
     {"NPCPatrolArea", api_npc_patrol_area},
     {"PlayerIsFighting", api_player_is_fighting},
     {"UnloadMission", api_unload_mission},
+    {"SetInteractionParamsProgress", api_set_interaction_params},
+    {"EnableExhaustFan", api_enable_exhaust_fan},
+    {"MoveGroup", api_move_group},
+    {"RemoveNPCOnRestart", api_nothing},   // (CGameObject::SetDontSave: a respawn here drops every spawned actor anyway)
     {"GetDistrictCompletion", api_get_district_completion},
     {"GenerateDistrict", api_generate_district},
     {"GetWaypointsInGroup", api_group_members, 0},

@@ -48,6 +48,12 @@ public:
     float glide_turn_rate = 90.0f;      // degrees per second the heading turns towards the view
     float glide_after_fall = 0.5f;      // seconds of falling before the cape opens by itself
     float glide_heading = 0;            // degrees, game convention
+    // An updraft's lift (the exhaust fans, LevelLogic::updraft), m/s up, set before each update:
+    // the glide rises on it, and a jump where it is 2 and up launches up the column
+    // (PlayerComponent::GlideJump), rising until the lift no longer beats the sink; a glide
+    // through a column rises by its lift meanwhile.
+    glm::vec3 lift{0};
+    bool fan_rise = false;
     float air_time = 0;                 // seconds since leaving the ground
     bool jump_held = false;             // last update's jump input (to see a fresh press)
     // TDKR's grapnel (CActorBaseComponent::StartGrapplingHook / UpdateNavGrapplingHook): a

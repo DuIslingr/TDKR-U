@@ -55,6 +55,7 @@ struct LevelLogic::Checkpoint {
     int mech = -1, vehicle = -1, gun = -1;   // PlayerComponent::SaveSave: what the player is in
     Combat::Saved combat;
     ScriptRuntime::Globals globals;     // CLuaScriptManager::SaveSave: the scripts' _G
+    Quests::Saved quests;               // CQuestManager::SaveSaveGlobal: the statuses, the main story's place
 };
 
 }  // namespace tdkr

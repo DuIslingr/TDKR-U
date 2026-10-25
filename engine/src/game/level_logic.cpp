@@ -342,6 +342,7 @@ void LevelLogic::start(StartMode mode) {
                       path_marker = {}, objective_markers.clear();
     objects_.clear();
     groups_.clear();
+    group_refs_.clear();
     triggers_.clear();
     doors_.clear();
     delayed_.clear();
@@ -361,6 +362,7 @@ void LevelLogic::start(StartMode mode) {
         if (g.name == "AIController") load_type_scripts(type);
     load_objects();
     find_cameras();
+    find_fans();
     // Mission zones load when they become the current mission (none yet).
     for (auto& [id, o] : objects_)
         if (o.zone >= 0) o.enabled = o.visible = false, o.loaded = false, show(o, false);
@@ -375,7 +377,7 @@ void LevelLogic::start(StartMode mode) {
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
     story_request = {};
-    riding = -1, hanging_from = -1, qte_navigation = false, bruce_style = false;
+    riding = -1, hanging_from = -1, held_use = {}, qte_navigation = false, bruce_style = false;
     scene.show_coronas(true);
     map_icons.clear();
     level_request = {};
@@ -546,6 +548,7 @@ void LevelLogic::save_checkpoint(int spawn_id) {
     }
     auto cp = std::make_shared<Checkpoint>();
     cp->globals = runtime_.save_globals();
+    cp->quests = quests.save();
     cp->spawn = spawn_id;
     cp->section = scene.section();
     for (const auto& [id, o] : objects_) {
@@ -605,6 +608,7 @@ void LevelLogic::respawn_at_checkpoint() {
         mission_zone = zone, load_zone(zone, true);
     }
     restore_checkpoint(*cp);
+    quests.restore(cp->quests);
     quests.respawned();
 }
 
@@ -698,6 +702,31 @@ void LevelLogic::next_mission(int zone) {
     mission_zone = zone;
     if (zone >= 0) load_zone(zone, true);
     if (zone >= 0) start_script("Obj" + std::to_string(zone) + "_Init", zone);
+}
+
+void LevelLogic::move_group(int group, int dest, int ref) {
+    if (!is_group(group)) return;
+    if (auto it = group_refs_.find(group); it != group_refs_.end()) ref = it->second;
+    const Object* d = object(dest);
+    const Object* r = object(ref);
+    if (!d || !r) return;
+    const glm::vec3 from = r->position, to = d->position;
+    const float turn = d->yaw - r->yaw, a = glm::radians(turn), c = std::cos(a), s = std::sin(a);
+    std::vector<int> pending{group};
+    for (size_t k = 0; k < pending.size() && k < 4096; ++k)
+        for (int id : group_members(pending[k])) {
+            if (is_group(id)) {
+                pending.push_back(id);
+                continue;
+            }
+            Object* o = object(id);
+            if (!o) continue;
+            const glm::vec2 rel(o->position - from);
+            o->position = glm::vec3(to.x + c * rel.x - s * rel.y, to.y + s * rel.x + c * rel.y, to.z + o->position.z - from.z);
+            o->yaw += turn;
+            if (o->index < scene.level().objects.size() && o->type != "waypoint") scene.set_object_pose(o->index, o->position, o->yaw);
+        }
+    group_refs_[group] = dest;
 }
 
 void LevelLogic::unload_mission(int zone) {
@@ -1052,16 +1081,42 @@ bool LevelLogic::use() {
     // minigame flag ([3]) is set, but no campaign object sets it: the use is OnEnter alone.
     // TDKR (CInteractionComponent::OnInteract): with a target object (SetInteractionParams),
     // that object is enabled instead; its button goes either way.
-    last_interaction = best->id;
-    if (trace) log("use " + std::to_string(best->id));
-    if (Object* t = best->interact_target >= 0 ? object(best->interact_target) : nullptr) {
-        best->interact_enabled = false;
+    if (best->interact_hold > 0) {   // a use that takes time: it starts
+        if (held_use.object != best->id) {
+            held_use = {best->id, best->interact_hold, best->interact_hold};
+            if (trace) log("use " + std::to_string(best->id) + ": held for " + std::to_string(best->interact_hold) + " s");
+        }
+        return true;
+    }
+    interact(*best);
+    return true;
+}
+
+void LevelLogic::interact(Object& o) {
+    last_interaction = o.id;
+    if (trace) log("use " + std::to_string(o.id));
+    if (Object* t = o.interact_target >= 0 ? object(o.interact_target) : nullptr) {
+        o.interact_enabled = false;
         enable(*t, true);
         if (t->trigger >= 0) triggers_[size_t(t->trigger)].inside = false;
     } else {
-        start_object_script(*best, "OnScriptEvent");
+        start_object_script(o, "OnScriptEvent");
     }
-    return true;
+}
+
+void LevelLogic::update_held_use(float dt) {
+    if (held_use.object < 0) return;
+    Object* o = object(held_use.object);
+    const bool in_reach = o && o->enabled && o->interact_enabled && !o->dead &&
+                          glm::distance(glm::vec2(o->position), glm::vec2(player.center)) <= o->interact_radius + 1.0f;
+    if (!in_reach || !attacking_batman.empty()) {   // let go: it starts over
+        if (trace) log("use " + std::to_string(held_use.object) + ": let go");
+        held_use = {};
+        return;
+    }
+    if ((held_use.left -= dt) > 0) return;
+    held_use = {};
+    interact(*o);
 }
 
 float LevelLogic::fade_alpha() const {
@@ -1995,6 +2050,7 @@ void LevelLogic::update(float dt) {
     if (script_cam_.on) script_cam_.t += dt;
     update_walkers(dt);
     update_cameras(dt);
+    update_held_use(dt);
     update_triggers();
     update_doors(dt);
     update_zone_fog();

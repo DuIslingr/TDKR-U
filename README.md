@@ -80,7 +80,10 @@ Gotham with `--level GothamCity.lvc --spawn-at 600101 --exec "StartMainStoryFrom
 'SetWeaponAmmo("Batarang_01", 10)' --auto-play`; auto-play stands beside an enemy on its own floor (the snipers'
 ledges) and grapnels onto the helicopter from below it, then uses it. It takes the markers in a player's order:
 enemies, then objectives, then the rest (hostages, people to talk to); with no marker it goes to a quest giver on the
-map (Gordon, for quest 601: the same command with `StartMainStoryFromQuestId(601)`).
+map (Gordon, for quest 601: the same command with `StartMainStoryFromQuestId(601)`). At an exhaust fan marker it
+stands on the fan and jumps up its updraft, steers the glide through the fans on the way, and over one it has not
+used drops onto it to go up again (quest 25, `StartMainStoryFromQuestId(25)`). In a glide, jump on a fan's top to
+ride its updraft.
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.
 `--front-end SCREEN[:KEYS]` screenshots a menu headless (`title`, `main`, `pause`, `death`; keys `u d l r a b .`).

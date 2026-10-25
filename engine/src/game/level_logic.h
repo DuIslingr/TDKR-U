@@ -224,6 +224,12 @@ public:
     // carried along, until UnlinkObject(0) lets go (its use, Templ<heli>_OnScriptEvent: the EMP).
     // -1: not hanging.
     int hanging_from = -1;
+    // A use that takes time (SetInteractionParamsProgress: the C4 disarms, the interrogations):
+    // it runs while Batman stays in reach and is not attacked, then the use happens.
+    struct HeldUse {
+        int object = -1;
+        float left = 0, total = 0;
+    } held_use;
     void grab_helicopter(int id);
     bool is_helicopter(int id) const;
     // CAIController's behaviour events (CNpcAIComponent [0]: the behaviour): the AIController
@@ -237,8 +243,23 @@ public:
         return it == groups_.end() ? none : it->second;
     }
     bool is_group(int id) const { return groups_.count(id) != 0; }
+    // MoveGroup(group, destination, reference) (CGroupObject::MoveGroup): the group's members
+    // (and its groups' and waypoints) moved so the reference lands on the destination, turned
+    // by the difference of their headings; the destination is the reference next time.
+    void move_group(int group, int dest, int ref);
     // Surveillance cameras (game/surveillance.cpp): DisableSurveillanceCamera(camera, off).
     void disable_camera(int id, bool off);
+    // Exhaust fans (game/fans.cpp): the updraft's lift at Batman's feet (m/s up), and
+    // EnableExhaustFan.
+    glm::vec3 updraft(const glm::vec3& feet) const;
+    void enable_fan(int id, bool on);
+    bool is_fan(int id) const { return fans_.count(id) != 0; }
+    std::vector<int> fan_ids() const {
+        std::vector<int> ids;
+        for (const auto& [id, f] : fans_) ids.push_back(id);
+        return ids;
+    }
+    float fan_radius(int id) const { auto it = fans_.find(id); return it == fans_.end() ? 0.0f : it->second.radius; }
     void mount_batpod(int id);
     void dismount_batpod();
     // QTE_StartNavigation / QTE_EndNavigation (PlayerComponent::*QTENavigation): the chase mode,
@@ -429,6 +450,7 @@ public:
         bool interactive = false, interact_enabled = true;
         float interact_radius = 3;   // CInteractionComponent: metres from the player
         int interact_target = -1;    // SetInteractionParams: using it enables that object instead of its own script
+        float interact_hold = 0;     // SetInteractionParamsProgress: seconds the use takes (a progress bar)
         bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
         bool targetable = true;       // ActorGrapnelEnable: Batman may leap or grapple at it
         bool invincible = false;      // SetInvincible: hits leave its health alone
@@ -799,9 +821,18 @@ private:
         float seen = 0;
         bool detected = false, off = false;
     };
+    struct Fan {
+        float radius = 4, falloff = 2, force = 130, height = 65;   // [4], [5], [6], [7]
+        bool on = true;
+    };
+    std::unordered_map<int, Fan> fans_;
+    void find_fans();
     std::unordered_map<int, Camera> cameras_;
     void find_cameras();
     void update_cameras(float dt);
+    void interact(Object& o);   // CInteractionComponent::OnInteract
+    void update_held_use(float dt);
+    std::unordered_map<int, int> group_refs_;   // MoveGroup: where each group was last moved to
     std::unordered_map<int, std::vector<int>> groups_;
     std::vector<Walker> walkers_;
     Walker& walker(int id);

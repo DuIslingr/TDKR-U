@@ -160,6 +160,20 @@ void Quests::start_story(int quest_id) {
     story_entered(quest_id >= 0);
 }
 
+Quests::Saved Quests::save() const {
+    Saved s;
+    for (const Quest& q : quests_) s.statuses.emplace_back(q.id, q.status);
+    s.story_index = story_index_, s.story_started = story_started_, s.briefed = briefed_, s.finished = finished_;
+    return s;
+}
+
+void Quests::restore(const Saved& s) {
+    for (const auto& [id, status] : s.statuses)
+        if (Quest* q = quest(id)) q->status = status, q->ended = status == Completed;
+    if (s.story_index >= 0 && size_t(s.story_index) < story_.size())
+        story_index_ = s.story_index, story_started_ = s.story_started, briefed_ = s.briefed, finished_ = s.finished;
+}
+
 void Quests::respawned() {
     if (!story_on_ || story_index_ < 0 || size_t(story_index_) >= story_.size()) return;
     Quest* q = quest(story_[size_t(story_index_)].quest);

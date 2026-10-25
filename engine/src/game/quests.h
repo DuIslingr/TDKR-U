@@ -66,6 +66,15 @@ public:
     // that failed, or is off, is entered again (its InitQuest enables it afresh). Call with the
     // level's scripts restarted, after a load with `carry_over` set.
     void respawned();
+    // What a checkpoint keeps (CLevel::SaveGlobalData: CQuestManager::SaveSaveGlobal, the main
+    // story's place): put back on a respawn, before respawned().
+    struct Saved {
+        std::vector<std::pair<int, int>> statuses;   // quest id, status
+        int story_index = -1, story_started = -1;
+        bool briefed = false, finished = false;
+    };
+    Saved save() const;
+    void restore(const Saved& s);
 
 private:
     Quest* quest(int id);

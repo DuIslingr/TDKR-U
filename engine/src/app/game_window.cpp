@@ -704,6 +704,7 @@ void Game::run_window() {
             for (accumulator += dt; accumulator >= kPhysicsStep; accumulator -= kPhysicsStep) {
                 // During cinematics the player is out of play (the intro's spawn
                 // point may float in the void).
+                if (opt.scripts) player.lift = logic.updraft(player.center - glm::vec3(0, 0, player.radius.z));   // the fans
                 if (ride_step(in, kPhysicsStep)) {
                 } else if (!(opt.scripts && logic.cinematic_active()) && !seated && !(opt.scripts && logic.limited_step(in.right, kPhysicsStep)))
                     player.update(scene.collision(), in, kPhysicsStep);

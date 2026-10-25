@@ -565,8 +565,9 @@ void Brawl::update(float dt) {
             if (o->index != std::numeric_limits<size_t>::max()) scene_.set_object_pose(o->index, o->position, o->yaw);
         }
     }
-    // Headless tests fight by themselves.
-    if (auto_fight) {
+    // Headless tests fight by themselves (not on a faded screen: the scripts are setting up,
+    // as with the interrogated thug, spawned before he is made no enemy).
+    if (auto_fight && logic_.fade_alpha() <= 0.01f) {
         if (counter_open()) counter();
         auto_timer_ -= dt;
         if (auto_timer_ <= 0 && !busy() && (target(5.0f, 2.0f) >= 0 || can_take_down())) strike(), auto_timer_ = 0.5f;

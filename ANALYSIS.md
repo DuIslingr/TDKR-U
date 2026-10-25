@@ -489,6 +489,26 @@ the story moves on to quest 25 (Save Lucius). What it needed:
   `ExitTheBat` (as `ExitBatPod`). `GenerateDistrict` and `ClearCrimeAreaMessage` are accepted: the crime hot spots
   (`CCrimeHotSpotComponent`) are not played yet.
 
+**Save Lucius** (quest 25, after the Power Station): Gordon's call, a quest giver, `NextMission(900175)`; three
+interrogations (a beaten thug, a gang boss, a man hung off the Zebra building), each after a fight; then the glide to
+Wayne Tower over exhaust fans, unseen by its guards (landing short at trigger 900069 fails the mission), and Lucius
+held at gunpoint on the roof; the win screen, and the story moves on to quest 816 (the military base). What it needed:
+
+- `SetInteractionParamsProgress(object, radius, target, button frame, ms, text, win text, lose text)`
+  (`CInteractionComponent::SetInteractionParams` with a hold time): the use takes `ms` (the C4 disarms 3-5 s, the
+  interrogations 0), running while Batman stays in reach and is not attacked; let go, it starts over. The progress
+  bar is not drawn yet.
+- **Exhaust fans** (`CExhaustFanComponent` `0x65DA04ED`: `[3]` starts off, `[4]` radius, `[5]` push lost per metre
+  up, `[6]` push at the fan, `[7]` column height; placed 4 / 2 / 120-130 / 60-65): the level sums the pushes where
+  Batman is (`CLevel` `+0xb10`), a glide rises by them, and a jump in one of 2 and up launches him up the column
+  (`CanGlideJump`, `GlideJump`) until the lift no longer beats the glide's sink, then he glides off where he looks.
+  The push's unit is not known: a lift of 0.15 m/s per unit carries him some 50 m up a fan. `EnableExhaustFan`.
+- **Checkpoints keep the quests** too (`CLevel::SaveGlobalData`: `CQuestManager::SaveSaveGlobal`, the main story's
+  place): a failed mission comes back at its checkpoint still running, with its globals, instead of starting over.
+- `MoveGroup(group, destination, reference)` (`CGroupObject::MoveGroup`: the members, sub-groups and waypoints moved
+  so the reference lands on the destination, turned by the heading difference; the destination is the reference
+  next time), `RemoveNPCOnRestart` (a respawn here drops spawned actors anyway).
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it

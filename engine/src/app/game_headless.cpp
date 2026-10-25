@@ -238,6 +238,8 @@ int Game::run_screenshot() {
         glm::vec3 seat_eye;
         float seat_min = 0, seat_max = 0;
         const bool seated = opt.scripts && logic.seat(seat_eye, seat_min, seat_max);
+        if (opt.scripts) player.lift = logic.updraft(player.center - glm::vec3(0, 0, player.radius.z));   // the fans
+        if (auto_jump) pin.jump = true, auto_jump = false;   // --auto-play's jump (up a fan)
         if (ride_step(pin, kPhysicsStep)) {
         } else if (seated) player.center = seat_eye - glm::vec3(0, 0, player.eye_height);
         else if (!(opt.scripts && logic.cinematic_active()) && !(opt.scripts && logic.limited_step(pin.right, kPhysicsStep)))

@@ -213,6 +213,9 @@ private:
     // The Batpod (EnterBatPod): one physics step of the ride; false when Batman is on foot.
     static constexpr float kHangBelow = 3.2f;   // Batman's feet under a helicopter he hangs from
     bool hanging_ = false;
+    bool auto_jump = false;   // --auto-play: jump next step
+    bool auto_fan_flight = false;   // --auto-play: aloft from a fan it jumped up (it steers the glide)
+    std::unordered_set<int> auto_fans_used;   // the fans risen on since
     bool ride_step(const PlayerInput& in, float dt);
     Batpod batpod;
     Storyboard storyboard;   // StartIntroStory

@@ -20,7 +20,10 @@
 
 namespace tdkr {
 
+class Dlss;
 class Fsr3;
+class MetalFx;
+class TemporalInputs;
 
 struct GpuTexture {
     SDL_GPUTexture* texture = nullptr;
@@ -261,7 +264,14 @@ private:
     // FSR 1 (render/upscaler.h): the finished render-size frame (post_out_, upright), EASU's
     // output-size one (upscaled_); RCAS sharpens into the target.
     void ensure_upscale_targets(uint32_t rw, uint32_t rh, uint32_t w, uint32_t h);
-    std::unique_ptr<Fsr3> fsr3_;   // FSR 3 (render/fsr3.h): null where it cannot run
+    // The temporal upscalers and what they share (null where they cannot run; Dlss and MetalFx
+    // say why not themselves).
+    std::unique_ptr<TemporalInputs> temporal_;
+    std::unique_ptr<Fsr3> fsr3_;
+    std::unique_ptr<Dlss> dlss_;
+    std::unique_ptr<MetalFx> metalfx_;
+    // A compute pipeline from SPIR-V for whichever backend the device runs.
+    SDL_GPUComputePipeline* make_compute(const std::vector<uint32_t>& spirv, const SDL_GPUComputePipelineCreateInfo& counts);
     // FSR 3's motion vectors for what moved on its own (skinned, or placed elsewhere than the
     // frame before), over the camera's: the items' previous placements by their index in the
     // list (forgotten when it changes size) and their previous joints by palette.
@@ -284,6 +294,7 @@ private:
     // The HUD scene's depth when it is drawn at the output size and the world smaller (swapped
     // with depth_ around it, so neither is remade each frame).
     SDL_GPUTexture* hud_depth_ = nullptr;
+    SDL_GPUTexture* overlay_depth(uint32_t w, uint32_t h);   // a depth target of that size for the 2D overlay
     uint32_t hud_depth_w_ = 0, hud_depth_h_ = 0;
     const Pipelines& pipelines_for(SDL_GPUTextureFormat format);
     SDL_GPUShader* load_shader(const std::string& path, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms);

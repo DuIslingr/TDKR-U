@@ -17,6 +17,7 @@ struct UpscalerSupport {
 struct Upscale {
     UpscalerKind kind = UpscalerKind::None;
     float ratio = 1;          // output size / render size (1: native resolution, anti-aliasing / sharpening only)
+    int mode = 1;             // 0 native AA, 1 quality, 2 balanced, 3 performance, 4 ultra performance
     float sharpness = 0.5f;   // 0..1
     bool reset = false;       // a cut: the temporal upscalers drop their history
 };

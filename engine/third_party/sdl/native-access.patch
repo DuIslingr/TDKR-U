@@ -1,0 +1,412 @@
+diff --git a/include/SDL3/SDL_gpu.h b/include/SDL3/SDL_gpu.h
+index b3e9a89..25e01ad 100644
+--- a/include/SDL3/SDL_gpu.h
++++ b/include/SDL3/SDL_gpu.h
+@@ -2594,6 +2594,71 @@ extern SDL_DECLSPEC SDL_PropertiesID SDLCALL SDL_GetGPUDeviceProperties(SDL_GPUD
+ #define SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING     "SDL.gpu.device.driver_version"
+ #define SDL_PROP_GPU_DEVICE_DRIVER_INFO_STRING        "SDL.gpu.device.driver_info"
+ 
++/*
++ * Native access (a patch for The Dark Knight Rises reimplementation, not in upstream SDL):
++ * the backend's own objects, for libraries that record their own work into SDL's command
++ * buffers (NVIDIA DLSS on Vulkan, Apple MetalFX).
++ *
++ * SDL_GetGPUDeviceProperties also holds, with the Vulkan backend: the VkInstance,
++ * VkPhysicalDevice, VkDevice and VkQueue (pointers) and the queue family index; with the
++ * Metal backend: the id<MTLDevice> and id<MTLCommandQueue> (unretained pointers).
++ */
++#define SDL_PROP_GPU_DEVICE_VULKAN_INSTANCE_POINTER            "SDL.gpu.device.vulkan.instance"
++#define SDL_PROP_GPU_DEVICE_VULKAN_PHYSICAL_DEVICE_POINTER     "SDL.gpu.device.vulkan.physical_device"
++#define SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER              "SDL.gpu.device.vulkan.device"
++#define SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_POINTER               "SDL.gpu.device.vulkan.queue"
++#define SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_FAMILY_INDEX_NUMBER   "SDL.gpu.device.vulkan.queue_family_index"
++#define SDL_PROP_GPU_DEVICE_METAL_DEVICE_POINTER               "SDL.gpu.device.metal.device"
++#define SDL_PROP_GPU_DEVICE_METAL_COMMAND_QUEUE_POINTER        "SDL.gpu.device.metal.command_queue"
++
++/**
++ * The backend's own texture behind an SDL GPU texture (its current one; cycling changes it).
++ *
++ * Vulkan: `*image` a VkImage, `*view` its VkImageView of every level and layer,
++ * `*native_format` its VkFormat. Metal: `*image` an unretained id<MTLTexture>, `*view` NULL,
++ * `*native_format` its MTLPixelFormat. Any output pointer may be NULL.
++ *
++ * \returns true on success, false on a backend without native access (call SDL_GetError()).
++ */
++extern SDL_DECLSPEC bool SDLCALL SDL_GetGPUNativeTexture(
++    SDL_GPUDevice *device,
++    SDL_GPUTexture *texture,
++    void **image,
++    void **view,
++    Uint32 *native_format);
++
++/**
++ * The backend's own command buffer: a VkCommandBuffer (Vulkan) or an unretained
++ * id<MTLCommandBuffer> (Metal); NULL elsewhere. Native work may be recorded into it only
++ * between SDL_BeginGPUNativeAccess and SDL_EndGPUNativeAccess.
++ */
++extern SDL_DECLSPEC void * SDLCALL SDL_GetGPUNativeCommandBuffer(SDL_GPUCommandBuffer *command_buffer);
++
++/**
++ * Hands textures to native work recorded into the command buffer, outside any pass: with
++ * Vulkan, `read` textures (created with SDL_GPU_TEXTUREUSAGE_SAMPLER) are made available in
++ * VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL and `write` ones (created with a compute storage
++ * write usage) in VK_IMAGE_LAYOUT_GENERAL, after all earlier work. The native work must
++ * leave them in those layouts. With Metal nothing needs doing (Metal tracks the hazards).
++ */
++extern SDL_DECLSPEC bool SDLCALL SDL_BeginGPUNativeAccess(
++    SDL_GPUCommandBuffer *command_buffer,
++    SDL_GPUTexture *const *read,
++    Uint32 num_read,
++    SDL_GPUTexture *const *write,
++    Uint32 num_write);
++
++/**
++ * Returns the textures of SDL_BeginGPUNativeAccess (the same lists) to SDL, after the native
++ * work.
++ */
++extern SDL_DECLSPEC bool SDLCALL SDL_EndGPUNativeAccess(
++    SDL_GPUCommandBuffer *command_buffer,
++    SDL_GPUTexture *const *read,
++    Uint32 num_read,
++    SDL_GPUTexture *const *write,
++    Uint32 num_write);
++
+ 
+ /* State Creation */
+ 
+diff --git a/src/dynapi/SDL_dynapi.sym b/src/dynapi/SDL_dynapi.sym
+index ec2e97b..91e76de 100644
+--- a/src/dynapi/SDL_dynapi.sym
++++ b/src/dynapi/SDL_dynapi.sym
+@@ -1271,6 +1271,10 @@ SDL3_0.0.0 {
+     SDL_LoadSurface_IO;
+     SDL_LoadSurface;
+     SDL_SetWindowFillDocument;
++    SDL_GetGPUNativeTexture;
++    SDL_GetGPUNativeCommandBuffer;
++    SDL_BeginGPUNativeAccess;
++    SDL_EndGPUNativeAccess;
+     # extra symbols go here (don't modify this line)
+   local: *;
+ };
+diff --git a/src/dynapi/SDL_dynapi_overrides.h b/src/dynapi/SDL_dynapi_overrides.h
+index bf8d642..1d59d6e 100644
+--- a/src/dynapi/SDL_dynapi_overrides.h
++++ b/src/dynapi/SDL_dynapi_overrides.h
+@@ -1297,3 +1297,7 @@
+ #define SDL_LoadSurface_IO SDL_LoadSurface_IO_REAL
+ #define SDL_LoadSurface SDL_LoadSurface_REAL
+ #define SDL_SetWindowFillDocument SDL_SetWindowFillDocument_REAL
++#define SDL_GetGPUNativeTexture SDL_GetGPUNativeTexture_REAL
++#define SDL_GetGPUNativeCommandBuffer SDL_GetGPUNativeCommandBuffer_REAL
++#define SDL_BeginGPUNativeAccess SDL_BeginGPUNativeAccess_REAL
++#define SDL_EndGPUNativeAccess SDL_EndGPUNativeAccess_REAL
+diff --git a/src/dynapi/SDL_dynapi_procs.h b/src/dynapi/SDL_dynapi_procs.h
+index 78a896a..2af517c 100644
+--- a/src/dynapi/SDL_dynapi_procs.h
++++ b/src/dynapi/SDL_dynapi_procs.h
+@@ -1305,3 +1305,7 @@ SDL_DYNAPI_PROC(SDL_Surface*,SDL_RotateSurface,(SDL_Surface *a,float b),(a,b),re
+ SDL_DYNAPI_PROC(SDL_Surface*,SDL_LoadSurface_IO,(SDL_IOStream *a,bool b),(a,b),return)
+ SDL_DYNAPI_PROC(SDL_Surface*,SDL_LoadSurface,(const char *a),(a),return)
+ SDL_DYNAPI_PROC(bool,SDL_SetWindowFillDocument,(SDL_Window *a,bool b),(a,b),return)
++SDL_DYNAPI_PROC(bool,SDL_GetGPUNativeTexture,(SDL_GPUDevice *a,SDL_GPUTexture *b,void **c,void **d,Uint32 *e),(a,b,c,d,e),return)
++SDL_DYNAPI_PROC(void*,SDL_GetGPUNativeCommandBuffer,(SDL_GPUCommandBuffer *a),(a),return)
++SDL_DYNAPI_PROC(bool,SDL_BeginGPUNativeAccess,(SDL_GPUCommandBuffer *a,SDL_GPUTexture *const *b,Uint32 c,SDL_GPUTexture *const *d,Uint32 e),(a,b,c,d,e),return)
++SDL_DYNAPI_PROC(bool,SDL_EndGPUNativeAccess,(SDL_GPUCommandBuffer *a,SDL_GPUTexture *const *b,Uint32 c,SDL_GPUTexture *const *d,Uint32 e),(a,b,c,d,e),return)
+diff --git a/src/gpu/SDL_gpu.c b/src/gpu/SDL_gpu.c
+index c51f7f0..c038327 100644
+--- a/src/gpu/SDL_gpu.c
++++ b/src/gpu/SDL_gpu.c
+@@ -796,6 +796,66 @@ SDL_PropertiesID SDL_GetGPUDeviceProperties(SDL_GPUDevice *device)
+     return device->GetDeviceProperties(device);
+ }
+ 
++// Native access (TDKR patch)
++
++bool SDL_GetGPUNativeTexture(SDL_GPUDevice *device, SDL_GPUTexture *texture, void **image, void **view, Uint32 *native_format)
++{
++    CHECK_DEVICE_MAGIC(device, false);
++    if (texture == NULL) {
++        return SDL_InvalidParamError("texture");
++    }
++    if (!device->GetNativeTexture) {
++        return SDL_Unsupported();
++    }
++    return device->GetNativeTexture(device->driverData, texture, image, view, native_format);
++}
++
++void *SDL_GetGPUNativeCommandBuffer(SDL_GPUCommandBuffer *command_buffer)
++{
++    if (command_buffer == NULL) {
++        SDL_InvalidParamError("command_buffer");
++        return NULL;
++    }
++    SDL_GPUDevice *device = COMMAND_BUFFER_DEVICE;
++    if (!device->GetNativeCommandBuffer) {
++        SDL_Unsupported();
++        return NULL;
++    }
++    return device->GetNativeCommandBuffer(command_buffer);
++}
++
++static bool SDL_GPUNativeAccess(SDL_GPUCommandBuffer *command_buffer, SDL_GPUTexture *const *read, Uint32 num_read,
++                                SDL_GPUTexture *const *write, Uint32 num_write, bool begin)
++{
++    if (command_buffer == NULL) {
++        return SDL_InvalidParamError("command_buffer");
++    }
++    if ((num_read && !read) || (num_write && !write)) {
++        return SDL_InvalidParamError(num_read && !read ? "read" : "write");
++    }
++    SDL_GPUDevice *device = COMMAND_BUFFER_DEVICE;
++    if (device->debug_mode) {
++        CHECK_COMMAND_BUFFER_RETURN_FALSE
++        CHECK_ANY_PASS_IN_PROGRESS("Cannot hand textures to native work during a pass!", false)
++    }
++    if (!device->NativeAccess) {
++        return SDL_Unsupported();
++    }
++    return device->NativeAccess(command_buffer, read, num_read, write, num_write, begin);
++}
++
++bool SDL_BeginGPUNativeAccess(SDL_GPUCommandBuffer *command_buffer, SDL_GPUTexture *const *read, Uint32 num_read,
++                              SDL_GPUTexture *const *write, Uint32 num_write)
++{
++    return SDL_GPUNativeAccess(command_buffer, read, num_read, write, num_write, true);
++}
++
++bool SDL_EndGPUNativeAccess(SDL_GPUCommandBuffer *command_buffer, SDL_GPUTexture *const *read, Uint32 num_read,
++                            SDL_GPUTexture *const *write, Uint32 num_write)
++{
++    return SDL_GPUNativeAccess(command_buffer, read, num_read, write, num_write, false);
++}
++
+ Uint32 SDL_GPUTextureFormatTexelBlockSize(
+     SDL_GPUTextureFormat format)
+ {
+diff --git a/src/gpu/SDL_sysgpu.h b/src/gpu/SDL_sysgpu.h
+index e77d4a8..73b3e59 100644
+--- a/src/gpu/SDL_sysgpu.h
++++ b/src/gpu/SDL_sysgpu.h
+@@ -1088,6 +1088,12 @@ struct SDL_GPUDevice
+     // Opaque pointer for the Driver
+     SDL_GPURenderer *driverData;
+ 
++    // Native access (TDKR patch): set by the backends that have it, NULL elsewhere.
++    bool (*GetNativeTexture)(SDL_GPURenderer *driverData, SDL_GPUTexture *texture, void **image, void **view, Uint32 *native_format);
++    void *(*GetNativeCommandBuffer)(SDL_GPUCommandBuffer *commandBuffer);
++    bool (*NativeAccess)(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *const *read, Uint32 numRead,
++                         SDL_GPUTexture *const *write, Uint32 numWrite, bool begin);
++
+     // Store this for SDL_GetGPUDeviceDriver()
+     const char *backend;
+ 
+diff --git a/src/gpu/metal/SDL_gpu_metal.m b/src/gpu/metal/SDL_gpu_metal.m
+index b29cad6..5fa74da 100644
+--- a/src/gpu/metal/SDL_gpu_metal.m
++++ b/src/gpu/metal/SDL_gpu_metal.m
+@@ -796,6 +796,53 @@ static void METAL_INTERNAL_TrackTexture(
+         usedTextureCapacity);
+ }
+ 
++// Native access (TDKR patch)
++
++static bool METAL_GetNativeTexture(
++    SDL_GPURenderer *driverData,
++    SDL_GPUTexture *texture,
++    void **image,
++    void **view,
++    Uint32 *native_format)
++{
++    (void)driverData;
++    id<MTLTexture> handle = ((MetalTextureContainer *)texture)->activeTexture->handle;
++    if (image) {
++        *image = (__bridge void *)handle;
++    }
++    if (view) {
++        *view = NULL;
++    }
++    if (native_format) {
++        *native_format = (Uint32)handle.pixelFormat;
++    }
++    return true;
++}
++
++static void *METAL_GetNativeCommandBuffer(SDL_GPUCommandBuffer *commandBuffer)
++{
++    return (__bridge void *)((MetalCommandBuffer *)commandBuffer)->handle;
++}
++
++// Metal tracks the hazards itself: the textures are only kept alive with the command buffer.
++static bool METAL_NativeAccess(
++    SDL_GPUCommandBuffer *commandBuffer,
++    SDL_GPUTexture *const *read,
++    Uint32 numRead,
++    SDL_GPUTexture *const *write,
++    Uint32 numWrite,
++    bool begin)
++{
++    if (begin) {
++        MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
++        for (Uint32 i = 0; i < numRead + numWrite; i += 1) {
++            SDL_GPUTexture *texture = i < numRead ? read[i] : write[i - numRead];
++            METAL_INTERNAL_TrackTexture(metalCommandBuffer, ((MetalTextureContainer *)texture)->activeTexture);
++        }
++    }
++    return true;
++}
++
+ static void METAL_INTERNAL_TrackUniformBuffer(
+     MetalCommandBuffer *commandBuffer,
+     MetalUniformBuffer *uniformBuffer)
+@@ -4597,6 +4644,9 @@ static SDL_GPUDevice *METAL_CreateDevice(bool debugMode, bool preferLowPower, SD
+         if (verboseLogs) {
+             SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "SDL_GPU Driver: Metal");
+         }
++        // The native objects (TDKR patch)
++        SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_METAL_DEVICE_POINTER, (__bridge void *)renderer->device);
++        SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_METAL_COMMAND_QUEUE_POINTER, (__bridge void *)renderer->queue);
+ 
+         // Record device name
+         const char *deviceName = [device.name UTF8String];
+@@ -4671,6 +4721,9 @@ static SDL_GPUDevice *METAL_CreateDevice(bool debugMode, bool preferLowPower, SD
+ 
+         SDL_GPUDevice *result = SDL_calloc(1, sizeof(SDL_GPUDevice));
+         ASSIGN_DRIVER(METAL)
++        result->GetNativeTexture = METAL_GetNativeTexture;   // (TDKR patch)
++        result->GetNativeCommandBuffer = METAL_GetNativeCommandBuffer;
++        result->NativeAccess = METAL_NativeAccess;
+         result->driverData = (SDL_GPURenderer *)renderer;
+         result->shader_formats = SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_METALLIB;
+         renderer->sdlGPUDevice = result;
+diff --git a/src/gpu/vulkan/SDL_gpu_vulkan.c b/src/gpu/vulkan/SDL_gpu_vulkan.c
+index 2782f41..2be8737 100644
+--- a/src/gpu/vulkan/SDL_gpu_vulkan.c
++++ b/src/gpu/vulkan/SDL_gpu_vulkan.c
+@@ -5085,6 +5085,106 @@ static void VULKAN_DestroyDevice(
+     SDL_Vulkan_UnloadLibrary();
+ }
+ 
++// Native access (TDKR patch)
++
++static bool VULKAN_GetNativeTexture(
++    SDL_GPURenderer *driverData,
++    SDL_GPUTexture *texture,
++    void **image,
++    void **view,
++    Uint32 *native_format)
++{
++    (void)driverData;
++    VulkanTextureContainer *container = (VulkanTextureContainer *)texture;
++    VulkanTexture *vulkanTexture = container->activeTexture;
++    if (image) {
++        *image = (void *)vulkanTexture->image;
++    }
++    if (view) {
++        *view = (void *)vulkanTexture->fullView;
++    }
++    if (native_format) {
++        *native_format = (Uint32)SDLToVK_TextureFormat[container->header.info.format];
++    }
++    return true;
++}
++
++static void *VULKAN_GetNativeCommandBuffer(SDL_GPUCommandBuffer *commandBuffer)
++{
++    return (void *)((VulkanCommandBuffer *)commandBuffer)->commandBuffer;
++}
++
++// The layout a texture keeps between passes (VULKAN_INTERNAL_DefaultTextureUsageMode's).
++static VkImageLayout VULKAN_INTERNAL_DefaultTextureLayout(VulkanTexture *texture)
++{
++    switch (VULKAN_INTERNAL_DefaultTextureUsageMode(texture)) {
++    case VULKAN_TEXTURE_USAGE_MODE_SAMPLER:
++        return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++    case VULKAN_TEXTURE_USAGE_MODE_COLOR_ATTACHMENT:
++        return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++    case VULKAN_TEXTURE_USAGE_MODE_DEPTH_STENCIL_ATTACHMENT:
++        return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
++    default:
++        return VK_IMAGE_LAYOUT_GENERAL;
++    }
++}
++
++// Every texture between its default layout and the native work's (read: shader read only;
++// write: general), with a full barrier either side: native work may use any stage.
++static bool VULKAN_NativeAccess(
++    SDL_GPUCommandBuffer *commandBuffer,
++    SDL_GPUTexture *const *read,
++    Uint32 numRead,
++    SDL_GPUTexture *const *write,
++    Uint32 numWrite,
++    bool begin)
++{
++    VulkanCommandBuffer *vulkanCommandBuffer = (VulkanCommandBuffer *)commandBuffer;
++    VulkanRenderer *renderer = vulkanCommandBuffer->renderer;
++    const Uint32 count = numRead + numWrite;
++    if (count == 0) {
++        return true;
++    }
++    VkImageMemoryBarrier *barriers = SDL_stack_alloc(VkImageMemoryBarrier, count);
++    for (Uint32 i = 0; i < count; i += 1) {
++        const bool writable = i >= numRead;
++        VulkanTexture *texture = ((VulkanTextureContainer *)(writable ? write[i - numRead] : read[i]))->activeTexture;
++        const VkImageLayout home = VULKAN_INTERNAL_DefaultTextureLayout(texture);
++        const VkImageLayout native = writable ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++        VkImageMemoryBarrier *barrier = &barriers[i];
++        barrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++        barrier->pNext = NULL;
++        barrier->srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
++        barrier->dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
++        barrier->oldLayout = begin ? home : native;
++        barrier->newLayout = begin ? native : home;
++        barrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++        barrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++        barrier->image = texture->image;
++        barrier->subresourceRange.aspectMask = texture->aspectFlags;
++        barrier->subresourceRange.baseMipLevel = 0;
++        barrier->subresourceRange.levelCount = texture->levelCount;
++        barrier->subresourceRange.baseArrayLayer = 0;
++        barrier->subresourceRange.layerCount = texture->layerCount;
++        if (begin) {
++            VULKAN_INTERNAL_TrackTexture(vulkanCommandBuffer, texture);
++        }
++    }
++    renderer->vkCmdPipelineBarrier(
++        vulkanCommandBuffer->commandBuffer,
++        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++        0,
++        0,
++        NULL,
++        0,
++        NULL,
++        count,
++        barriers);
++    SDL_stack_free(barriers);
++    return true;
++}
++
+ static SDL_PropertiesID VULKAN_GetDeviceProperties(
+     SDL_GPUDevice *device)
+ {
+@@ -12918,9 +13018,19 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
+         return NULL;
+     }
+ 
++    // The native objects (TDKR patch)
++    SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_VULKAN_INSTANCE_POINTER, (void *)renderer->instance);
++    SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_VULKAN_PHYSICAL_DEVICE_POINTER, (void *)renderer->physicalDevice);
++    SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER, (void *)renderer->logicalDevice);
++    SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_POINTER, (void *)renderer->unifiedQueue);
++    SDL_SetNumberProperty(renderer->props, SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_FAMILY_INDEX_NUMBER, renderer->queueFamilyIndex);
++
+     // FIXME: just move this into this function
+     result = (SDL_GPUDevice *)SDL_calloc(1, sizeof(SDL_GPUDevice));
+     ASSIGN_DRIVER(VULKAN)
++    result->GetNativeTexture = VULKAN_GetNativeTexture;   // (TDKR patch)
++    result->GetNativeCommandBuffer = VULKAN_GetNativeCommandBuffer;
++    result->NativeAccess = VULKAN_NativeAccess;
+ 
+     result->driverData = (SDL_GPURenderer *)renderer;
+     result->shader_formats = SDL_GPU_SHADERFORMAT_SPIRV;

@@ -34,7 +34,6 @@ struct PassInfo {
     uint32_t threads_x, threads_y;
 };
 const PassInfo kPassInfo[] = {
-    {"fsr3_inputs.comp.spv", "main", 1, {kRG16, kR32F}, 1, 8, 8},
     {"fsr3_prepare_inputs.comp.spv", "CS", 3, {kRG16, kR32F, kR32U, kR16, kR16}, 1, 8, 8},
     {"fsr3_luma_pyramid.comp.spv", "CS", 2, {kR32U, kRGBA32, kRG16, kRG16, kRG16, kRG16, kRG16, kRG16, kR16}, 2, 256, 1},
     {"fsr3_shading_change_pyramid.comp.spv", "CS", 4, {kR32U, kRG16, kRG16, kRG16, kRG16, kRG16, kRG16}, 2, 256, 1},
@@ -136,15 +135,6 @@ void set_storage_formats(std::vector<uint32_t>& code, const std::vector<F>& form
     code = std::move(out);
 }
 
-float halton(int32_t index, int32_t base) {
-    float f = 1, result = 0;
-    for (int32_t i = index; i > 0; i /= base) {
-        f /= float(base);
-        result += f * float(i % base);
-    }
-    return result;
-}
-
 uint32_t groups(uint32_t size, uint32_t per) { return (size + per - 1) / per; }
 
 // cbFSR3Upscaler (ffx_fsr3upscaler_callbacks_hlsl.h; Fsr3UpscalerConstants)
@@ -202,7 +192,9 @@ Fsr3::Fsr3(SDL_GPUDevice* device, const std::string& shader_dir) : device_(devic
     si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.max_lod = 16;
     sampler_ = SDL_CreateGPUSampler(device_, &si);
-    ok_ = sampler_ != nullptr;
+    si.min_filter = si.mag_filter = SDL_GPU_FILTER_NEAREST;
+    point_sampler_ = SDL_CreateGPUSampler(device_, &si);
+    ok_ = sampler_ && point_sampler_;
 }
 
 Fsr3::~Fsr3() {
@@ -210,6 +202,7 @@ Fsr3::~Fsr3() {
     for (SDL_GPUComputePipeline* p : pipelines_)
         if (p) SDL_ReleaseGPUComputePipeline(device_, p);
     if (sampler_) SDL_ReleaseGPUSampler(device_, sampler_);
+    if (point_sampler_) SDL_ReleaseGPUSampler(device_, point_sampler_);
 }
 
 SDL_GPUTexture* Fsr3::make(SDL_GPUTextureFormat format, uint32_t w, uint32_t h, uint32_t levels) {
@@ -239,8 +232,6 @@ void Fsr3::ensure_resources(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) 
     release_resources();
     render_w_ = rw, render_h_ = rh, output_w_ = ow, output_h_ = oh;
     const uint32_t hw = std::max(rw / 2, 1u), hh = std::max(rh / 2, 1u);
-    motion_ = make(kRG16, rw, rh);
-    depth_ = make(kR32F, rw, rh);
     dilated_depth_ = make(kR32F, rw, rh);
     dilated_motion_ = make(kRG16, rw, rh);
     previous_nearest_depth_ = make(kR32U, rw, rh);
@@ -253,7 +244,8 @@ void Fsr3::ensure_resources(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) 
     }
     shading_change_ = make(kR8, hw, hh);
     farthest_depth_mip1_ = make(kR16, hw, hh);
-    spd_levels_ = std::max(uint32_t(std::floor(std::log2(float(std::max(hw, hh))))) + 1, 6u);
+    // (levels while the shorter side lasts: SDL takes a level's size as size >> level)
+    spd_levels_ = std::max(uint32_t(std::floor(std::log2(float(std::min(hw, hh))))) + 1, 6u);
     spd_mips_ = make(kRG16, hw, hh, spd_levels_);
     spd_atomic_ = make(kR32U, 1, 1);
     frame_info_ = make(kRGBA32, 1, 1);
@@ -283,7 +275,7 @@ void Fsr3::run(SDL_GPUCommandBuffer* cmd, Pass pass, const std::vector<SDL_GPUTe
     SDL_GPUComputePass* cp = SDL_BeginGPUComputePass(cmd, rw.data(), uint32_t(rw.size()), nullptr, 0);
     SDL_BindGPUComputePipeline(cp, pipelines_[pass]);
     std::vector<SDL_GPUTextureSamplerBinding> tex;
-    for (SDL_GPUTexture* t : srvs) tex.push_back({t, sampler_});
+    for (SDL_GPUTexture* t : srvs) tex.push_back({t, t == previous_nearest_depth_ ? point_sampler_ : sampler_});   // (R32_UINT: unfiltered)
     if (!tex.empty()) SDL_BindGPUComputeSamplers(cp, 0, tex.data(), uint32_t(tex.size()));
     for (size_t i = 0; i < constants.size(); ++i)
         SDL_PushGPUComputeUniformData(cmd, uint32_t(i), constants[i].first, constants[i].second);
@@ -291,64 +283,21 @@ void Fsr3::run(SDL_GPUCommandBuffer* cmd, Pass pass, const std::vector<SDL_GPUTe
     SDL_EndGPUComputePass(cp);
 }
 
-glm::vec2 Fsr3::next_jitter(uint32_t render_w, uint32_t output_w) {
-    // ffxFsr3UpscalerGetJitterPhaseCount / GetJitterOffset: a Halton (2, 3) sequence, longer
-    // the more the frame is upscaled
-    const float ratio = float(output_w) / float(std::max(render_w, 1u));
-    const int32_t phases = std::max(int32_t(8.0f * ratio * ratio), 1);
-    const int32_t i = jitter_index_++ % phases;
-    if (jitter_index_ >= phases * 64) jitter_index_ = 0;
-    return {halton(i + 1, 2) - 0.5f, halton(i + 1, 3) - 0.5f};
-}
-
-SDL_GPUTexture* Fsr3::prepare(SDL_GPUCommandBuffer* cmd, const Frame& f) {
+SDL_GPUTexture* Fsr3::upscale(SDL_GPUCommandBuffer* cmd, const Frame& f, const TemporalInputs& in) {
     const uint32_t rw = f.render_w, rh = f.render_h, ow = f.output_w, oh = f.output_h;
-    bool reset = f.reset;
+    bool reset = in.reset();
     if (rw != render_w_ || rh != render_h_ || ow != output_w_ || oh != output_h_ || owned_.empty()) {
         ensure_resources(rw, rh, ow, oh);
         reset = true;
     }
-    // A pause in the frames (a menu, the upscaler off) or a jump of the camera is a cut too.
-    const uint64_t now = SDL_GetTicksNS();
-    const float dt = last_ticks_ ? float(now - last_ticks_) * 1e-9f : 1.0f;
-    last_ticks_ = now;
-    if (dt > 0.25f) reset = true;
-    const glm::vec3 camera = glm::vec3(glm::inverse(f.view)[3]);
-    if (glm::distance(camera, previous_camera_) > 10.0f) reset = true;
-    previous_camera_ = camera;
     if (!cleared_) {
         for (SDL_GPUTexture* t : {exposure_, no_reactivity_, luma_[0], luma_[1], accumulation_[0], accumulation_[1], new_locks_})
             clear(cmd, t, glm::vec4(0));
         cleared_ = true;
         reset = true;
     }
-    const glm::mat4 view_proj = f.proj * f.view;
-    if (reset) previous_view_proj_ = view_proj, previous_jitter_ = f.jitter, previous_render_ = {rw, rh},
-               previous_output_ = {ow, oh};
-    reset_ = reset, dt_ = dt;
-    reprojected_from_ = previous_view_proj_;
-
-    // The camera's motion everywhere, and the depth as FSR reads it.
-    {
-        struct {
-            glm::mat4 reproject;
-            glm::vec4 size, jitter;
-        } u;
-        const glm::vec2 jitter_ndc(2.0f * f.jitter.x / float(rw), -2.0f * f.jitter.y / float(rh));
-        const glm::mat4 jittered = glm::translate(glm::mat4(1), glm::vec3(jitter_ndc, 0)) * view_proj;
-        u.reproject = previous_view_proj_ * glm::inverse(jittered);
-        u.size = {float(rw), float(rh), 1.0f / float(rw), 1.0f / float(rh)};
-        u.jitter = {jitter_ndc, 0, 0};
-        run(cmd, MotionVectors, {f.depth}, {{motion_}, {depth_}}, {{&u, uint32_t(sizeof u)}}, groups(rw, 8), groups(rh, 8));
-        previous_view_proj_ = view_proj;
-    }
-    return motion_;
-}
-
-SDL_GPUTexture* Fsr3::upscale(SDL_GPUCommandBuffer* cmd, const Frame& f) {
-    const uint32_t rw = f.render_w, rh = f.render_h, ow = f.output_w, oh = f.output_h;
-    const bool reset = reset_;
-    const float dt = dt_;
+    const glm::vec2 jitter = in.jitter();
+    if (reset) previous_jitter_ = jitter, previous_render_ = {rw, rh}, previous_output_ = {ow, oh};
     const size_t odd = frame_ & 1, even = 1 - odd;   // the SDK's resource pairs: read [odd], write [even]
 
     Constants c{};
@@ -369,7 +318,7 @@ SDL_GPUTexture* Fsr3::upscale(SDL_GPUCommandBuffer* cmd, const Frame& f) {
         c.device_to_view_depth[3] = 1.0f / cot_half_fov;
         c.tan_half_fov = aspect / cot_half_fov;   // horizontal
     }
-    c.jitter[0] = f.jitter.x, c.jitter[1] = f.jitter.y;
+    c.jitter[0] = jitter.x, c.jitter[1] = jitter.y;
     c.previous_jitter[0] = previous_jitter_.x, c.previous_jitter[1] = previous_jitter_.y;
     c.motion_vector_scale[0] = c.motion_vector_scale[1] = 1;   // (already in UV units)
     c.downscale_factor[0] = float(rw) / float(ow), c.downscale_factor[1] = float(rh) / float(oh);
@@ -379,7 +328,7 @@ SDL_GPUTexture* Fsr3::upscale(SDL_GPUCommandBuffer* cmd, const Frame& f) {
     else if (phases > jitter_phases_) jitter_phases_ += 1;
     else if (phases < jitter_phases_) jitter_phases_ -= 1;
     c.jitter_phase_count = jitter_phases_;
-    c.delta_time = std::clamp(dt, 0.0f, 1.0f);
+    c.delta_time = std::clamp(in.dt(), 0.0f, 1.0f);
     c.delta_pre_exposure = 1;
     c.view_space_to_meters = 1;
     frame_index_ = reset ? 0 : frame_index_ + 1;
@@ -415,7 +364,7 @@ SDL_GPUTexture* Fsr3::upscale(SDL_GPUCommandBuffer* cmd, const Frame& f) {
     SDL_GPUTexture* luma = luma_[odd];   // this frame's (the SDK: odd frames LUMA_2)
     SDL_GPUTexture* previous_luma = luma_[even];
     const uint32_t gx = groups(rw, 8), gy = groups(rh, 8), ox = groups(ow, 8), oy = groups(oh, 8);
-    run(cmd, PrepareInputs, {motion_, depth_, f.color},
+    run(cmd, PrepareInputs, {in.motion(), in.depth(), f.color},
         {{dilated_motion_}, {dilated_depth_}, {previous_nearest_depth_}, {intermediate_}, {luma}}, {cb}, gx, gy);
     std::vector<Texture> pyramid = spd_mips({{spd_atomic_}, {frame_info_}});
     pyramid.push_back({farthest_depth_mip1_});
@@ -438,7 +387,7 @@ SDL_GPUTexture* Fsr3::upscale(SDL_GPUCommandBuffer* cmd, const Frame& f) {
 
     if (std::getenv("TDKR_FSR3_DEBUG"))   // FSR's own view of its inputs and masks
         run(cmd, DebugView, {reactive_masks_, dilated_motion_, dilated_depth_, upscaled_[even], exposure_}, {{output_}}, {cb}, ox, oy);
-    previous_jitter_ = f.jitter;
+    previous_jitter_ = jitter;
     previous_render_ = {rw, rh}, previous_output_ = {ow, oh};
     frame_ = (frame_ + 1) % 16;
     return output_;

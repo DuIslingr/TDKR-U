@@ -396,6 +396,7 @@ FrameParams Game::frame(const Camera& cam_in, int w, int h) {
     if (opt.sharpness >= 0) s.sharpness = opt.sharpness;
     f.upscale.kind = UpscalerKind(int(active_upscaler(s, upscalers)));   // (the same order)
     f.upscale.ratio = upscale_ratio(s.upscale_mode);
+    f.upscale.mode = int(s.upscale_mode);
     f.upscale.sharpness = s.sharpness;
     return f;
 }

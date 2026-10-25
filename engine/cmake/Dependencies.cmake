@@ -14,19 +14,44 @@ function(tdkr_alias name target)
     endif()
 endfunction()
 
-if(TDKR_VENDORED)
-    # ---------------------------------------------------------------- SDL3
-    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+# ---------------------------------------------------------------- SDL3
+# Built from its pinned release with third_party/sdl/native-access.patch: the GPU backend's
+# own Vulkan / Metal objects for DLSS and MetalFX (SDL_GetGPUNativeTexture and so on). A
+# static library in vendored builds; else a shared one that the system's SDL3_ttf, built
+# against libSDL3.so.0, shares (the game finds it beside itself, before the system's).
+# TDKR_PATCHED_SDL=OFF takes the system's SDL as it is, without DLSS or MetalFX.
+option(TDKR_PATCHED_SDL "SDL3 from its pinned release with the native-access patch (DLSS, MetalFX)" ON)
+if(TDKR_VENDORED OR TDKR_PATCHED_SDL)
+    if(TDKR_VENDORED)
+        set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+        set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    else()
+        set(SDL_SHARED ON CACHE BOOL "" FORCE)
+        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+    endif()
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(SDL3
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG release-3.4.18
-        GIT_SHALLOW ON)
+        GIT_SHALLOW ON
+        PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_LIST_DIR}/../third_party/sdl/native-access.patch
+                      -P ${CMAKE_CURRENT_LIST_DIR}/apply_patch.cmake
+        UPDATE_DISCONNECTED ON)
     FetchContent_MakeAvailable(SDL3)
-    tdkr_alias(tdkr::sdl3 SDL3::SDL3-static)
+    if(TDKR_VENDORED)
+        tdkr_alias(tdkr::sdl3 SDL3::SDL3-static)
+    else()
+        tdkr_alias(tdkr::sdl3 SDL3::SDL3-shared)
+    endif()
+    set(TDKR_NATIVE_GPU ON)   # SDL_GetGPUNativeTexture and the rest
+else()
+    find_package(SDL3 REQUIRED CONFIG)
+    tdkr_alias(tdkr::sdl3 SDL3::SDL3)
+    set(TDKR_NATIVE_GPU OFF)
+endif()
 
+if(TDKR_VENDORED)
     # ---------------------------------------------------------------- SDL3_ttf (FreeType, HarfBuzz)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
@@ -123,7 +148,6 @@ if(TDKR_VENDORED)
     target_include_directories(tdkr_glm INTERFACE ${glm_SOURCE_DIR})
     tdkr_alias(tdkr::glm tdkr_glm)
 else()
-    find_package(SDL3 REQUIRED CONFIG)
     find_package(ZLIB REQUIRED)
     find_path(GLM_INCLUDE_DIR glm/glm.hpp REQUIRED)
     find_package(PkgConfig REQUIRED)
@@ -131,7 +155,6 @@ else()
     # The game embeds Lua 5.1.4; its level scripts rely on 5.1 semantics.
     pkg_check_modules(LUA51 REQUIRED IMPORTED_TARGET lua5.1)
     pkg_check_modules(SDL3_TTF REQUIRED IMPORTED_TARGET sdl3-ttf)
-    tdkr_alias(tdkr::sdl3 SDL3::SDL3)
     tdkr_alias(tdkr::sdl3_ttf PkgConfig::SDL3_TTF)
     tdkr_alias(tdkr::zlib ZLIB::ZLIB)
     tdkr_alias(tdkr::lua PkgConfig::LUA51)

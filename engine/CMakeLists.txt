@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(tdkr VERSION 0.1.0 LANGUAGES C CXX)
+if(APPLE)
+    enable_language(OBJCXX)   # (render/metalfx.mm)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +19,7 @@ else()
 endif()
 option(TDKR_VENDORED "Build SDL3, SDL3_ttf, zlib, Lua 5.1, shaderc and GLM from pinned sources" ${TDKR_PORTABLE_DEFAULT})
 option(TDKR_SHADERCROSS "Direct3D 12 and Metal through SDL_shadercross (else Vulkan only)" ${TDKR_PORTABLE_DEFAULT})
+include(GNUInstallDirs)
 include(cmake/Dependencies.cmake)
 
 if(MSVC)
@@ -113,6 +117,53 @@ if(TDKR_SHADERCROSS)
     target_link_libraries(tdkr PRIVATE tdkr::shadercross)
     target_compile_definitions(tdkr PRIVATE TDKR_SHADERCROSS=1)
 endif()
+if(TDKR_NATIVE_GPU)
+    target_compile_definitions(tdkr PRIVATE TDKR_NATIVE_GPU=1)
+endif()
+# The patched SDL as a shared library: the game finds it beside itself (and, installed, in
+# ../lib), before the system's.
+if(NOT TDKR_VENDORED AND TDKR_PATCHED_SDL)
+    set_target_properties(tdkr PROPERTIES BUILD_RPATH "$<TARGET_FILE_DIR:SDL3::SDL3-shared>"
+                                          INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
+
+# NVIDIA DLSS (render/dlss.cpp): with the DLSS SDK (github.com/NVIDIA/DLSS; its licence is
+# NVIDIA's own and the SDK is not part of this repository). -DTDKR_DLSS_SDK=DIR, by default
+# ../work/ext/DLSS when it is there. The DLSS runtime goes beside the game.
+set(TDKR_DLSS_SDK "" CACHE PATH "The NVIDIA DLSS SDK (github.com/NVIDIA/DLSS) for DLSS; empty: without")
+set(dlss_sdk "${TDKR_DLSS_SDK}")
+if(NOT dlss_sdk AND EXISTS ${CMAKE_SOURCE_DIR}/../work/ext/DLSS/include/nvsdk_ngx.h)
+    set(dlss_sdk ${CMAKE_SOURCE_DIR}/../work/ext/DLSS)
+endif()
+if(dlss_sdk AND TDKR_NATIVE_GPU AND NOT APPLE)
+    find_path(TDKR_VULKAN_INCLUDE_DIR vulkan/vulkan.h HINTS $ENV{VULKAN_SDK}/include)
+    if(WIN32)
+        set(dlss_lib ${dlss_sdk}/lib/Windows_x86_64/x64/nvsdk_ngx_s.lib)
+        file(GLOB dlss_runtime ${dlss_sdk}/lib/Windows_x86_64/rel/nvngx_dlss.dll)
+    else()
+        set(dlss_lib ${dlss_sdk}/lib/Linux_x86_64/libnvsdk_ngx.a)
+        file(GLOB dlss_runtime ${dlss_sdk}/lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.*)
+    endif()
+    if(EXISTS ${dlss_lib} AND dlss_runtime AND TDKR_VULKAN_INCLUDE_DIR)
+        message(STATUS "DLSS: ${dlss_sdk}")
+        target_include_directories(tdkr PRIVATE ${dlss_sdk}/include ${TDKR_VULKAN_INCLUDE_DIR})
+        target_link_libraries(tdkr PRIVATE ${dlss_lib} ${CMAKE_DL_LIBS})
+        target_compile_definitions(tdkr PRIVATE TDKR_DLSS=1)
+        add_custom_command(TARGET tdkr POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dlss_runtime} $<TARGET_FILE_DIR:tdkr> VERBATIM)
+        set(TDKR_DLSS_RUNTIME ${dlss_runtime})
+    else()
+        message(STATUS "DLSS: no NGX library, DLSS runtime or Vulkan headers in ${dlss_sdk}; without DLSS")
+    endif()
+endif()
+
+# Apple MetalFX (render/metalfx.mm), with the patched SDL's Metal objects.
+if(APPLE AND TDKR_NATIVE_GPU)
+    target_sources(tdkr PRIVATE src/render/metalfx.mm)
+    target_compile_options(tdkr PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    target_compile_definitions(tdkr PRIVATE TDKR_METALFX=1)
+    target_link_libraries(tdkr PRIVATE "-framework Metal" "-framework MetalFX" "-weak_framework MetalFX")
+endif()
 add_dependencies(tdkr shaders)
 # The shaders sit beside the executable (SDL_GetBasePath()/shaders).
 add_custom_command(TARGET tdkr POST_BUILD
@@ -130,13 +181,18 @@ endif()
 
 # Installation and packages: the game, its shaders and the checks. The game's own data
 # is never part of them; players point --data at their copy.
-include(GNUInstallDirs)
 if(WIN32 OR APPLE)
     set(TDKR_INSTALL_BIN .)
 else()
     set(TDKR_INSTALL_BIN ${CMAKE_INSTALL_BINDIR})
 endif()
 install(TARGETS tdkr tdkr-check RUNTIME DESTINATION ${TDKR_INSTALL_BIN} COMPONENT game)
+if(TDKR_DLSS_RUNTIME)
+    install(FILES ${TDKR_DLSS_RUNTIME} DESTINATION ${TDKR_INSTALL_BIN} COMPONENT game)
+endif()
+if(NOT TDKR_VENDORED AND TDKR_PATCHED_SDL)
+    install(TARGETS SDL3-shared LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT game NAMELINK_SKIP)
+endif()
 install(FILES ${SHADER_OUTPUTS} DESTINATION ${TDKR_INSTALL_BIN}/shaders COMPONENT game)
 install(FILES ${CMAKE_SOURCE_DIR}/../README.md DESTINATION ${TDKR_INSTALL_BIN} COMPONENT game OPTIONAL)
 # Vendored libraries add install rules of their own (headers, static libraries); the

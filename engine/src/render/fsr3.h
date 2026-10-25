@@ -12,6 +12,8 @@
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 
+#include "render/temporal.h"
+
 namespace tdkr {
 
 class Fsr3 {
@@ -23,31 +25,19 @@ public:
     Fsr3& operator=(const Fsr3&) = delete;
     bool ok() const { return ok_; }
 
-    // The camera's sub-pixel offset for the next frame, in render pixels (x right, y down).
-    glm::vec2 next_jitter(uint32_t render_w, uint32_t output_w);
-
     struct Frame {
         SDL_GPUTexture* color = nullptr;   // render size: the finished frame
-        SDL_GPUTexture* depth = nullptr;   // render size, reversed (near 1)
         uint32_t render_w = 0, render_h = 0, output_w = 0, output_h = 0;
-        glm::mat4 view{1}, proj{1};        // the projection without the jitter
-        glm::vec2 jitter{0};               // next_jitter's, as drawn
+        glm::mat4 proj{1};                 // the projection without the jitter
         float sharpness = 0.5f;            // 0..1 (0: none)
-        bool reset = false;                // a cut: no history
     };
-    // A frame in two steps. prepare: the camera's motion for every pixel, into the motion
-    // vector texture it returns (RG16F, render size; UV units, from this frame back to the
-    // previous one), where the caller can draw what moved on its own. upscale: the rest; the
-    // upscaled frame (output size, RGBA16F).
-    SDL_GPUTexture* prepare(SDL_GPUCommandBuffer* cmd, const Frame& f);
-    SDL_GPUTexture* upscale(SDL_GPUCommandBuffer* cmd, const Frame& f);
-    // prepare's previous view-projection (unjittered), which the motion goes back to.
-    const glm::mat4& reprojected_from() const { return reprojected_from_; }
-    bool reset() const { return reset_; }   // prepare's: this frame has no history
+    // The upscaled frame (output size, RGBA16F), from this frame and the motion, depth and
+    // jitter TemporalInputs::prepare made for it.
+    SDL_GPUTexture* upscale(SDL_GPUCommandBuffer* cmd, const Frame& f, const TemporalInputs& in);
 
 private:
     enum Pass {
-        MotionVectors, PrepareInputs, LumaPyramid, ShadingChangePyramid, ShadingChange, PrepareReactivity,
+        PrepareInputs, LumaPyramid, ShadingChangePyramid, ShadingChange, PrepareReactivity,
         LumaInstability, Accumulate, AccumulateSharpen, Rcas, DebugView, kPasses
     };
     struct Texture {
@@ -65,11 +55,11 @@ private:
     bool ok_ = false;
     std::array<SDL_GPUComputePipeline*, kPasses> pipelines_{};
     SDL_GPUSampler* sampler_ = nullptr;   // linear, clamped: every pass's SampleLevel
+    SDL_GPUSampler* point_sampler_ = nullptr;   // (for the integer texture)
 
     uint32_t render_w_ = 0, render_h_ = 0, output_w_ = 0, output_h_ = 0;
     std::vector<SDL_GPUTexture*> owned_;
     // (the SDK's resources: render size, half of it, the output size; pairs swap each frame)
-    SDL_GPUTexture *motion_ = nullptr, *depth_ = nullptr;
     SDL_GPUTexture *dilated_depth_ = nullptr, *dilated_motion_ = nullptr, *previous_nearest_depth_ = nullptr;
     SDL_GPUTexture* intermediate_ = nullptr;   // the farthest depth, then the luma instability
     std::array<SDL_GPUTexture*, 2> luma_{}, luma_history_{}, accumulation_{}, upscaled_{};
@@ -80,16 +70,10 @@ private:
     bool cleared_ = false;   // the defaults and first-frame clears done
 
     uint32_t frame_ = 0;          // even and odd frames swap the pairs
-    int32_t jitter_index_ = 0;
     float jitter_phases_ = 0;     // eases towards the size ratio's count
     float frame_index_ = 0;       // frames accumulated since a reset
     glm::vec2 previous_jitter_{0};
     glm::ivec2 previous_render_{0}, previous_output_{0};
-    glm::mat4 previous_view_proj_{1}, reprojected_from_{1};
-    bool reset_ = true;
-    float dt_ = 0;
-    glm::vec3 previous_camera_{0};
-    uint64_t last_ticks_ = 0;
 };
 
 }  // namespace tdkr

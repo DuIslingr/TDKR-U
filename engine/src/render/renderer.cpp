@@ -1,6 +1,9 @@
 #include "render/renderer.h"
 
+#include "render/dlss.h"
 #include "render/fsr3.h"
+#include "render/metalfx.h"
+#include "render/temporal.h"
 
 #include <algorithm>
 #include <array>
@@ -237,7 +240,38 @@ Renderer::Renderer(SDL_Window* window, const std::string& shader_dir) : window_(
 #ifdef TDKR_SHADERCROSS
     if (SDL_ShaderCross_Init()) formats |= SDL_ShaderCross_GetSPIRVShaderFormats();
 #endif
-    device_ = SDL_CreateGPUDevice(formats, false, nullptr);
+    // DLSS asks for Vulkan extensions of its own (NGX's) where it can run: an NVIDIA GPU, a
+    // build with the DLSS SDK. Then the device is Vulkan's, made with them (or without, if
+    // that fails).
+    const DlssRequirements dlss = dlss_requirements();
+    auto create_device = [&](bool with_dlss) {
+        const SDL_PropertiesID create = SDL_CreateProperties();
+        SDL_SetBooleanProperty(create, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, false);
+        SDL_SetBooleanProperty(create, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, formats & SDL_GPU_SHADERFORMAT_SPIRV);
+        SDL_SetBooleanProperty(create, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_DXBC_BOOLEAN, formats & SDL_GPU_SHADERFORMAT_DXBC);
+        SDL_SetBooleanProperty(create, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_DXIL_BOOLEAN, formats & SDL_GPU_SHADERFORMAT_DXIL);
+        SDL_SetBooleanProperty(create, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN, formats & SDL_GPU_SHADERFORMAT_MSL);
+        SDL_SetBooleanProperty(create, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_METALLIB_BOOLEAN, formats & SDL_GPU_SHADERFORMAT_METALLIB);
+        std::vector<const char*> instance_extensions, device_extensions;
+        SDL_GPUVulkanOptions vulkan{};
+        if (with_dlss) {
+            for (const std::string& e : dlss.instance_extensions) instance_extensions.push_back(e.c_str());
+            for (const std::string& e : dlss.device_extensions) device_extensions.push_back(e.c_str());
+            vulkan.vulkan_api_version = dlss.vulkan_version;
+            vulkan.instance_extension_count = uint32_t(instance_extensions.size());
+            vulkan.instance_extension_names = instance_extensions.data();
+            vulkan.device_extension_count = uint32_t(device_extensions.size());
+            vulkan.device_extension_names = device_extensions.data();
+            SDL_SetPointerProperty(create, SDL_PROP_GPU_DEVICE_CREATE_VULKAN_OPTIONS_POINTER, &vulkan);
+            SDL_SetStringProperty(create, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, "vulkan");
+        }
+        SDL_GPUDevice* d = SDL_CreateGPUDeviceWithProperties(create);
+        SDL_DestroyProperties(create);
+        return d;
+    };
+    device_ = dlss.possible ? create_device(true) : nullptr;
+    const bool dlss_device = device_ != nullptr;
+    if (!device_) device_ = create_device(false);
     if (!device_) fail("SDL_CreateGPUDevice");
     spirv_ = (SDL_GetGPUShaderFormats(device_) & SDL_GPU_SHADERFORMAT_SPIRV) != 0;
     std::printf("gpu: %s\n", SDL_GetGPUDeviceDriver(device_));
@@ -258,8 +292,17 @@ Renderer::Renderer(SDL_Window* window, const std::string& shader_dir) : window_(
     fs_rcas_ = load_shader(shader_dir + "/fsr1_rcas.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
     vs_motion_ = load_shader(shader_dir + "/motion.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 3);
     fs_motion_ = load_shader(shader_dir + "/motion.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
+    temporal_ = std::make_unique<TemporalInputs>(device_, shader_dir, [this](const std::vector<uint32_t>& spirv,
+                                                                              const SDL_GPUComputePipelineCreateInfo& counts) {
+        return make_compute(spirv, counts);
+    });
+    if (!temporal_->ok()) temporal_.reset();
     fsr3_ = std::make_unique<Fsr3>(device_, shader_dir);
     if (!fsr3_->ok()) fsr3_.reset();
+    DlssRequirements dlss_here = dlss;
+    if (dlss.possible && !dlss_device) dlss_here.possible = false, dlss_here.why = "NOT AVAILABLE";
+    dlss_ = std::make_unique<Dlss>(device_, dlss_here);
+    metalfx_ = std::make_unique<MetalFx>(device_);
 
     SDL_GPUSamplerCreateInfo si{};
     si.min_filter = SDL_GPU_FILTER_LINEAR;
@@ -317,6 +360,9 @@ Renderer::~Renderer() {
     if (!device_) return;
     SDL_WaitForGPUIdle(device_);
     fsr3_.reset();
+    dlss_.reset();
+    metalfx_.reset();
+    temporal_.reset();
     for (auto& m : models_) {
         SDL_ReleaseGPUBuffer(device_, m->vertices);
         if (m->owns_indices) SDL_ReleaseGPUBuffer(device_, m->indices);
@@ -404,6 +450,36 @@ SDL_GPUShader* Renderer::make_shader(const uint8_t* code, size_t size, SDL_GPUSh
     resources.num_samplers = samplers;
     resources.num_uniform_buffers = uniforms;
     return SDL_ShaderCross_CompileGraphicsShaderFromSPIRV(device_, &info, &resources, 0);
+#else
+    SDL_SetError("this build only has Vulkan shaders");
+    return nullptr;
+#endif
+}
+
+SDL_GPUComputePipeline* Renderer::make_compute(const std::vector<uint32_t>& spirv, const SDL_GPUComputePipelineCreateInfo& counts) {
+    if (spirv_) {
+        SDL_GPUComputePipelineCreateInfo ci = counts;
+        ci.code = reinterpret_cast<const Uint8*>(spirv.data());
+        ci.code_size = spirv.size() * 4;
+        ci.format = SDL_GPU_SHADERFORMAT_SPIRV;
+        return SDL_CreateGPUComputePipeline(device_, &ci);
+    }
+#ifdef TDKR_SHADERCROSS
+    SDL_ShaderCross_SPIRV_Info info{};
+    info.bytecode = reinterpret_cast<const Uint8*>(spirv.data());
+    info.bytecode_size = spirv.size() * 4;
+    info.entrypoint = counts.entrypoint;
+    info.shader_stage = SDL_SHADERCROSS_SHADERSTAGE_COMPUTE;
+    SDL_ShaderCross_ComputePipelineMetadata metadata{};
+    metadata.num_samplers = counts.num_samplers;
+    metadata.num_readonly_storage_textures = counts.num_readonly_storage_textures;
+    metadata.num_readonly_storage_buffers = counts.num_readonly_storage_buffers;
+    metadata.num_readwrite_storage_textures = counts.num_readwrite_storage_textures;
+    metadata.num_readwrite_storage_buffers = counts.num_readwrite_storage_buffers;
+    metadata.num_uniform_buffers = counts.num_uniform_buffers;
+    metadata.threadcount_x = counts.threadcount_x, metadata.threadcount_y = counts.threadcount_y;
+    metadata.threadcount_z = counts.threadcount_z;
+    return SDL_ShaderCross_CompileComputePipelineFromSPIRV(device_, &info, &metadata, 0);
 #else
     SDL_SetError("this build only has Vulkan shaders");
     return nullptr;
@@ -616,6 +692,22 @@ const Renderer::Pipelines& Renderer::pipelines_for(SDL_GPUTextureFormat format) 
     return pipelines_[int(format)] = Pipelines{make(false, false), make(true, false), make(false, true), make(true, true),
                                                make_particles(true, true), make_particles(false, true), make_color(true), make_color(false),
                                                make_particles(false, false), make_particles(true, false)};
+}
+
+SDL_GPUTexture* Renderer::overlay_depth(uint32_t w, uint32_t h) {
+    if (depth_ && depth_w_ == w && depth_h_ == h) return depth_;   // (the scene's, done with by then)
+    if (!hud_depth_ || hud_depth_w_ != w || hud_depth_h_ != h) {
+        if (hud_depth_) SDL_ReleaseGPUTexture(device_, hud_depth_);
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type = SDL_GPU_TEXTURETYPE_2D;
+        ti.format = kDepthFormat;
+        ti.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        ti.width = w, ti.height = h, ti.layer_count_or_depth = 1, ti.num_levels = 1;
+        hud_depth_ = SDL_CreateGPUTexture(device_, &ti);
+        if (!hud_depth_) fail("depth texture (overlay)");
+        hud_depth_w_ = w, hud_depth_h_ = h;
+    }
+    return hud_depth_;
 }
 
 void Renderer::ensure_depth(uint32_t w, uint32_t h) {
@@ -1207,20 +1299,12 @@ SDL_GPUSampler* Renderer::biased_sampler(float bias) {
 UpscalerSupport Renderer::upscaler_support() const {
     UpscalerSupport s;
     s.fsr1 = fs_easu_ && fs_rcas_;
-    s.fsr3 = fsr3_ != nullptr;
+    s.fsr3 = fsr3_ && temporal_;
     s.fsr3_why = "VULKAN ONLY";   // (its passes are SPIR-V compute)
-    // DLSS needs an NVIDIA RTX card and NVIDIA's runtime, MetalFX Apple's Metal; neither runs
-    // through SDL's GPU API here.
-    const char* name = nullptr;
-    const SDL_PropertiesID props = SDL_GetGPUDeviceProperties(device_);
-    if (props) name = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_NAME_STRING, nullptr);
-    const bool nvidia = name && (SDL_strcasestr(name, "nvidia") || SDL_strcasestr(name, "geforce") || SDL_strcasestr(name, "rtx"));
-    s.dlss_why = nvidia ? "NOT IN THIS BUILD" : "NVIDIA RTX ONLY";
-#ifdef __APPLE__
-    s.metalfx_why = "NOT IN THIS BUILD";
-#else
-    s.metalfx_why = "MACOS ONLY";
-#endif
+    s.dlss = temporal_ && dlss_ && dlss_->ok();
+    s.dlss_why = !dlss_ ? "NOT IN THIS BUILD" : !temporal_ ? "NOT AVAILABLE" : dlss_->why();
+    s.metalfx = temporal_ && metalfx_ && metalfx_->ok();
+    s.metalfx_why = !metalfx_ ? "MACOS ONLY" : !temporal_ ? "NOT AVAILABLE" : metalfx_->why();
     return s;
 }
 
@@ -1265,13 +1349,17 @@ void Renderer::encode_hud(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL
 
 void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format, uint32_t w,
                       uint32_t h, const std::vector<DrawItem>& items, const FrameParams& unjittered) {
-    // FSR 1 upscales (or at the full size only sharpens) the finished frame; FSR 3 accumulates
-    // it over frames, each drawn with the camera a sub-pixel off (jittered). Both work on the
-    // offscreen path, at the render size up to the combined frame.
-    const bool fsr1 = unjittered.upscale.kind == UpscalerKind::Fsr1 && fs_easu_ && fs_rcas_;
-    const bool fsr3 = unjittered.upscale.kind == UpscalerKind::Fsr3 && fsr3_ && fs_rcas_;
+    // FSR 1 upscales (or at the full size only sharpens) the finished frame; the temporal
+    // upscalers (FSR 3, DLSS, MetalFX) accumulate it over frames, each drawn with the camera a
+    // sub-pixel off (jittered). All work on the offscreen path, at the render size up to the
+    // combined frame.
+    const UpscalerKind kind = unjittered.upscale.kind;
+    const bool temporal = temporal_ && fs_rcas_ &&
+                          ((kind == UpscalerKind::Fsr3 && fsr3_) || (kind == UpscalerKind::Dlss && dlss_ && dlss_->ok()) ||
+                           (kind == UpscalerKind::MetalFx && metalfx_ && metalfx_->ok()));
+    const bool fsr1 = kind == UpscalerKind::Fsr1 && fs_easu_ && fs_rcas_;
     const uint32_t ow = w, oh = h;
-    if (fsr1 || fsr3) {
+    if (fsr1 || temporal) {
         const float ratio = std::max(unjittered.upscale.ratio, 1.0f);
         w = std::max(uint32_t(std::lround(float(ow) / ratio)), 1u);
         h = std::max(uint32_t(std::lround(float(oh) / ratio)), 1u);
@@ -1279,21 +1367,21 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
     }
     FrameParams jittered;
     glm::vec2 jitter(0);
-    if (fsr3) {
-        jitter = fsr3_->next_jitter(w, ow);
+    if (temporal) {
+        jitter = temporal_->next_jitter(w, ow);
         jittered = unjittered;
         jittered.proj = glm::translate(glm::mat4(1), glm::vec3(2.0f * jitter.x / float(w), -2.0f * jitter.y / float(h), 0)) *
                         unjittered.proj;
     }
-    const FrameParams& frame = fsr3 ? jittered : unjittered;
-    // Textures as sharp as the output size wants (AMD's advice: FSR 1 log2(render / output),
-    // FSR 3 one level more, as its frames add up the detail).
-    scene_sampler_ = fsr1 || fsr3 ? biased_sampler(std::log2(float(w) / float(ow)) - (fsr3 ? 1.0f : 0.0f)) : sampler_;
+    const FrameParams& frame = temporal ? jittered : unjittered;
+    // Textures as sharp as the output size wants (AMD's and NVIDIA's advice: FSR 1
+    // log2(render / output), the temporal ones a level more, as their frames add up the detail).
+    scene_sampler_ = fsr1 || temporal ? biased_sampler(std::log2(float(w) / float(ow)) - (temporal ? 1.0f : 0.0f)) : sampler_;
     const PostParams* post = frame.post && frame.post->active() ? frame.post : nullptr;
     // A view model reading the screen behind it needs the scene in a texture it can copy:
     // the offscreen path, with no effect (its final pass is then a plain copy).
     static const PostParams kNoEffects;
-    if (!post && (fsr1 || fsr3 || reads_screen(items))) post = &kNoEffects;
+    if (!post && (fsr1 || temporal || reads_screen(items))) post = &kNoEffects;
     if (!post) {
         encode_scene(cmd, target, format, w, h, items, frame, !frame.hud3d);
         if (frame.hud3d) encode_hud(cmd, target, format, w, h, items, frame);
@@ -1329,7 +1417,7 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
         SDL_EndGPUCopyPass(copy);
     }
     encode_scene(cmd, scene_color_, kOffscreenFormat, w, h, items, frame, false);
-    const PostPipelines& pp = post_pipelines_for(fsr1 || fsr3 ? kOffscreenFormat : format);
+    const PostPipelines& pp = post_pipelines_for(fsr1 || temporal ? kOffscreenFormat : format);
     auto run = [&](SDL_GPUTexture* out, uint32_t pw, uint32_t ph, SDL_GPUGraphicsPipeline* pipe,
                    std::initializer_list<SDL_GPUTexture*> inputs, const void* uniforms, uint32_t size, bool hud) {
         SDL_GPUColorTargetInfo ct{};
@@ -1345,7 +1433,20 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
         SDL_BindGPUFragmentSamplers(pass, 0, tex.data(), uint32_t(tex.size()));
         SDL_PushGPUFragmentUniformData(cmd, 0, uniforms, size);
         SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
-        if (hud) draw_screen_overlay(pass, cmd, pipelines_for(format), ow, oh, frame.overlay, frame.sprites);
+        SDL_EndGPURenderPass(pass);
+        if (!hud) return;
+        // The 2D overlay after, in a pass of its own: its pipelines have a depth target.
+        ct.load_op = SDL_GPU_LOADOP_LOAD;
+        SDL_GPUDepthStencilTargetInfo depth{};
+        depth.texture = overlay_depth(pw, ph);
+        depth.clear_depth = 0.0f;
+        depth.load_op = SDL_GPU_LOADOP_CLEAR;
+        depth.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        depth.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depth.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &depth);
+        SDL_SetGPUViewport(pass, &vp);
+        draw_screen_overlay(pass, cmd, pipelines_for(format), ow, oh, frame.overlay, frame.sprites);
         SDL_EndGPURenderPass(pass);
     };
     const bool blur = post->dof && post->blur_step > 0;
@@ -1371,14 +1472,50 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
     u.grading = glm::vec4(post->grading ? 1.0f : 0.0f, 0, 0, 0);
     const bool heat = post->heat_haze && post->heat_texture;
     u.heat = heat ? glm::vec4(post->heat_strength, post->heat_overbright, post->heat_blend, post->heat_time) : glm::vec4(0, 1, 1, -1);
-    run(fsr1 || fsr3 ? post_out_ : target, w, h, pp.final,
+    run(fsr1 || temporal ? post_out_ : target, w, h, pp.final,
         {scene_color_, blur ? blur_b_ : scene_color_, depth_, grading_, heat ? post->heat_texture->texture : grading_}, &u, sizeof u,
-        !frame.hud3d && !fsr1 && !fsr3);
-    if (fsr1) {
+        !frame.hud3d && !fsr1 && !temporal);
+    // RCAS's constant: sharpness 1 is its strongest (0 stops), down to 2 stops less; 0 none (a copy).
+    auto rcas_con = [](float sharpness) {
+        const float s = std::clamp(sharpness, 0.0f, 1.0f);
+        return std::array<uint32_t, 4>{s > 0 ? std::bit_cast<uint32_t>(std::exp2(-(1.0f - s) * 2.0f)) : 0u, 0, 0, 0};
+    };
+    auto& rcas = rcas_pipelines_[int(format)];
+    if (!rcas) rcas = fullscreen_pipeline(fs_rcas_, format);
+    SDL_GPUTexture* upscaled = nullptr;
+    float sharpen = 0;
+    if (temporal) {
+        TemporalInputs::Frame tf;
+        tf.depth = depth_;
+        tf.render_w = w, tf.render_h = h, tf.output_w = ow, tf.output_h = oh;
+        tf.view = unjittered.view, tf.proj = unjittered.proj, tf.jitter = jitter, tf.reset = frame.upscale.reset;
+        temporal_->prepare(cmd, tf);
+        encode_motion(cmd, temporal_->motion(), w, h, items, frame, unjittered.proj * unjittered.view,
+                      temporal_->reprojected_from(), temporal_->reset());
+        if (kind == UpscalerKind::Fsr3) {   // (sharpened by its own RCAS pass)
+            Fsr3::Frame f;
+            f.color = post_out_;
+            f.render_w = w, f.render_h = h, f.output_w = ow, f.output_h = oh;
+            f.proj = unjittered.proj, f.sharpness = frame.upscale.sharpness;
+            upscaled = fsr3_->upscale(cmd, f, *temporal_);
+        } else {   // DLSS and MetalFX: RCAS after, as they have no sharpening of their own
+            TemporalUpscale f;
+            f.color = post_out_, f.scene_depth = depth_;
+            f.render_w = w, f.render_h = h, f.output_w = ow, f.output_h = oh;
+            f.mode = frame.upscale.mode;
+            upscaled = kind == UpscalerKind::Dlss ? dlss_->upscale(cmd, f, *temporal_) : metalfx_->upscale(cmd, f, *temporal_);
+            sharpen = frame.upscale.sharpness;
+        }
+    }
+    if (upscaled) {   // to the target with the HUD over it
+        const auto con = rcas_con(sharpen);
+        run(target, ow, oh, rcas, {upscaled}, con.data(), sizeof con, !frame.hud3d);
+    } else if (fsr1 || temporal) {   // (a temporal upscaler that failed this frame: FSR 1's way)
         // EASU (when smaller), then RCAS with the HUD over it, at the output size. Both work in
         // pixels of the frame the final pass wrote.
-        SDL_GPUTexture* sharpen = post_out_;
+        SDL_GPUTexture* sharpened = post_out_;
         if (w != ow || h != oh) {
+            ensure_upscale_targets(w, h, ow, oh);
             if (!easu_pipeline_) easu_pipeline_ = fullscreen_pipeline(fs_easu_, kOffscreenFormat);
             const auto bits = [](float f) { return std::bit_cast<uint32_t>(f); };
             const float sx = float(w) / float(ow), sy = float(h) / float(oh), ix = 1.0f / float(w), iy = 1.0f / float(h);
@@ -1388,29 +1525,10 @@ void Renderer::encode(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPU
                 bits(-ix), bits(2 * iy), bits(ix), bits(2 * iy),
                 bits(0), bits(4 * iy), 0, 0};
             run(upscaled_, ow, oh, easu_pipeline_, {post_out_}, easu, sizeof easu, false);
-            sharpen = upscaled_;
+            sharpened = upscaled_;
         }
-        auto& rcas = rcas_pipelines_[int(format)];
-        if (!rcas) rcas = fullscreen_pipeline(fs_rcas_, format);
-        // Sharpness 1 is RCAS's strongest (0 stops), down to 2 stops less; 0 none.
-        const float s = std::clamp(frame.upscale.sharpness, 0.0f, 1.0f);
-        const uint32_t con[4] = {s > 0 ? std::bit_cast<uint32_t>(std::exp2(-(1.0f - s) * 2.0f)) : 0u, 0, 0, 0};
-        run(target, ow, oh, rcas, {sharpen}, con, sizeof con, !frame.hud3d);
-    }
-    if (fsr3) {
-        Fsr3::Frame f;
-        f.color = post_out_, f.depth = depth_;
-        f.render_w = w, f.render_h = h, f.output_w = ow, f.output_h = oh;
-        f.view = unjittered.view, f.proj = unjittered.proj, f.jitter = jitter;
-        f.sharpness = frame.upscale.sharpness, f.reset = frame.upscale.reset;
-        SDL_GPUTexture* motion = fsr3_->prepare(cmd, f);
-        encode_motion(cmd, motion, w, h, items, frame, unjittered.proj * unjittered.view, fsr3_->reprojected_from(), fsr3_->reset());
-        SDL_GPUTexture* upscaled = fsr3_->upscale(cmd, f);
-        // to the target with the HUD over it (RCAS with no sharpening: a copy; FSR 3 sharpened)
-        auto& copy = rcas_pipelines_[int(format)];
-        if (!copy) copy = fullscreen_pipeline(fs_rcas_, format);
-        const uint32_t none[4] = {0, 0, 0, 0};
-        run(target, ow, oh, copy, {upscaled}, none, sizeof none, !frame.hud3d);
+        const auto con = rcas_con(frame.upscale.sharpness);
+        run(target, ow, oh, rcas, {sharpened}, con.data(), sizeof con, !frame.hud3d);
     }
     scene_sampler_ = sampler_;   // (the HUD's own)
     if (frame.hud3d) encode_hud(cmd, target, format, ow, oh, items, frame);

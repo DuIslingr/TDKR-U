@@ -31,6 +31,14 @@ cmake --build engine/build
 
 The other platforms build as N.O.V.A. 3 does (`-DTDKR_VENDORED=ON`, `-DTDKR_SHADERCROSS=ON`).
 
+SDL itself is always built from its pinned release (3.4.18) with `engine/third_party/sdl/native-access.patch`,
+which lets DLSS and MetalFX reach the GPU backend's own Vulkan / Metal objects. On Linux it is a shared library the game
+finds beside itself (the system's SDL3_ttf shares it); `-DTDKR_PATCHED_SDL=OFF` takes the system's SDL instead, without
+DLSS or MetalFX. **DLSS** needs NVIDIA's DLSS SDK (github.com/NVIDIA/DLSS; NVIDIA's own licence, so it is not part of
+this repository): `-DTDKR_DLSS_SDK=DIR` (by default `work/ext/DLSS` when it is there; its `include/`, `LICENSE.txt` and
+`lib/Linux_x86_64/libnvsdk_ngx.a` + `rel/libnvidia-ngx-dlss.so.*` are enough on Linux). The build copies the DLSS
+runtime beside the game. **MetalFX** comes with macOS builds.
+
 ## Controls
 
 The gamepad follows the Android build's own controller layout (the PowerA pad's, an Xbox layout), as its
@@ -70,16 +78,18 @@ this port's display settings, saved with the others:
 | Display mode | windowed, fullscreen, borderless |
 | V-Sync | on, off |
 | Frame rate limit | 30, 45, 60, 75, 90, 120 fps or unlocked. The game's logic steps at a fixed 120 Hz whatever the frame rate, so it never runs faster or slower |
-| Upscaler | off; AMD FSR 1 (spatial); AMD FSR 3 (temporal, Vulkan); NVIDIA DLSS and Apple MetalFX are listed but not built yet (see below) |
-| Upscaler mode | Native AA (FSR 3's anti-aliasing at full size; FSR 1 only sharpens), Quality (1.5x), Balanced (1.7x), Performance (2x), Ultra Performance (3x) |
+| Upscaler | off; AMD FSR 1 (spatial); AMD FSR 3 (temporal, Vulkan); NVIDIA DLSS (RTX cards, Vulkan, a build with the DLSS SDK); Apple MetalFX (macOS 13+). One that cannot run on this machine says why |
+| Upscaler mode | Native AA (FSR 3's and MetalFX's anti-aliasing at full size, DLSS's DLAA; FSR 1 only sharpens), Quality (1.5x), Balanced (1.7x), Performance (2x), Ultra Performance (3x) |
 | Sharpness | 0-100% (RCAS) |
 
 With an upscaler, the world and its post effects are drawn at the smaller size and the HUD at full size. FSR 3
 jitters the camera by a sub-pixel each frame and accumulates the frames with the depth and motion vectors: the
 camera's motion everywhere, plus what moved on its own (skinned characters, moving objects). Its passes are AMD's
 FidelityFX SDK shaders as shipped (`engine/third_party/fidelityfx`, MIT; see its `LICENSE.txt`), compiled to SPIR-V
-compute for SDL's GPU API. DLSS and MetalFX need the native Vulkan / Metal objects behind SDL's GPU API, which SDL
-3.4 does not hand out, plus NVIDIA's SDK (DLSS) or a Mac (MetalFX).
+compute for SDL's GPU API. DLSS (through NGX) and MetalFX's temporal scaler take the same frame, jitter, depth and
+motion vectors as the patched SDL's own Vulkan / Metal textures, recorded into its command buffers; the sharpness setting
+is an RCAS pass after them. On Linux with an NVIDIA RTX card the game makes its Vulkan device with the extensions NGX
+asks for (and without, if that fails).
 
 For a run without changing the settings: `--fps-limit N` (0 unlocked), `--upscaler off|fsr1|fsr3|dlss|metalfx`,
 `--upscale-mode native|quality|balanced|performance|ultra`, `--sharpness 0..1`. `--window-test SECONDS` plays in a

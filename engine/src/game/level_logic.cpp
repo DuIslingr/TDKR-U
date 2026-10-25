@@ -575,6 +575,7 @@ void LevelLogic::save_checkpoint(int spawn_id) {
     cp->grading = grading_.current, cp->grading_on = grading_.on;
     cp->mech = player_mech_, cp->vehicle = player_vehicle_, cp->gun = player_gun_;
     if (combat) cp->combat = combat->save();
+    cp->global_vars = global_vars;
     saved_ = std::move(cp);
     checkpoint_ = spawn_id;
     log("checkpoint " + std::to_string(spawn_id));
@@ -600,6 +601,7 @@ void LevelLogic::respawn_at_checkpoint() {
     start(StartMode::Respawn);
     if (combat) combat->start(true);
     runtime_.restore_globals(cp->globals);   // (CLevel::RespawnInit: LoadCurrentProgress, the scripts' _G)
+    global_vars = cp->global_vars;           // (and LoadGlobalData: CScriptGlobals)
     restoring_ = true;
     runtime_.update(0);
     restoring_ = false;

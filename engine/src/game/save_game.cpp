@@ -13,7 +13,10 @@ namespace tdkr {
 namespace {
 
 constexpr char kMagic[4] = {'N', '3', 'S', 'V'};
-constexpr uint32_t kVersion = 2;   // 2: the scripts' globals, the cameras switched off, the ammo, the quests
+// 2: the scripts' globals, the cameras switched off, the ammo, the quests; 3: TDKR's: the
+// mission, the story and script globals outside a checkpoint, the spawn point of a level
+// change, the quests of every level, CScriptGlobals.
+constexpr uint32_t kVersion = 3;
 
 // Little-endian fields; strings and lists carry their lengths.
 struct Writer {
@@ -154,6 +157,31 @@ bool read_value(Reader& r, ScriptRuntime::SavedValue& v, int depth = 0) {
     return r.ok;
 }
 
+void write_quests(Writer& w, const Quests::Saved& q) {
+    w.u32(uint32_t(q.statuses.size()));
+    for (const auto& [id, status] : q.statuses) w.i32(id), w.i32(status);
+    w.i32(q.story_index), w.i32(q.story_started), w.flag(q.briefed), w.flag(q.finished), w.flag(q.story_on);
+}
+
+void read_quests(Reader& r, Quests::Saved& q) {
+    q.statuses.resize(r.count(8));
+    for (auto& [id, status] : q.statuses) id = r.i32(), status = r.i32();
+    q.story_index = r.i32(), q.story_started = r.i32(), q.briefed = r.flag(), q.finished = r.flag(), q.story_on = r.flag();
+}
+
+void write_global_vars(Writer& w, const std::map<std::string, int>& vars) {
+    w.u32(uint32_t(vars.size()));
+    for (const auto& [name, v] : vars) w.str(name), w.i32(v);
+}
+
+void read_global_vars(Reader& r, std::map<std::string, int>& vars) {
+    vars.clear();
+    for (uint32_t n = r.count(8); n-- > 0 && r.ok;) {
+        std::string name = r.str();
+        vars[std::move(name)] = r.i32();
+    }
+}
+
 std::vector<uint8_t> LevelLogic::checkpoint_data() const {
     std::vector<uint8_t> out;
     if (!saved_) return out;
@@ -194,11 +222,10 @@ std::vector<uint8_t> LevelLogic::checkpoint_data() const {
     for (int id : cp.cameras_off) w.i32(id);
     w.u32(uint32_t(cp.ammo.size()));
     for (const auto& [weapon, n] : cp.ammo) w.str(weapon), w.i32(n);
-    w.u32(uint32_t(cp.quests.statuses.size()));
-    for (const auto& [id, status] : cp.quests.statuses) w.i32(id), w.i32(status);
-    w.i32(cp.quests.story_index), w.i32(cp.quests.story_started), w.flag(cp.quests.briefed), w.flag(cp.quests.finished);
+    write_quests(w, cp.quests);
     w.u32(uint32_t(cp.globals.size()));
     for (const auto& [name, v] : cp.globals) w.str(name), write_value(w, v);
+    write_global_vars(w, cp.global_vars);
     return out;
 }
 
@@ -244,12 +271,12 @@ bool LevelLogic::load_checkpoint_data(const std::vector<uint8_t>& data) {
     for (int& id : cp->cameras_off) id = r.i32();
     cp->ammo.resize(r.count(8));
     for (auto& [weapon, n] : cp->ammo) weapon = r.str(), n = r.i32();
-    cp->quests.statuses.resize(r.count(8));
-    for (auto& [id, status] : cp->quests.statuses) id = r.i32(), status = r.i32();
-    cp->quests.story_index = r.i32(), cp->quests.story_started = r.i32(), cp->quests.briefed = r.flag(), cp->quests.finished = r.flag();
+    read_quests(r, cp->quests);
     cp->globals.resize(r.count(6));
     for (auto& [name, v] : cp->globals)
         if (name = r.str(); !read_value(r, v)) return false;
+    read_global_vars(r, cp->global_vars);
+    if (!r.ok) return false;
     checkpoint_ = cp->spawn;
     saved_ = std::move(cp);
     return true;
@@ -268,8 +295,10 @@ bool SaveGame::write(const std::string& path) const {
     std::vector<uint8_t> out;
     Writer w{out};
     w.raw(kMagic, 4), w.u32(kVersion);
-    w.str(level), w.bytes(checkpoint), w.flag(has_arsenal);
+    w.str(level), w.i32(mission), w.bytes(checkpoint), w.i32(spawn), w.flag(has_arsenal);
     if (has_arsenal) write_combat(out, arsenal);
+    w.flag(has_story);
+    if (has_story) write_quests(w, quests), write_global_vars(w, global_vars);
     // Written beside, then moved over the old one, so a crash leaves one whole file.
     const std::string tmp = path + ".tmp";
     {
@@ -290,9 +319,12 @@ bool SaveGame::read(const std::string& path, SaveGame& out) {
     r.raw(magic, 4);
     if (!r.ok || std::memcmp(magic, kMagic, 4) != 0 || r.u32() != kVersion) return false;
     SaveGame s;
-    s.level = r.str(), s.checkpoint = r.bytes(), s.has_arsenal = r.flag();
+    s.level = r.str(), s.mission = r.i32(), s.checkpoint = r.bytes(), s.spawn = r.i32(), s.has_arsenal = r.flag();
     if (!r.ok) return false;
     if (s.has_arsenal && !read_combat(in, at, s.arsenal)) return false;
+    s.has_story = r.flag();
+    if (s.has_story) read_quests(r, s.quests), read_global_vars(r, s.global_vars);
+    if (!r.ok) return false;
     out = std::move(s);
     return true;
 }

@@ -98,6 +98,17 @@ window and reports game time against wall time. Headless, `--shot-frames N` draw
 history; `TDKR_FSR3_DEBUG=1` shows FSR 3's own debug view (motion, masks, depth). The touch controls' buttons and
 joystick are hidden unless `--touch`.
 
+## Saving
+
+Progress saves as the original's does: at every checkpoint the scripts take (`SaveGame`, the "Game saved" message), in
+any story level, the level's state and the story (every quest's status, the main story's place, the script globals)
+go to `save.bin` in the preferences folder (`~/.local/share/tdkr/tdkr` on Linux); a level change the story makes
+(`RequireLoadLevel`) saves the level entered and its spawn point with the story so far; starting a mission (New Game,
+Chapter Select) saves that mission. The main menu offers Continue when there is a save (New Game when there is none),
+and Continue picks up from it. The missions the story unlocks (`UnlockMission`) are kept in `settings.ini` and open
+in Chapter Select; Options' Reset Progress (with a save) clears the save, the unlocks, the credits and the shop's
+upgrades. `--save FILE` writes a save headless too, `--continue FILE` resumes one.
+
 ## Checking the data
 
 ```bash

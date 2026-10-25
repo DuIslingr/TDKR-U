@@ -14,9 +14,14 @@ constexpr int kCompMainStory = 0x5863BD59;   // CMainStoryQuestsComponent: [[que
 
 }  // namespace
 
+void Quests::remember() {
+    for (const Quest& q : quests_) remembered_[q.id] = q.status;
+}
+
 void Quests::load(const Level& level, const Gol& gol) {
     std::vector<Quest> before;
-    if (carry_over) before = quests_;
+    if (carry_over) before = quests_, remember();
+    else remembered_.clear();
     quests_.clear();
     if (!carry_over) last_completed_ = -1;
     for (const LevelObject& o : level.objects) {
@@ -26,6 +31,7 @@ void Quests::load(const Level& level, const Gol& gol) {
         q.id = c->second[0].i;
         q.object = o.base->id;
         q.title = c->second[1].s, q.debrief = c->second[2].s;
+        if (const auto r = remembered_.find(q.id); r != remembered_.end()) q.status = r->second, q.ended = r->second == Completed;
         for (const Quest& b : before)
             if (b.id == q.id) q.status = b.status, q.ended = b.ended;
         quests_.push_back(q);
@@ -69,8 +75,9 @@ const Quests::Quest* Quests::find(int id) const {
 }
 
 int Quests::status(int id) const {
-    const Quest* q = find(id);
-    return q ? q->status : Disabled;
+    if (const Quest* q = find(id)) return q->status;
+    const auto r = remembered_.find(id);   // (another level's)
+    return r != remembered_.end() ? r->second : Disabled;
 }
 
 void Quests::run(const Quest& q, const char* event) {
@@ -85,8 +92,11 @@ bool Quests::running(const Quest& q, const char* event) const {
 // hands over to the next.
 void Quests::set_status(int id, int st) {
     Quest* q = quest(id);
-    if (!q) {
-        logic_.log("quest " + std::to_string(id) + ": no such quest");
+    if (!q) {   // another level's: kept for when the story goes back there
+        logic_.log("quest " + std::to_string(id) + ": not in this level, status " + std::to_string(st));
+        remembered_[id] = st;
+        if (st == Completed) last_completed_ = id;
+        if (story_on_ && st == Completed) story_completed(id);
         return;
     }
     if (LevelLogic::Object* o = logic_.object(q->object)) logic_.enable(*o, true);
@@ -162,16 +172,31 @@ void Quests::start_story(int quest_id) {
 
 Quests::Saved Quests::save() const {
     Saved s;
-    for (const Quest& q : quests_) s.statuses.emplace_back(q.id, q.status);
+    std::map<int, int> all = remembered_;
+    for (const Quest& q : quests_) all[q.id] = q.status;
+    s.statuses.assign(all.begin(), all.end());
     s.story_index = story_index_, s.story_started = story_started_, s.briefed = briefed_, s.finished = finished_;
+    s.story_on = story_on_;
     return s;
 }
 
 void Quests::restore(const Saved& s) {
-    for (const auto& [id, status] : s.statuses)
+    for (const auto& [id, status] : s.statuses) {
+        remembered_[id] = status;
         if (Quest* q = quest(id)) q->status = status, q->ended = status == Completed;
+    }
     if (s.story_index >= 0 && size_t(s.story_index) < story_.size())
         story_index_ = s.story_index, story_started_ = s.story_started, briefed_ = s.briefed, finished_ = s.finished;
+    if (s.story_on) story_on_ = true;
+}
+
+void Quests::carry(const Saved& s) {
+    quests_.clear();
+    remembered_.clear();
+    for (const auto& [id, status] : s.statuses) remembered_[id] = status;
+    story_index_ = s.story_index, story_started_ = s.story_started, briefed_ = s.briefed, finished_ = s.finished;
+    story_on_ = s.story_on;
+    carry_over = true;
 }
 
 void Quests::respawned() {

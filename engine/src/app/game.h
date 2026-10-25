@@ -78,6 +78,10 @@ private:
     std::string next_level(const std::string& level) const;
     int chapter_of(const std::string& level) const;
     bool saving(const std::string& level) const;
+    // The save file as the story stands (game/save_game.h): at a checkpoint, on entering a
+    // level (RequireLoadLevel, with its spawn point), or a mission started from the menu.
+    enum class SaveKind { Checkpoint, LevelChange, MissionStart };
+    void write_save(SaveKind kind, int spawn = -1);
     EndLevelScreen::Stats end_stats();
     EndLevelScreen::Rules end_rules();
     void load_level(const std::string& level);

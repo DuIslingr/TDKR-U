@@ -53,8 +53,33 @@ Settings Settings::load(const std::string& path) {
         else if (key == "difficulty") s.difficulty = std::clamp(i, 0, 2);
         else if (key == "hard_unlocked") s.hard_unlocked = i != 0;
         else if (key == "upgrades") s.upgrades = std::max(i, 0);
+        else if (key == "missions") s.missions = value;
     }
     return s;
+}
+
+bool Settings::mission_unlocked(int chapter, int mission) const {
+    if (chapter == 1 && mission == 1) return true;
+    const std::string id = std::to_string(chapter) + "." + std::to_string(mission);
+    size_t at = 0;
+    while (at <= missions.size()) {
+        const size_t end = std::min(missions.find(',', at), missions.size());
+        if (missions.compare(at, end - at, id) == 0 && end - at == id.size()) return true;
+        at = end + 1;
+    }
+    return false;
+}
+
+bool Settings::unlock_mission(int chapter, int mission) {
+    if (chapter <= 0 || mission <= 0 || mission_unlocked(chapter, mission)) return false;
+    missions += (missions.empty() ? "" : ",") + std::to_string(chapter) + "." + std::to_string(mission);
+    return true;
+}
+
+void Settings::reset_progress() {
+    const Settings fresh;
+    chapters = fresh.chapters, missions = fresh.missions;
+    hard_unlocked = fresh.hard_unlocked, credits = fresh.credits, upgrades = fresh.upgrades;
 }
 
 bool Settings::save(const std::string& path) const {
@@ -63,7 +88,7 @@ bool Settings::save(const std::string& path) const {
     out << "sound=" << sound << "\nsfx_volume=" << sfx_volume << "\nmusic_volume=" << music_volume << "\nsensitivity=" << sensitivity
         << "\ninvert_y=" << invert_y << "\nleft_handed=" << left_handed << "\naim_toggle=" << aim_toggle << "\naim_assist=" << aim_assist
         << "\nauto_switch=" << auto_switch << "\nauto_leveling=" << auto_leveling << "\nmetric=" << metric << "\nwidth=" << width
-        << "\nheight=" << height << "\ndisplay=" << int(display) << "\nvsync=" << vsync << "\nfps_limit=" << fps_limit << "\nupscaler=" << int(upscaler) << "\nupscale_mode=" << int(upscale_mode) << "\nsharpness=" << sharpness << "\nchapters=" << chapters << "\ndifficulty=" << difficulty << "\nhard_unlocked=" << hard_unlocked << "\ncredits=" << credits << "\nupgrades=" << upgrades << "\n";
+        << "\nheight=" << height << "\ndisplay=" << int(display) << "\nvsync=" << vsync << "\nfps_limit=" << fps_limit << "\nupscaler=" << int(upscaler) << "\nupscale_mode=" << int(upscale_mode) << "\nsharpness=" << sharpness << "\nchapters=" << chapters << "\ndifficulty=" << difficulty << "\nhard_unlocked=" << hard_unlocked << "\ncredits=" << credits << "\nupgrades=" << upgrades << "\nmissions=" << missions << "\n";
     return bool(out);
 }
 

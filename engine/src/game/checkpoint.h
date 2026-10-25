@@ -2,6 +2,7 @@
 // restores it, and save_game.cpp, which writes it to the save file and reads it back.
 #pragma once
 
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -56,6 +57,7 @@ struct LevelLogic::Checkpoint {
     Combat::Saved combat;
     ScriptRuntime::Globals globals;     // CLuaScriptManager::SaveSave: the scripts' _G
     Quests::Saved quests;               // CQuestManager::SaveSaveGlobal: the statuses, the main story's place
+    std::map<std::string, int> global_vars;   // CScriptGlobals::SaveSaveGlobal (Register/SetGlobalVar)
 };
 
 }  // namespace tdkr

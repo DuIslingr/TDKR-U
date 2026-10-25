@@ -144,14 +144,21 @@ swf::Value FrontEnd::native(const std::string& name, swf::CallArgs& a) {
         action_ = {Action::StartMission, int(num(0))};
         return swf::Value(true);
     }
+    // (no save yet: the main menu offers New Game; else Continue, and Options Reset Progress)
+    if (name == "canStartNewGame") return swf::Value(has_save ? !has_save() : true);
     if (name != "registerInGameEvent" && name != "registerInGameEventExtended") return {};
     const std::string event = str(0), arg = str(1);
     if (event == "NEW_GAME") {
-        action_ = {Action::StartMission, missions_ ? first_mission(*missions_) : -1};
+        action_ = {Action::StartMission, missions_ ? first_mission(*missions_) : -1, true};
     } else if (event == "CONTINUE_GAME" || event == "CONTINUE_FROM_WIN") {
         action_ = {Action::Continue};
-    } else if (event == "MISSION_ACTIVATED") {
-        action_ = {Action::StartMission, int(num(1))};
+    } else if (event == "MISSION_ACTIVATED") {   // (GS_BaseMenu::StartChapter: not a locked one)
+        const int m = int(num(1));
+        if (!mission_unlocked || mission_unlocked(m)) action_ = {Action::StartMission, m};
+        else std::fprintf(stderr, "menu: mission %d is locked\n", m);
+    } else if (event == "RESET_PROGRESS") {   // Application::ResetAllProgress, then Options again
+        action_ = {Action::ResetProgress};
+        if (swf::Player* p = menu_ ? menu_->player() : nullptr) p->invoke("screenManager", "jumpTo", {swf::Value("screenOptions")});
     } else if (event == "CHAPTER_LIST_INIT") {
         pending_chapters_ = arg;   // after the screen that asks has finished building
     } else if (event == "EXIT_GAME") {
@@ -181,7 +188,7 @@ swf::Value FrontEnd::native(const std::string& name, swf::CallArgs& a) {
 }
 
 // CHUDDisplay::InitChapterSelection: init, the chapters (addToList), init again (a box each),
-// then their missions (addMissionToChapter), all unlocked.
+// then their missions (addMissionToChapter), open as the story has unlocked them.
 void FrontEnd::fill_chapters(const std::string& path) {
     swf::Player* p = menu_ ? menu_->player() : nullptr;
     if (!p || !missions_) return;
@@ -203,7 +210,8 @@ void FrontEnd::fill_chapters(const std::string& path) {
         if (m.chapter <= 0) continue;
         p->invoke(dotted, "addMissionToChapter",
                   // (the chapter's box is 0-based)
-                  {swf::Value(m.chapter - 1), swf::Value(m.number), swf::Value(true), swf::Value(int(i)), text(m.index_title),
+                  {swf::Value(m.chapter - 1), swf::Value(m.number), swf::Value(!mission_unlocked || mission_unlocked(int(i))),
+                   swf::Value(int(i)), text(m.index_title),
                    text(m.selection), swf::Value(""), text(m.chapter_title), text(m.selection), text(m.description),
                    swf::Value(m.picture)});
     }

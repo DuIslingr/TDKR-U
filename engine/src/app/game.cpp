@@ -110,10 +110,13 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
         settings.save(settings_path);
         if (window && this->window) apply_display();
     };
-    if (opt.list_missions)
+    if (opt.list_missions) {
         for (size_t i = 0; i < missions.size(); ++i)
             std::printf("mission %2zu  chapter %d.%d  %-40s %s\n", i, missions[i].chapter, missions[i].number,
                         missions[i].name.c_str(), missions[i].level.c_str());
+        for (size_t c = 0; c < campaign.size(); ++c)   // (GameLevels: the levels' order)
+            std::printf("campaign level %zu  %s\n", c, campaign[c].file.c_str());
+    }
     if (!opt.mission.empty()) {   // a mission's level; its start script runs once the level has started
         const bool number = opt.mission.find_first_not_of("0123456789") == std::string::npos;
         for (size_t i = 0; i < missions.size() && mission < 0; ++i)
@@ -181,11 +184,18 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
     if (opt.difficulty >= 0) settings.difficulty = opt.difficulty;
     shop.load(gol);
     combat.set_difficulty(settings.difficulty), shop.difficulty = settings.difficulty;
-    logic.on_checkpoint = [this] {
-        if (!saving(opt.level)) return;
+    // Every checkpoint the scripts take saves (CLevel::RespawnInit after SaveGame: the
+    // inventory, the global data and the checkpoint); every mission unlocked is kept.
+    logic.on_checkpoint = [this] { write_save(SaveKind::Checkpoint); };
+    logic.on_unlock_mission = [this](int chapter, int number) {
+        if (settings.unlock_mission(chapter, number)) settings.save(settings_path);
+    };
+    front_end.has_save = [this] {
         SaveGame g;
-        g.level = opt.level, g.checkpoint = logic.checkpoint_data();
-        if (!g.write(save_path)) std::fprintf(stderr, "could not write %s\n", save_path.c_str());
+        return SaveGame::read(save_path, g);
+    };
+    front_end.mission_unlocked = [this](int i) {
+        return i >= 0 && size_t(i) < missions.size() && settings.mission_unlocked(missions[size_t(i)].chapter, missions[size_t(i)].number);
     };
     if (!shop.items().empty()) menu.shop = &shop, menu.combat = &combat;
     shop.audio = logic.audio;
@@ -407,9 +417,29 @@ int Game::chapter_of(const std::string& level) const {
     return -1;
 }
 
+// The story's levels save (those of the missions and those the story moves to, as the Stock
+// Exchange), not the menu's, the shop's or the test level.
 bool Game::saving(const std::string& level) const {
-    const int c = chapter_of(level);
-    return !save_path.empty() && c >= 0 && (c + 1 >= settings.chapters || !opt.save_file.empty());
+    if (save_path.empty() || level.empty()) return false;
+    const std::string file = to_lower(level.substr(level.find_last_of("/\\") + 1));
+    return file != "l_menu.lvc" && file != "shop.lvc" && file != "test.lvc";
+}
+
+void Game::write_save(SaveKind kind, int spawn) {
+    if (!saving(opt.level)) return;
+    SaveGame g;
+    g.level = opt.level, g.mission = mission;
+    if (kind == SaveKind::Checkpoint) {
+        g.checkpoint = logic.checkpoint_data();   // (the story is in it)
+    } else if (kind == SaveKind::LevelChange) {
+        g.spawn = spawn;
+        g.has_arsenal = true, g.arsenal = combat.save();
+        g.has_story = true, g.quests = logic.quests.save(), g.global_vars = logic.global_vars;
+    }
+    if (g.write(save_path)) std::printf("saved (%s) %s\n",
+                                        kind == SaveKind::Checkpoint ? "checkpoint" : kind == SaveKind::LevelChange ? "level change" : "mission",
+                                        g.level.c_str());
+    else std::fprintf(stderr, "could not write %s\n", save_path.c_str());
 }
 
 EndLevelScreen::Stats Game::end_stats() {
@@ -724,9 +754,16 @@ void Game::load_level(const std::string& level) {
     flares.start();
 }
 
-// Continue (Application::Load): the save's level from its checkpoint (as a respawn
-// there), or from its start with the arsenal carried in.
+// Continue (Application::Load): the save's level from its checkpoint (as a respawn there,
+// the story with it); a level change's level at its spawn point with the story carried in;
+// a mission's start.
 void Game::resume(const SaveGame& g) {
+    if (g.mission >= 0 && size_t(g.mission) < missions.size()) mission = g.mission;
+    if (g.checkpoint.empty() && !g.has_story && g.mission >= 0 && size_t(g.mission) < missions.size()) {
+        start_mission(g.mission);
+        std::printf("continued mission %d\n", g.mission);
+        return;
+    }
     if (!g.checkpoint.empty() && logic.load_checkpoint_data(g.checkpoint)) {
         opt.level = g.level;
         show_loading(g.level);
@@ -742,8 +779,10 @@ void Game::resume(const SaveGame& g) {
         hud.start();
         flares.start();
     } else {
+        if (g.has_story) logic.quests.carry(g.quests), logic.global_vars = g.global_vars;
         load_level(g.level);
         if (g.has_arsenal) combat.restore_arsenal(g.arsenal), shop.apply_owned(combat, settings);
+        if (const LevelLogic::Object* sp = g.spawn >= 0 ? logic.object(g.spawn) : nullptr) logic.teleport_player(*sp);
     }
     std::printf("continued %s%s\n", g.level.c_str(), g.checkpoint.empty() ? "" : " from its checkpoint");
 }
@@ -1143,6 +1182,7 @@ void Game::step_logic(float dt) {
         logic.quests.carry_over = true;
         load_level(r.file);
         if (const LevelLogic::Object* sp = r.spawn >= 0 ? logic.object(r.spawn) : nullptr) logic.teleport_player(*sp);
+        write_save(SaveKind::LevelChange, r.spawn);
         return;
     }
     // StartIntroStory: the storyboard over everything, then its callback.
@@ -1222,9 +1262,8 @@ void Game::step_logic(float dt) {
         if (end_screen.open) return;
         end_screen_done = false;
         const std::string next = logic.level_success ? next_level(opt.level) : opt.level;
-        if (next.empty()) {
-            SaveGame::remove(save_path);   // Application::DeleteCampaign
-            logic.message("The campaign is complete.", 10);
+        if (next.empty()) {   // (N.O.V.A. 3's level list: TDKR has none, its levels change by script)
+            std::printf("[script] EndLevel: no next level\n");
             logic.level_ended = false;
             return;
         }

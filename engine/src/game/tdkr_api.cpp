@@ -124,8 +124,9 @@ int api_next_mission(lua_State* L) {
     ctx(L).next_mission(int_arg(L, 1));
     return 0;
 }
-// UnlockMission(chapter, mission) / RequireLoadChapterMission(chapter, mission): the
-// chapter list's progress and a level change; logged for now.
+// UnlockMission(chapter, mission): Chapter Select's progress (kept with the settings).
+// RequireLoadChapterMission(chapter, mission): the main story's SkipMission (a debug skip
+// to that mission), logged.
 int api_log_mission(lua_State* L) {
     LevelLogic& c = ctx(L);
     c.log(std::string(lua_tostring(L, lua_upvalueindex(2))) + "(" + std::to_string(int_arg(L, 1)) + ", " +
@@ -1642,7 +1643,12 @@ const Entry kTdkr[] = {
     {"Traffic_JeepPatrolRanges", api_nothing},
 };
 
-int api_unlock_mission(lua_State* L) { return api_log_mission(L); }
+int api_unlock_mission(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (std::string(lua_tostring(L, lua_upvalueindex(2))) == "UnlockMission" && c.on_unlock_mission)
+        c.on_unlock_mission(int_arg(L, 1), int_arg(L, 2));
+    return api_log_mission(L);
+}
 
 }  // namespace
 

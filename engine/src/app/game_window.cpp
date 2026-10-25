@@ -123,11 +123,23 @@ void Game::front_action(FrontEnd::Action a) {
             set_menu(false);
             main_menu.open = false;
             front_end.close();
-            if (resume_save) resume(g);
-            else start_mission(a.kind == A::Continue ? first_mission(missions) : a.mission);
+            if (resume_save) {
+                resume(g);
+            } else {   // (GS_BaseMenu::StartChapter: the mission is the progress now)
+                if (a.new_game || a.kind == A::Continue) logic.global_vars.clear();   // a new story
+                start_mission(a.kind == A::Continue ? first_mission(missions) : a.mission);
+                write_save(SaveKind::MissionStart);
+            }
             SDL_SetWindowRelativeMouseMode(window, !touch_mode);
             break;
         }
+        case A::ResetProgress:   // Application::ResetAllProgress
+            settings.reset_progress();
+            settings.save(settings_path);
+            SaveGame::remove(save_path);
+            shop.apply_owned(combat, settings);
+            std::printf("progress reset\n");
+            break;
         case A::Resume: set_menu(false); break;
         case A::RestartCheckpoint: set_menu(false), logic.respawn_player(); break;
         case A::RestartLevel:

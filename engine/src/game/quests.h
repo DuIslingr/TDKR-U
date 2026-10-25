@@ -19,6 +19,7 @@
 // A story quest left too long runs its reminder (_OnScriptEvent) after its time.
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -45,9 +46,9 @@ public:
     // The level's quest objects and the main story's quests (their script chunks are already
     // loaded with the level; the story's are loaded here).
     void load(const Level& level, const Gol& gol);
-    // CQuestManager outlives levels: with `carry_over` set, the next load keeps the statuses of
-    // the quests it finds again and the main story where it was (RequireLoadLevel); a new game
-    // or mission clears it.
+    // CQuestManager outlives levels: with `carry_over` set, the next load keeps every quest's
+    // status (those of other levels too, for when the story comes back to them) and the main
+    // story where it was (RequireLoadLevel); a new game or mission clears them.
     bool carry_over = false;
     void update(float dt);
 
@@ -69,12 +70,16 @@ public:
     // What a checkpoint keeps (CLevel::SaveGlobalData: CQuestManager::SaveSaveGlobal, the main
     // story's place): put back on a respawn, before respawned().
     struct Saved {
-        std::vector<std::pair<int, int>> statuses;   // quest id, status
+        std::vector<std::pair<int, int>> statuses;   // quest id, status (every level's)
         int story_index = -1, story_started = -1;
         bool briefed = false, finished = false;
+        bool story_on = false;
     };
     Saved save() const;
     void restore(const Saved& s);
+    // The save file's story taken up before a level loads (Continue): the next load keeps it,
+    // as after RequireLoadLevel.
+    void carry(const Saved& s);
 
 private:
     Quest* quest(int id);
@@ -87,6 +92,8 @@ private:
 
     LevelLogic& logic_;
     std::vector<Quest> quests_;
+    std::map<int, int> remembered_;   // every quest's status, this level's and the others'
+    void remember();                  // quests_ into remembered_
     int last_completed_ = -1;
     // CMainStoryQuestsComponent: its story quests (quest id, reminder after seconds), the
     // current one, the one whose InitQuest last started, and its timers.

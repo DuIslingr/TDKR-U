@@ -36,8 +36,9 @@ public:
     bool open() const { return screen_ != Screen::None; }
 
     struct Action {
-        enum Kind { None, StartMission, Continue, Resume, RestartCheckpoint, RestartLevel, MainMenu, Quit } kind = None;
+        enum Kind { None, StartMission, Continue, Resume, RestartCheckpoint, RestartLevel, MainMenu, Quit, ResetProgress } kind = None;
         int mission = -1;
+        bool new_game = false;   // StartMission: New Game (else a mission of Chapter Select)
     };
     // The action the last input led to (once).
     Action take_action();
@@ -57,6 +58,11 @@ public:
     // setting and the rows are written again. The game supplies the rows and takes the presses.
     std::function<std::vector<std::string>()> display_rows;
     std::function<void(int row)> display_press;
+    // Whether there is a save to continue (canStartNewGame is its opposite: New Game is offered
+    // without one; with one Continue, and Options' Reset Progress), and whether a mission is
+    // unlocked (Chapter Select's padlocks; a locked one does not start).
+    std::function<bool()> has_save;
+    std::function<bool(int mission)> mission_unlocked;
     // A native the menus call that the front end does not handle itself (logged otherwise).
     swf::Value native(const std::string& name, swf::CallArgs& args);
     swf::Player* player() { return menu_ ? menu_->player() : nullptr; }

@@ -611,6 +611,8 @@ public:
     bool load_checkpoint_data(const std::vector<uint8_t>& data);
     // Called when a checkpoint is taken (the save file is written then).
     std::function<void()> on_checkpoint;
+    // UnlockMission(chapter, mission): the story opened a mission of Chapter Select.
+    std::function<void(int chapter, int mission)> on_unlock_mission;
     // The end of level's play time bonus limits, minutes (level properties [43], [44]).
     float play_time_limit(int k) const { return play_time_limits_[k & 1]; }
     // Limited control (CPlayerLimitedControlComponent; SwitchToPlayerLimitedControl): the

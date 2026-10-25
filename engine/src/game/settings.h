@@ -27,8 +27,15 @@ struct Settings {
     enum class Upscaler { Off, Fsr1, Fsr3, Dlss, MetalFx } upscaler = Upscaler::Off;
     enum class UpscaleMode { NativeAa, Quality, Balanced, Performance, UltraPerformance } upscale_mode = UpscaleMode::Quality;
     float sharpness = 0.5f;     // the upscaler's sharpening (RCAS), 0..1
-    // Campaign progress: how many chapters the player has reached (chapter select).
+    // Campaign progress: how many chapters the player has reached (the C++ main menu's chapter
+    // select), and the missions the story has unlocked (UnlockMission(chapter, mission): the
+    // Flash Chapter Select's), as "chapter.mission" separated by commas. The first is always open.
     int chapters = 1;
+    std::string missions = "1.1";
+    bool mission_unlocked(int chapter, int mission) const;
+    bool unlock_mission(int chapter, int mission);   // true if it was locked
+    // Options' Reset Progress (Application::ResetAllProgress): back to a new player's.
+    void reset_progress();
     // The difficulty (0 Easy, 1 Normal, 2 Hard), and whether Hard is offered (the campaign
     // finished once).
     int difficulty = 1;

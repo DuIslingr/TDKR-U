@@ -595,6 +595,22 @@ Game objects differ from N.O.V.A. 3 in three ways:
 Stadion gives 70 placements of 16 models, and the stadium bowl renders in place. Gotham gives 2,320 prop placements plus 3,041 streamed
 segments (buildings, roads, bridges) in the same world space.
 
+## Saving
+
+- **When**: `SaveGame(spawn)` sets the level's save flag; `CLevel::RespawnInit` then writes the inventory
+  (`Application::SaveInventoryInFile`), the global data (`SaveGlobalDataInFile`: `CLevel::SaveGlobalData` =
+  `PlayerComponent::SaveMaxHealth`, `CScriptGlobals::SaveSaveGlobal`, `CQuestManager::SaveSaveGlobal`,
+  `cAchievementManager::SaveGlobal`) and the checkpoint (`EncryptAndSave`: a flag, the level name, the spawn, then
+  `CLevel::Save`: the scripts, quests, interactions, cameras, snipers, fans, zones, traffic, monorail, HUD).
+  `GS_BaseMenu::StartChapter` refuses a locked mission and writes a checkpoint at the mission's start.
+- **Script globals**: `RegisterGlobalVar` / `SetGlobalVar` / `GetGlobalVar` (`CScriptGlobals`) are integers that
+  outlive levels (the Batcave's picks, the power plant, the monorail); they are global data.
+- **Menus**: `canStartNewGame` is true without a save: the main menu then adds New Game, else Continue (and Options
+  Reset Progress, `RESET_PROGRESS` → `Application::ResetAllProgress`, then `jumpTo("screenOptions")`).
+- TDKR has no `GameLevels` template (N.O.V.A. 3's level order); its story moves between levels by script
+  (`RequireLoadLevel`), and `UnlockMission(chapter, mission)` opens Chapter Select's missions.
+  `RequireLoadChapterMission` appears only in the main story's `_SkipMission` functions (a debug skip).
+
 ## Open items found so far
 
 - 46 streamed batches keep the fallback shader (7 effects aren't shipped: `NormalSpecOverbright`, …).

@@ -229,13 +229,57 @@ void Game::pad_event(const SDL_Event& e) {
         front_action(front_end.take_action());
         return;
     }
-    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
+    // In the game: the Android build's PowerA layout (its _POWER_A prompts and loading hints):
+    // A jumps, climbs and glides, and is the use button when something usable is in reach
+    // ("Press the A button to disarm the bomb"); X attacks, Y blocks and strikes back, B throws
+    // the batarang, RT fires the grapnel, LT the gadgets; Start pauses.
+    const bool down = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    const int b = down || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP ? int(e.gbutton.button) : -1;
+    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_UP && b == SDL_GAMEPAD_BUTTON_SOUTH) pad_a_used = false;
+    if (down && b == SDL_GAMEPAD_BUTTON_START) {
         set_menu(true);
         return;
     }
-    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || e.gbutton.button == SDL_GAMEPAD_BUTTON_WEST) &&
-        answer_qte())
+    if (menu.open) return;
+    // The screens over the game: A continues or chooses, the D-pad moves.
+    if (flash_hud.win_open()) {
+        if (down && b == SDL_GAMEPAD_BUTTON_SOUTH) flash_hud.press_continue();
         return;
+    }
+    if (end_screen.open) {
+        using K = EndLevelScreen::Key;
+        if (down && b == SDL_GAMEPAD_BUTTON_DPAD_LEFT) end_action(end_screen.key(K::Left));
+        if (down && b == SDL_GAMEPAD_BUTTON_DPAD_RIGHT) end_action(end_screen.key(K::Right));
+        if (down && b == SDL_GAMEPAD_BUTTON_SOUTH) end_action(end_screen.key(K::Activate));
+        return;
+    }
+    if (death.open) {
+        using K = DeathScreen::Key;
+        if (down && b == SDL_GAMEPAD_BUTTON_DPAD_UP) death_action(death.key(K::Up));
+        if (down && b == SDL_GAMEPAD_BUTTON_DPAD_DOWN) death_action(death.key(K::Down));
+        if (down && b == SDL_GAMEPAD_BUTTON_SOUTH) death_action(death.key(K::Activate));
+        return;
+    }
+    if (storyboard.active()) {   // any button skips it
+        if (down) storyboard.skip();
+        return;
+    }
+    if (opt.scripts && flash_hud.hacking()) return;   // the hacking game takes the mouse or a finger
+    if (down && (b == SDL_GAMEPAD_BUTTON_SOUTH || b == SDL_GAMEPAD_BUTTON_WEST) && answer_qte()) return;
+    // A: the use button within reach of something usable (or to get off the Batpod); else the
+    // jump, which the frame's input reads while A is down (held_use takes the hold).
+    if (down && b == SDL_GAMEPAD_BUTTON_SOUTH && opt.scripts && !logic.player_locked() && !logic.limited_tap() &&
+        (logic.riding >= 0 || logic.usable_in_reach() >= 0)) {
+        logic.use();
+        pad_a_used = true;
+        return;
+    }
+    // The fight: X strike (and a leap takedown), Y counter, B the batarang.
+    if (down && hero.active() && opt.scripts && !logic.player_locked() && logic.riding < 0) {
+        if (b == SDL_GAMEPAD_BUTTON_WEST) brawl.strike();
+        if (b == SDL_GAMEPAD_BUTTON_NORTH) brawl.counter();
+        if (b == SDL_GAMEPAD_BUTTON_EAST) brawl.throw_batarang(cam.position, cam.forward());
+    }
     if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
         const float t = float(e.gaxis.value) / 32767.0f;
         if (t > 0.6f && !pad_trigger_held && hero.active() && can_grapple()) fire_grapnel(cam.position, cam.forward());
@@ -302,8 +346,7 @@ void Game::handle_event(const SDL_Event& e) {
     if (flash_hud.win_open() && !menu.open) {   // the win screen: its button continues
         const bool go = (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
                          (e.key.key == SDLK_RETURN || e.key.key == SDLK_SPACE || e.key.key == SDLK_E)) ||
-                        (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) ||
-                        (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH);
+                        (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT);
         if (go) flash_hud.press_continue();
         return;
     }
@@ -488,16 +531,10 @@ void Game::handle_event(const SDL_Event& e) {
         fire_grapnel(cam.position, cam.forward());
     // TDKR: strike (left button, X) and counter (right button, Y).
     if (hero.active() && opt.scripts && !logic.player_locked() && logic.riding < 0) {
-        const bool strike = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) ||
-                            (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_WEST);
-        const bool counter = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_RIGHT) ||
-                             (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH);
-        if (strike) brawl.strike();
-        if (counter) brawl.counter();
-        // The batarang: Q, or B on a pad.
-        if ((e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_Q && !e.key.repeat) ||
-            (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_EAST))
-            brawl.throw_batarang(cam.position, cam.forward());
+        // (the pad's buttons: pad_event)
+        if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) brawl.strike();
+        if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_RIGHT) brawl.counter();
+        if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_Q && !e.key.repeat) brawl.throw_batarang(cam.position, cam.forward());
     }
     // Grenades or mines on the grenade button (the original's swipe), and the
     // detonation of the mines placed.
@@ -664,7 +701,7 @@ void Game::run_window() {
                     if (ig & 8) in.right = std::min(in.right, 0.0f);
                     if (in.forward != 0 || in.right != 0) logic.player_did.move = true;
                 }
-                const bool pad_a = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH);
+                const bool pad_a = pad && !pad_a_used && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH);
                 const bool pad_run = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_STICK);
                 in.jump = lc.jump && !mech && (keys[SDL_SCANCODE_SPACE] || touch_in.jump || pad_a);
                 in.run = lc.rush && logic.player_rush && !aiming && (keys[SDL_SCANCODE_LSHIFT] || touch_in.run || pad_run);

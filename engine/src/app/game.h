@@ -201,6 +201,7 @@ private:
     // Start pauses; in menus the D-pad or left stick moves, A selects, B goes back.
     SDL_Gamepad* pad = nullptr;
     bool pad_trigger_held = false;          // RT past its threshold (fires once per pull)
+    bool pad_a_used = false;                // A was the use button: no jump until it is let go
     glm::vec2 pad_menu_stick{0};            // last left-stick direction sent to a menu
     void pad_event(const SDL_Event& e);
     float pad_axis(SDL_GamepadAxis axis) const;   // -1..1, with a dead zone

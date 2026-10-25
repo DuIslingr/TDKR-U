@@ -31,6 +31,34 @@ cmake --build engine/build
 
 The other platforms build as N.O.V.A. 3 does (`-DTDKR_VENDORED=ON`, `-DTDKR_SHADERCROSS=ON`).
 
+## Controls
+
+The gamepad follows the Android build's own controller layout (the PowerA pad's, an Xbox layout), as its
+`_POWER_A` tutorial prompts and loading hints give it; the keyboard and mouse are this port's.
+
+| Action | Gamepad | Keyboard and mouse |
+| --- | --- | --- |
+| Move; steer a glide (up dives) | left stick | W A S D |
+| Look (the camera) | right stick | mouse |
+| Sprint | left stick click | Shift |
+| Jump, climb up; in the air, glide; on an exhaust fan, ride its updraft | A | Space |
+| Use (switches, hostages, the bomb disarms, talking); get off the Batpod | A, near something usable | E |
+| Attack; a leap takedown from above | X | left button |
+| Block and strike back (counter) | Y | right button |
+| Batarang | B | Q |
+| Grapnel (an edge, or pulls an enemy; onto a helicopter) | right trigger | F |
+| Gadgets | left trigger (the gadget wheel is not done yet) | - |
+| Answer a QTE button | A or X | E, F or a click |
+| Batpod: throttle / brakes, steer | left stick | W / S, A / D |
+| Pause | Start | Escape |
+| Skip a storyboard | any button | any key or click |
+| Win screen: continue; death and level-end screens | A; D-pad to move | Enter, Space or a click; arrows |
+| Menus | D-pad or left stick to move, A selects, B goes back | arrows or WASD, Enter, Escape; or the mouse |
+
+A held use (the C4 disarms) runs on its own once started, under its progress bar, while Batman stays in reach and is
+not attacked. The hacking game is played with the mouse or a finger. With a pad connected (or `--gamepad`), the
+tutorial prompts name its buttons. `--touch` plays with the original's touch controls instead.
+
 ## Checking the data
 
 ```bash
@@ -54,13 +82,8 @@ chunk under its object; `--gol gol.bin` for the object library's). To check the 
 
 To run a level in the engine: `engine/build/tdkr --data work/data --level Stadion.lvc --no-scripts` (add
 `--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera, `--walk-test SECONDS` to walk
-forward first, `--grapple-test SECONDS` to fire the grapnel after 1 s). In the window: mouse to look, WASD to move
-Batman, Shift to sprint, Space to jump (again in the air to glide; while gliding W dives, Shift+W plunges), F to grapple,
-E to use, the left / right buttons to strike / counter (the tutorial checks for them; there is no melee yet).
-A gamepad works too, laid out like the Android build's PowerA pad: left stick moves, right stick looks, A jumps / glides,
-left stick click sprints, right trigger grapples, X strikes, Y counters, B throws the batarang (Q on the keyboard),
-Start pauses; in the menus the D-pad or left stick moves, A selects,
-B goes back. With a pad connected (or `--gamepad`), tutorial prompts name its buttons.
+forward first, `--grapple-test SECONDS` to fire the grapnel after 1 s). The controls are under
+[Controls](#controls).
 `--mission N|NAME` starts a mission as the menus do (its level, then its start script); `--list-missions` lists them.
 The level scripts run on the game's own script API (`engine/src/game/tdkr_api.cpp`; `--trace-scripts` logs what they
 start and, headless, counts the calls to natives not implemented yet). `--touch-test SECONDS` swipes and walks at

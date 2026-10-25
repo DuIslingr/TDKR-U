@@ -1060,6 +1060,20 @@ bool LevelLogic::start_object_script(const Object& o, const std::string& event) 
     return false;
 }
 
+// CInteractionComponent::IsInInteractionRadius: the nearest usable object within its radius.
+int LevelLogic::usable_in_reach() const {
+    int best = -1;
+    float best_d = 1e30f;
+    for (const auto& [id, o] : objects_) {
+        if (!o.loaded || !o.interactive || !o.enabled || !o.interact_enabled || o.dead || !use_does_something(o)) continue;
+        const float d = id == hanging_from ? 0.0f : glm::distance(glm::vec2(o.position), glm::vec2(player.center));
+        if (id != hanging_from && (d > o.interact_radius || d > best_d || std::abs(o.position.z - player.center.z) > 3)) continue;
+        best = id;
+        best_d = d;
+    }
+    return best;
+}
+
 bool LevelLogic::use() {
     if (riding >= 0) {   // off the Batpod
         dismount_batpod();
@@ -1072,16 +1086,7 @@ bool LevelLogic::use() {
         if (!o || !start_object_script(*o, "OnExit")) leave_vehicle();
         return true;
     }
-    // CInteractionComponent::IsInInteractionRadius: the nearest usable object within its radius.
-    Object* best = nullptr;
-    float best_d = 1e30f;
-    for (auto& [id, o] : objects_) {
-        if (!o.interactive || !o.enabled || !o.interact_enabled || o.dead || !use_does_something(o)) continue;
-        const float d = id == hanging_from ? 0.0f : glm::distance(glm::vec2(o.position), glm::vec2(player.center));
-        if (id != hanging_from && (d > o.interact_radius || d > best_d || std::abs(o.position.z - player.center.z) > 3)) continue;
-        best = &o;
-        best_d = d;
-    }
+    Object* best = object(usable_in_reach());
     if (!best) return false;
     // The original pushes its circuit minigame (GS_FaneMinigame) first when the instance's
     // minigame flag ([3]) is set, but no campaign object sets it: the use is OnEnter alone.

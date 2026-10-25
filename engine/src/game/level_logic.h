@@ -840,6 +840,8 @@ private:
     void update_cameras(float dt);
 public:
     // Using it does something: a target to enable, or its OnScriptEvent (Obj or Templ).
+    // The object the use button would use now (-1: none in reach).
+    int usable_in_reach() const;
     bool use_does_something(const Object& o) const { return o.interact_target >= 0 || has_object_script(o, "OnScriptEvent"); }
     bool has_object_script(const Object& o, const std::string& event) const;
 private:

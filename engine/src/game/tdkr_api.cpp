@@ -767,6 +767,50 @@ int api_move_group(lua_State* L) {   // MoveGroup(group, destination, reference)
     ctx(L).move_group(int_arg(L, 1), int_arg(L, 2), int_arg(L, 3));
     return 0;
 }
+// ActorWeaponSetDamage(actor, weapon, damage): its gun's damage per shot.
+int api_actor_weapon_set_damage(lua_State* L) {
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->gun_damage = float(lua_tonumber(L, 3));
+    return 0;
+}
+int api_set_fall_distances(lua_State* L) {   // SetFallDistances(a, b, c): a negative one stays
+    glm::vec3& f = ctx(L).fall_distances;
+    for (int k = 0; k < 3; ++k)
+        if (const float v = float(lua_tonumber(L, k + 1)); v >= 0) f[k] = v;
+    return 0;
+}
+int api_add_health_bar(lua_State* L) {   // AddHealthBar(actor | -1)
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = int_arg(L, 1) > 0 ? c.object(int_arg(L, 1)) : nullptr;
+    c.health_bar = o ? o->id : -1;
+    c.health_bar_full = o && o->health > 0 ? o->health : 1.0f;
+    return 0;
+}
+// NPCGetAIBehavior(actor) (CNpcAIComponent [0]: AI_BEHAVIOR_ENEMY_RANGED_1, ...); -1 if none.
+int api_npc_get_ai_behavior(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const LevelLogic::Object* o = c.object(int_arg(L, 1));
+    const Value* ai = o ? c.object_component(*o, kCompNpcAi) : nullptr;
+    lua_pushinteger(L, ai && ai->size() >= 1 ? (*ai)[0].i : -1);
+    return 1;
+}
+// GetEnemiesTypeInRange(object, radius, behaviour) (CLevel::GetActorsInRange): the living
+// enemies of that AI behaviour within the radius; as values.
+int api_get_enemies_type_in_range(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    glm::vec3 from;
+    if (!position_of(c, int_arg(L, 1), from)) return 0;
+    const float radius = float(lua_tonumber(L, 2));
+    const int behaviour = int_arg(L, 3);
+    int n = 0;
+    for (const auto& [id, o] : c.objects()) {
+        if (!c.is_enemy(id) || glm::distance(o.position, from) > radius) continue;
+        const Value* ai = c.object_component(o, kCompNpcAi);
+        if (!ai || ai->size() < 1 || (*ai)[0].i != behaviour) continue;
+        lua_pushinteger(L, id);
+        ++n;
+    }
+    return n;
+}
 // EnableExhaustFan(fan, on) (CExhaustFanComponent::SetActive): its updraft on or off.
 int api_enable_exhaust_fan(lua_State* L) {
     ctx(L).enable_fan(int_arg(L, 1), bool_arg(L, 2));
@@ -1477,6 +1521,11 @@ const Entry kTdkr[] = {
     {"SetInteractionParamsProgress", api_set_interaction_params},
     {"EnableExhaustFan", api_enable_exhaust_fan},
     {"MoveGroup", api_move_group},
+    {"AddHealthBar", api_add_health_bar},
+    {"NPCGetAIBehavior", api_npc_get_ai_behavior},
+    {"GetEnemiesTypeInRange", api_get_enemies_type_in_range},
+    {"ActorWeaponSetDamage", api_actor_weapon_set_damage},
+    {"SetFallDistances", api_set_fall_distances},
     {"RemoveNPCOnRestart", api_nothing},   // (CGameObject::SetDontSave: a respawn here drops every spawned actor anyway)
     {"GetDistrictCompletion", api_get_district_completion},
     {"GenerateDistrict", api_generate_district},

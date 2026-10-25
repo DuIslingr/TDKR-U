@@ -496,8 +496,7 @@ held at gunpoint on the roof; the win screen, and the story moves on to quest 81
 
 - `SetInteractionParamsProgress(object, radius, target, button frame, ms, text, win text, lose text)`
   (`CInteractionComponent::SetInteractionParams` with a hold time): the use takes `ms` (the C4 disarms 3-5 s, the
-  interrogations 0), running while Batman stays in reach and is not attacked; let go, it starts over. The progress
-  bar is not drawn yet.
+  interrogations 0), running while Batman stays in reach and is not attacked; let go, it starts over.
 - **Exhaust fans** (`CExhaustFanComponent` `0x65DA04ED`: `[3]` starts off, `[4]` radius, `[5]` push lost per metre
   up, `[6]` push at the fan, `[7]` column height; placed 4 / 2 / 120-130 / 60-65): the level sums the pushes where
   Batman is (`CLevel` `+0xb10`), a glide rises by them, and a jump in one of 2 and up launches him up the column
@@ -508,6 +507,22 @@ held at gunpoint on the roof; the win screen, and the story moves on to quest 81
 - `MoveGroup(group, destination, reference)` (`CGroupObject::MoveGroup`: the members, sub-groups and waypoints moved
   so the reference lands on the destination, turned by the heading difference; the destination is the reference
   next time), `RemoveNPCOnRestart` (a respawn here drops spawned actors anyway).
+
+**The military base** (quest 816 in Gotham, then quest 175 in `Military.lvc`): Gordon's call and a quest giver,
+whose `Running` does `RequireLoadLevel("STR_FPS_LEVEL_MILITARY", 31002)`. There: the news helicopter's intro, then
+(`Obj701407_Always` keeps the objective line) the hostages and Blake in hangar 3, the generator by the gate (a hack:
+the power cut switches every surveillance camera off), the two warehouses' weapon caches (charges set, then
+detonated once they are empty), the fight on the roof, Blake's outro and the win screen; `RequireLoadLevel` back to
+Gotham's spawn 316679, the main story on quest 817. The cameras' markers (`securityCamera`) are optional: breaking
+them or cutting the power both do. What it needed:
+
+- `NPCGetAIBehavior(actor)` (`CNpcAIComponent` `[0]`), `GetEnemiesTypeInRange(object, radius, behaviour)`
+  (`CLevel::GetActorsInRange`), `ActorWeaponSetDamage(actor, weapon, damage)` (the shot's damage; the snipers' here),
+  `SetFallDistances(a, b, c)` (kept: Batman takes no fall damage yet).
+- `AddHealthBar(actor | -1)` (`CHUDDisplay::AddEnemyHealthBar`): the HUD's `baneHealthBar`, its `indicator` scaled to
+  the health left. The held uses of quest 25 now show `disarmInstance`'s progress bar the same way.
+- An interaction with neither a script nor a target does nothing (Blake before hangar 3's script gives him one): the
+  use button passes it by.
 
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /

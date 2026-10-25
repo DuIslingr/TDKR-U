@@ -82,7 +82,8 @@ ledges) and grapnels onto the helicopter from below it, then uses it. It takes t
 enemies, then objectives, then the rest (hostages, people to talk to); with no marker it goes to a quest giver on the
 map (Gordon, for quest 601: the same command with `StartMainStoryFromQuestId(601)`). At an exhaust fan marker it
 stands on the fan and jumps up its updraft, steers the glide through the fans on the way, and over one it has not
-used drops onto it to go up again (quest 25, `StartMainStoryFromQuestId(25)`). In a glide, jump on a fan's top to
+used drops onto it to go up again (quest 25, `StartMainStoryFromQuestId(25)`). The military base follows from
+`StartMainStoryFromQuestId(816)`; auto-play leaves optional security camera markers for last. In a glide, jump on a fan's top to
 ride its updraft.
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.

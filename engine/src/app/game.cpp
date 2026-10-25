@@ -498,6 +498,8 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             fs.attack_on = logic.controls.combat || brawl.can_take_down();
             fs.grapnel_on = logic.controls.grapnel;
             fs.riding = logic.riding >= 0;
+            if (const LevelLogic::Object* b = logic.object(logic.health_bar)) fs.enemy_health = b->dead ? 0.0f : b->health / logic.health_bar_full;
+            if (logic.held_use.object >= 0 && logic.held_use.total > 0) fs.progress = 1 - logic.held_use.left / logic.held_use.total;
         }
         {
             const glm::vec3 fwd = glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0));
@@ -824,7 +826,7 @@ void Game::auto_play(float dt) {
     auto rank = [](const std::string& text) {
         std::string t = text;
         for (char& ch : t) ch = char(std::tolower(static_cast<unsigned char>(ch)));
-        return t == "kill" ? 0 : t == "objective" ? 1 : 2;
+        return t == "kill" ? 0 : t == "objective" ? 1 : t == "securitycamera" ? 3 : 2;   // (the cameras are optional)
     };
     std::stable_sort(goals.begin(), goals.end(), [&](const auto& a, const auto& b) { return rank(a.text) < rank(b.text); });
     if (goals.empty() && logic.mission_zone < 0)   // out of a mission, a quest giver on the map
@@ -840,7 +842,9 @@ void Game::auto_play(float dt) {
         LevelLogic::Object* o = logic.object(m.id);
         if (!o || o->dead) continue;   // (a marker on a disabled object is still a place to go)
         if (auto_play_stale[m.id] >= 6 && goals.size() > 1) continue;   // been there, nothing came of it: the next
-        const bool use = o->interactive && o->interact_enabled && o->enabled;
+        // (an interaction with neither a script nor a target yet is a place: Blake before the
+        // military base's hangar sets his)
+        const bool use = o->interactive && o->interact_enabled && o->enabled && logic.use_does_something(*o);
         // A fan: on its top, a jump up its updraft (the glide then heads for the next marker).
         if (logic.is_fan(m.id)) {
             if (player.on_ground && player.lift.z >= 2.0f &&

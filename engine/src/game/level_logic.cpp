@@ -377,7 +377,7 @@ void LevelLogic::start(StartMode mode) {
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
     story_request = {};
-    riding = -1, hanging_from = -1, held_use = {}, qte_navigation = false, bruce_style = false;
+    riding = -1, hanging_from = -1, held_use = {}, health_bar = -1, qte_navigation = false, bruce_style = false;
     scene.show_coronas(true);
     map_icons.clear();
     level_request = {};
@@ -1044,6 +1044,12 @@ bool LevelLogic::exec(const std::string& code) {
     return true;
 }
 
+bool LevelLogic::has_object_script(const Object& o, const std::string& event) const {
+    if (runtime_.has_function("Obj" + std::to_string(o.id) + "_" + event)) return true;
+    return o.index < scene.level().objects.size() &&
+           runtime_.has_function("Templ" + std::to_string(scene.level().objects[o.index].type) + "_" + event);
+}
+
 bool LevelLogic::start_object_script(const Object& o, const std::string& event) {
     const std::string own = "Obj" + std::to_string(o.id) + "_" + event;
     if (runtime_.has_function(own)) return start_script(own, o.id), true;
@@ -1070,7 +1076,7 @@ bool LevelLogic::use() {
     Object* best = nullptr;
     float best_d = 1e30f;
     for (auto& [id, o] : objects_) {
-        if (!o.interactive || !o.enabled || !o.interact_enabled || o.dead) continue;
+        if (!o.interactive || !o.enabled || !o.interact_enabled || o.dead || !use_does_something(o)) continue;
         const float d = id == hanging_from ? 0.0f : glm::distance(glm::vec2(o.position), glm::vec2(player.center));
         if (id != hanging_from && (d > o.interact_radius || d > best_d || std::abs(o.position.z - player.center.z) > 3)) continue;
         best = &o;

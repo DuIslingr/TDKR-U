@@ -227,7 +227,7 @@ void Brawl::update_snipers(float dt) {
                 s.timer -= dt;
                 if (s.timer <= 0 && std::abs(d) < kCone) {   // the shot
                     actor_state(o->id, "Sniper_Shoot");
-                    hurt_batman(25, "Batman_Hurt_02_Cross");
+                    hurt_batman(o->gun_damage >= 0 ? o->gun_damage : 25.0f, "Batman_Hurt_02_Cross");
                     if (logic_.trace) logic_.log("sniper " + std::to_string(o->id) + " shoots Batman");
                     s.phase = Sniper::Phase::Reload, s.timer = kReload;
                 }

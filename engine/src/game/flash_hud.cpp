@@ -194,6 +194,17 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     }
     // CHUDDisplay: the counter button shows while an enemy's attack can be countered.
     p.set_visible("bCounterAttack", state.counter && !state.cinematic);
+    // CHUDDisplay::AddEnemyHealthBar: the bar's indicator scaled to the health left; and a held
+    // use's progress bar (disarmInstance, the C4 disarms').
+    auto bar = [&](const char* clip, const char* fill, float k) {
+        p.set_visible(clip, k >= 0 && !state.cinematic);
+        if (swf::Instance* f = k >= 0 ? p.find(std::string(clip) + "." + fill) : nullptr) {
+            f->matrix.a = std::clamp(k, 0.0f, 1.0f);
+            f->accept_moves = false;
+        }
+    };
+    bar("baneHealthBar", "indicator", state.enemy_health);
+    bar("disarmInstance", "fill.fill", state.progress);
     screen_.update(dt, width, height);
 }
 

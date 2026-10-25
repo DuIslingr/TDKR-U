@@ -62,6 +62,8 @@ public:
         // QTE_EnableControl: the QTE button over an object (screen pixels).
         bool qte = false;
         glm::vec2 qte_at{0};
+        float enemy_health = -1;         // AddHealthBar (baneHealthBar): 0..1, -1 none
+        float progress = -1;             // a held use (disarmInstance's bar): 0..1, -1 none
     };
     void update(float dt, const State& state, int width, int height);
     // The objective popup (objectiveMessage_popin): show with text, or hide.

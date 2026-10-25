@@ -219,6 +219,13 @@ public:
     // EnterBatPod(object) / ExitBatPod() (PlayerComponent::EnterTheBatOrBatPod / ExitTheBatOrBatPod):
     // the Batpod Batman rides (-1: on foot); the game drives it (game/batpod.h). Mounting takes
     // the bike's own collision and use button away; getting off puts Batman beside it.
+    // SetFallDistances(a, b, c) (PlayerComponent +0x488, +0x48c, +0x490: the falls Batman
+    // lands from unhurt, hurt, dead): kept; Batman takes no fall damage here yet.
+    glm::vec3 fall_distances{-1};
+    // AddHealthBar(actor) (CHUDDisplay::AddEnemyHealthBar): the boss whose health the HUD shows
+    // (against its health then); -1 / 0: none.
+    int health_bar = -1;
+    float health_bar_full = 1;
     int riding = -1;
     // Batman's grapnel at a helicopter (CHelicopterLogic): he hangs under it (Grab_Heli_Idle),
     // carried along, until UnlinkObject(0) lets go (its use, Templ<heli>_OnScriptEvent: the EMP).
@@ -454,6 +461,7 @@ public:
         bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
         bool targetable = true;       // ActorGrapnelEnable: Batman may leap or grapple at it
         bool invincible = false;      // SetInvincible: hits leave its health alone
+        float gun_damage = -1;        // ActorWeaponSetDamage (CWeaponComponent::SetDamage); -1: its own
         // Gotham's mission zones (CZonesManager: a zone record flagged as a mission, its objects
         // the records it spans): an object of one is loaded only while its zone is the current
         // mission (NextMission), fresh from the level each time; unloaded, scripts cannot find it.
@@ -830,6 +838,11 @@ private:
     std::unordered_map<int, Camera> cameras_;
     void find_cameras();
     void update_cameras(float dt);
+public:
+    // Using it does something: a target to enable, or its OnScriptEvent (Obj or Templ).
+    bool use_does_something(const Object& o) const { return o.interact_target >= 0 || has_object_script(o, "OnScriptEvent"); }
+    bool has_object_script(const Object& o, const std::string& event) const;
+private:
     void interact(Object& o);   // CInteractionComponent::OnInteract
     void update_held_use(float dt);
     std::unordered_map<int, int> group_refs_;   // MoveGroup: where each group was last moved to

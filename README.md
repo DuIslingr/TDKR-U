@@ -156,7 +156,11 @@ enemies, then objectives, then the rest (hostages, people to talk to); with no m
 map (Gordon, for quest 601: the same command with `StartMainStoryFromQuestId(601)`). At an exhaust fan marker it
 stands on the fan and jumps up its updraft, steers the glide through the fans on the way, and over one it has not
 used drops onto it to go up again (quest 25, `StartMainStoryFromQuestId(25)`). The military base follows from
-`StartMainStoryFromQuestId(816)`; auto-play leaves optional security camera markers for last. In a glide, jump on a fan's top to
+`StartMainStoryFromQuestId(816)`; auto-play leaves optional security camera markers for last. Chapter 3 plays through from
+`--level GothamCity.lvc --spawn-at 316641 --exec "StartMainStoryFromQuestId(960)"` (960, 818, 215) and from spawn 316679
+with 817 (950, 814), about 15 game minutes each; `--god` keeps Batman alive. It takes snipers on its own level first; with
+nothing marked for a while it goes for a quest giver on the map or an enemy still up nearby; at the end of a chase it gets
+off the Batpod, and it keeps up with a `follow` marker's helicopter instead of grapnelling onto it. In a glide, jump on a fan's top to
 ride its updraft.
 The HUD is the game's own `BatmanHUD.swf`. Without `--level` the game starts on its title screen and main menu
 (arrows / WASD and Enter, or the mouse; Escape goes back); Escape in a level opens the pause menu.

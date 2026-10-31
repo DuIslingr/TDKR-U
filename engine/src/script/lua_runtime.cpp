@@ -63,6 +63,11 @@ bool save_value(lua_State* L, int index, ScriptRuntime::SavedValue& out, std::ve
 
 void push_value(lua_State* L, const ScriptRuntime::SavedValue& v);
 
+int dump_writer(lua_State*, const void* p, size_t size, void* out) {
+    static_cast<std::string*>(out)->append(static_cast<const char*>(p), size);
+    return 0;
+}
+
 // The table at the top of the stack gets the saved table's entries; nested tables merge too.
 void merge_table(lua_State* L, const ScriptRuntime::SavedValue& v) {
     for (size_t i = 0; i + 1 < v.table.size(); i += 2) {
@@ -89,11 +94,23 @@ void push_value(lua_State* L, const ScriptRuntime::SavedValue& v) {
     case T::Number: lua_pushnumber(L, v.n); break;
     case T::String: lua_pushlstring(L, v.s.data(), v.s.size()); break;
     case T::Table: lua_newtable(L), merge_table(L, v); break;
+    case T::Function:
+        if (luaL_loadbuffer(L, v.s.data(), v.s.size(), "=saved") != 0) lua_pop(L, 1), lua_pushnil(L);
+        break;
     default: lua_pushnil(L);
     }
 }
 
 }  // namespace
+
+void ScriptRuntime::mark_chunk_functions() {
+    chunk_functions_.clear();
+    lua_pushnil(L_);
+    while (lua_next(L_, LUA_GLOBALSINDEX)) {
+        if (lua_type(L_, -2) == LUA_TSTRING && lua_isfunction(L_, -1)) chunk_functions_.insert(lua_tostring(L_, -2));
+        lua_pop(L_, 1);
+    }
+}
 
 ScriptRuntime::Globals ScriptRuntime::save_globals() const {
     Globals out;
@@ -103,7 +120,14 @@ ScriptRuntime::Globals ScriptRuntime::save_globals() const {
         if (lua_type(L_, -2) == LUA_TSTRING) {
             const std::string name = lua_tostring(L_, -2);
             SavedValue v;
-            if (!kept_out(name) && save_value(L_, -1, v, seen)) out.emplace_back(name, std::move(v));
+            if (lua_isfunction(L_, -1)) {
+                if (!lua_iscfunction(L_, -1) && !chunk_functions_.count(name)) {
+                    v.type = SavedValue::Type::Function;
+                    if (lua_dump(L_, dump_writer, &v.s) == 0) out.emplace_back(name, std::move(v));
+                }
+            } else if (!kept_out(name) && save_value(L_, -1, v, seen)) {
+                out.emplace_back(name, std::move(v));
+            }
         }
         lua_pop(L_, 1);
     }

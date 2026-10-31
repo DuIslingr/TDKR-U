@@ -12,6 +12,7 @@ namespace tdkr {
 namespace {
 
 constexpr int kCompStateSet = 0x5441A117;   // CStateSetComponent: [[name, type mask, ?, loop, ..., [27] clips], ...]
+constexpr int kCompActorBase = 0x54989CB1;  // CActorBaseComponent: [9] walk speed, [10] run speed (ResetWalkSpeed)
 
 }  // namespace
 
@@ -44,7 +45,11 @@ LevelLogic::Walker& LevelLogic::walker(int id) {
     for (Walker& w : walkers_)
         if (w.id == id) return w;
     walkers_.push_back({id});
-    return walkers_.back();
+    Walker& w = walkers_.back();
+    if (const Object* o = object(id))
+        if (const Value* base = object_component(*o, kCompActorBase); base && base->size() > 10)
+            w.walk_speed = w.walk_to = (*base)[9].as_float(), w.run_speed = (*base)[10].as_float();
+    return w;
 }
 
 bool LevelLogic::actor_state(Object& o, const std::string& state, bool restart) {
@@ -96,10 +101,19 @@ bool LevelLogic::walking(int id) const {
     return false;
 }
 
-void LevelLogic::set_actor_speed(int id, float speed, bool run) {
+// SetActorSpeedWalk(actor, speed[, ms]) (CActorBaseComponent::SetWalkSpeed): over ms if given.
+void LevelLogic::set_actor_speed(int id, float speed, bool run, float ms) {
     Walker& w = walker(id);
-    (run ? w.run_speed : w.walk_speed) = speed;
+    if (run) {
+        w.run_speed = speed;
+    } else if (ms > 0) {
+        w.walk_to = speed, w.walk_ramp = (speed - w.walk_speed) / ms, w.walk_ramp_left = ms;
+    } else {
+        w.walk_speed = w.walk_to = speed, w.walk_ramp_left = 0;
+    }
 }
+
+float LevelLogic::actor_speed(int id) { return walker(id).walk_speed; }
 
 // A walker's state: its type's own (Ranged_Walk, ...), else the plain one.
 void LevelLogic::walk_state(Object& o, size_t which, const char* fallback) {
@@ -111,6 +125,11 @@ void LevelLogic::update_walkers(float dt) {
     for (size_t k = 0; k < walkers_.size(); ++k) {
         Walker& w = walkers_[k];
         Object* o = object(w.id);
+        if (w.walk_ramp_left > 0) {
+            const float ms = std::min(dt * 1000, w.walk_ramp_left);
+            w.walk_speed += w.walk_ramp * ms;
+            if ((w.walk_ramp_left -= ms) <= 0) w.walk_speed = w.walk_to;
+        }
         if (!o || o->dead) continue;
         // Patrolling: a pause, then the next point within the area (none while it fights).
         if (w.patrol >= 0 && w.target < 0 && !w.to_point && !attack_targets.count(w.id))

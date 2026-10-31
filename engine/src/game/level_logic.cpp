@@ -338,6 +338,7 @@ void LevelLogic::start(StartMode mode) {
         grading_.dirty = true;
     }
     if (!keep_player) timer = -1, timer_paused = false;
+    if (!keep_player && mode != StartMode::Respawn) countdown = {}, can_exit_vehicle = true;
     if (!keep_player) controls = Controls{}, hud_enabled = true, interface_in_cinematic = false, weapon_state.clear(), objectives = {},
                       path_marker = {}, objective_markers.clear();
     objects_.clear();
@@ -367,6 +368,7 @@ void LevelLogic::start(StartMode mode) {
     for (auto& [id, o] : objects_)
         if (o.zone >= 0) o.enabled = o.visible = false, o.loaded = false, show(o, false);
     if (mode != StartMode::Section) quests.load(scene.level(), gol);
+    runtime_.mark_chunk_functions();
     mission_zone = -1;
     walkers_.clear();
     attack_targets.clear(), snipers.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
@@ -1077,7 +1079,8 @@ int LevelLogic::usable_in_reach() const {
 }
 
 bool LevelLogic::use() {
-    if (riding >= 0) {   // off the Batpod
+    if (riding >= 0) {   // off the Batpod (SetCanExitVehicle may hold him on it)
+        if (!can_exit_vehicle) return false;
         dismount_batpod();
         return true;
     }
@@ -2010,6 +2013,7 @@ void LevelLogic::update(float dt) {
         timer -= dt;
         if (timer >= 0 && int(timer) != before && audio) audio->play("sfx_ui_time_counter");
     }
+    if (countdown.on && (countdown.ms -= dt * 1000) < 0) countdown.ms = 0, countdown.on = false;   // CLevel::UpdateCountdownTimer
     fov_t_ += dt;
     objectives.show = std::max(objectives.show - dt, 0.0f);
     objectives.alpha = std::clamp(objectives.alpha + (objectives.show > 0 ? 2.0f : -2.0f) * dt, 0.0f, 1.0f);   // 0.002 per ms

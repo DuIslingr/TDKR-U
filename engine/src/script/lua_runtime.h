@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 struct lua_State;
@@ -59,14 +60,19 @@ public:
     // writes _G): numbers, strings, booleans and tables of them. Functions are the chunks',
     // loaded again; the standard libraries are left out.
     struct SavedValue {
-        enum class Type : uint8_t { Nil, Bool, Number, String, Table } type = Type::Nil;
+        enum class Type : uint8_t { Nil, Bool, Number, String, Table, Function } type = Type::Nil;
         bool b = false;
         double n = 0;
-        std::string s;
+        std::string s;   // (a Function: its bytecode)
         std::vector<SavedValue> table;   // key, value, key, value, ...
     };
     using Globals = std::vector<std::pair<std::string, SavedValue>>;
+    // The functions the chunks define are not kept (they load again); those a script defined
+    // as it ran are (Obj600010_Always's r_* helpers): the original's respawn keeps its Lua state
+    // and clears only its registered variables (ResetUserDefinedGlobalVars). As bytecode, so
+    // they come back without their upvalues.
     Globals save_globals() const;
+    void mark_chunk_functions();   // what is defined now came from the chunks
     // Put them back over a fresh load (a table of data replaces the chunks' one; one holding
     // functions gets the saved entries merged in).
     void restore_globals(const Globals& globals);
@@ -94,6 +100,7 @@ private:
 
     lua_State* L_ = nullptr;
     std::vector<Thread> threads_;
+    std::unordered_set<std::string> chunk_functions_;   // mark_chunk_functions
     lua_State* running_ = nullptr;   // the coroutine being resumed
 };
 

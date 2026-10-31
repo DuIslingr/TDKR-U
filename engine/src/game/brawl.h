@@ -60,6 +60,7 @@ public:
     // ("Batarang_01"); it lands a moment later for a heavy hit.
     int batarang_target(const glm::vec3& eye, const glm::vec3& forward) const;
     bool throw_batarang(const glm::vec3& eye, const glm::vec3& forward);
+    bool invulnerable = false;   // --god
     float batman_health = 100;
     bool auto_fight = false;   // headless tests: strike at enemies in reach, counter every attack
 

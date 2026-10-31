@@ -63,7 +63,10 @@ glm::vec3 Brawl::feet() const { return player_.center - glm::vec3(0, 0, player_.
 float Brawl::yaw_to(const glm::vec3& at) const { return angle_to(feet(), at); }
 
 // Actors that fight: the enemies (the NPC AI component says so) and anyone told to.
-bool Brawl::enemy(int id) const { return logic_.is_enemy(id); }
+bool Brawl::enemy(int id) const {   // ActorAttackableEnable: not one Batman may go for
+    const LevelLogic::Object* o = logic_.object(id);
+    return o && o->attackable && logic_.is_enemy(id);
+}
 
 int Brawl::target(float reach, float ahead) const {
     const glm::vec3 f = feet();
@@ -133,7 +136,7 @@ void Brawl::hit(int id, float damage, const std::string& hurt) {
 }
 
 void Brawl::hurt_batman(float damage, const std::string& state) {
-    batman_health = std::max(batman_health - damage, 0.0f);
+    if (!invulnerable) batman_health = std::max(batman_health - damage, 0.0f);
     if (player_.on_ground && !player_.gliding && !player_.grappling) act(state, kHurt, hero_.facing(), 0.5f);
     if (batman_health <= 0) {
         if (logic_.trace) logic_.log("brawl: Batman is down");
@@ -567,7 +570,7 @@ void Brawl::update(float dt) {
     }
     // Headless tests fight by themselves (not on a faded screen: the scripts are setting up,
     // as with the interrogated thug, spawned before he is made no enemy).
-    if (auto_fight && logic_.fade_alpha() <= 0.01f) {
+    if (auto_fight && logic_.riding < 0 && logic_.fade_alpha() <= 0.01f) {
         if (counter_open()) counter();
         auto_timer_ -= dt;
         if (auto_timer_ <= 0 && !busy() && (target(5.0f, 2.0f) >= 0 || can_take_down())) strike(), auto_timer_ = 0.5f;

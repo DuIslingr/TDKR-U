@@ -168,7 +168,7 @@ public:
     void walk_to(int id, int waypoint, bool run);
     void start_patrol(int id, int waypoint);   // SpawnObject's (CNpcAIComponent::StartPatrol): the chain from there
     void stop_walking(int id);
-    void set_actor_speed(int id, float speed, bool run);
+    void set_actor_speed(int id, float speed, bool run, float ms = 0);
     bool walking(int id) const;
     // NPCGoToActorWithNavmesh / NPCReturnToSavedPosition: to a point (where an actor was), no
     // OnReach there.
@@ -364,6 +364,13 @@ public:
     // top of the screen (seconds; < 0: none), ticking each second.
     float timer = -1;
     bool timer_paused = false;
+    // StartCountdownTimer(ms, red ms) / StopCountdownTimer (CLevel +0x30): the HUD's countdown,
+    // its figures red under `red`. It runs out (0, off) by itself; a respawn leaves it running
+    // (CLevel::RespawnInit does not touch it).
+    struct Countdown {
+        bool on = false;
+        float ms = 0, total = 0, red = 0;
+    } countdown;
     struct Frost {
         float on = 0, ms = 1000, max = 1;   // HUD_StartFrost / HUD_StopFrost over ms; HUD_SetFrostMaxFactor
         uint32_t serial = 0;
@@ -469,7 +476,8 @@ public:
         bool loaded = true, init_enabled = true, init_visible = true;
         int enemy = -1;               // NPCSetEnemyFlag: 1 / 0 overrides its NPC AI's enemy flag (-1: as loaded)
         glm::vec3 home{0};            // where it was placed (NPCReturnToSavedPosition)
-        float health = 100;
+        float health = 100, full_health = 100;   // (CHealthComponent's max)
+        bool attackable = true;   // ActorAttackableEnable
         std::string state;
         int trigger = -1, door = -1;
         // Particle effects: CEffectBuiltInComponent's one effect, or CEffectsComponent's
@@ -482,6 +490,8 @@ public:
         std::vector<EffectSlot> effects;
     };
     Object* object(int id);
+    float actor_speed(int id);   // its walk speed (SetActorSpeedWalk)
+    bool can_exit_vehicle = true;   // SetCanExitVehicle
     const Object* object(int id) const {
         auto it = objects_.find(id);
         return it == objects_.end() ? nullptr : &it->second;
@@ -821,7 +831,8 @@ private:
         bool run = false;
         bool to_point = false;       // a point instead of a waypoint
         glm::vec3 point{0};
-        float walk_speed = 1.5f, run_speed = 4.5f;
+        float walk_speed = 1.5f, run_speed = 4.0f;
+        float walk_to = 1.5f, walk_ramp = 0, walk_ramp_left = 0;   // SetActorSpeedWalk over ms
         int patrol = -1;             // NPCPatrolArea's waypoint
         bool spawned = false;        // on the chain SpawnObject started it on: it leaves it to fight
         float patrol_radius = 0, patrol_wait = 0;

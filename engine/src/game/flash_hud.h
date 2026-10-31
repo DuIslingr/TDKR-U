@@ -64,6 +64,8 @@ public:
         glm::vec2 qte_at{0};
         float enemy_health = -1;         // AddHealthBar (baneHealthBar): 0..1, -1 none
         float progress = -1;             // a held use (disarmInstance's bar): 0..1, -1 none
+        float countdown_ms = -1;         // StartCountdownTimer: what is left, -1 none
+        bool countdown_red = false;      // under its red threshold
         bool touch = false;              // played by touch: the on-screen buttons show
     };
     void update(float dt, const State& state, int width, int height);
@@ -120,6 +122,10 @@ private:
     int hack_serial_ = 0, hack_result_ = 0;
     void start_hack(const State::Hack& h);
     bool qte_shown_ = false;
+    // CHUDDisplay::StartCountdownTimer / UpdateCountdownTimer / StopCountdownTimer:
+    // countdowntimer_instance opens and closes; its figures are "mm:ss", the red ones near the end.
+    void update_countdown(const State& state);
+    bool countdown_shown_ = false;
     bool riding_ = false;
     std::map<std::string, float> left_base_;   // the left group's authored x (twips)
 };

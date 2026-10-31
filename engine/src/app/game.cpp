@@ -116,6 +116,8 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
                         missions[i].name.c_str(), missions[i].level.c_str());
         for (size_t c = 0; c < campaign.size(); ++c)   // (GameLevels: the levels' order)
             std::printf("campaign level %zu  %s\n", c, campaign[c].file.c_str());
+        std::fflush(stdout);
+        std::exit(0);   // (it only lists)
     }
     if (!opt.mission.empty()) {   // a mission's level; its start script runs once the level has started
         const bool number = opt.mission.find_first_not_of("0123456789") == std::string::npos;
@@ -178,6 +180,7 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
     std::printf("zones: %zu zones, %zu portals\n", scene.zones().zones().size(), scene.zones().portals().size());
     combat.log = [](const std::string& line) { std::printf("[combat] %s\n", line.c_str()); };
     combat.player_invulnerable = opt.god;
+    brawl.invulnerable = opt.god;
     combat.death_screen = !headless;
     logic.combat = &combat;
     if (opt.credits >= 0) settings.credits = opt.credits;
@@ -552,6 +555,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             fs.riding = logic.riding >= 0;
             if (const LevelLogic::Object* b = logic.object(logic.health_bar)) fs.enemy_health = b->dead ? 0.0f : b->health / logic.health_bar_full;
             if (logic.held_use.object >= 0 && logic.held_use.total > 0) fs.progress = 1 - logic.held_use.left / logic.held_use.total;
+            if (logic.countdown.on) fs.countdown_ms = logic.countdown.ms, fs.countdown_red = logic.countdown.ms < logic.countdown.red;
         }
         {
             const glm::vec3 fwd = glm::vec3(glm::inverse(f.view) * glm::vec4(0, 0, -1, 0));
@@ -890,9 +894,30 @@ void Game::auto_play(float dt) {
         return t == "kill" ? 0 : t == "objective" ? 1 : t == "securitycamera" ? 3 : 2;   // (the cameras are optional)
     };
     std::stable_sort(goals.begin(), goals.end(), [&](const auto& a, const auto& b) { return rank(a.text) < rank(b.text); });
-    if (goals.empty() && logic.mission_zone < 0)   // out of a mission, a quest giver on the map
+    // A sniper on his level first, as a player would: a rifle takes half his health, and no
+    // use can be held in its sights. (Not one far below: quest 215's top of the tower is left
+    // only for the helicopter.)
+    {
+        float best = 45;
+        int sniper = -1;
+        for (const auto& [id, watched] : logic.snipers)
+            if (const LevelLogic::Object* o = logic.object(id); o && logic.is_enemy(id) && o->attackable && auto_sniper_tries[id] < 10 &&
+                std::abs(o->position.z - player.center.z) < 12.0f)
+                if (const float d = glm::distance(o->position, player.center); d < best) best = d, sniper = id;
+        if (sniper >= 0) ++auto_sniper_tries[sniper], goals.insert(goals.begin(), {sniper, "kill", ""});   // (one out of reach: on after 30 s)
+    }
+    // Nothing marked for a while (the scripts' next beat may be a moment away, and may start
+    // from Batman walking through a trigger): a quest giver on the map, then an enemy still up.
+    auto_idle = goals.empty() ? auto_idle + 3.0f : 0.0f;   // (this runs every 3 s)
+    if (goals.empty() && (logic.mission_zone < 0 || auto_idle > 10.0f))   // (quest 960's meeting point is in a mission zone)
         for (const auto& [id, icon] : logic.map_icons)
             if (icon.rfind("questGiver", 0) == 0 && logic.object(id)) goals = {{id, icon, ""}};
+    if (goals.empty() && auto_idle > 10.0f && player.center.z < 60.0f) {   // (the snipers around quest 814's last van; not from a tower's top)
+        float best = 80;
+        for (const auto& [id, o] : logic.objects())
+            if (logic.is_enemy(id) && o.attackable)
+                if (const float d = glm::distance(o.position, player.center); d < best) best = d, goals = {{id, "kill", ""}};
+    }
     if (goals.empty()) {
         float best = 40;
         for (const auto& [id, o] : logic.objects())
@@ -933,7 +958,8 @@ void Game::auto_play(float dt) {
                 return;
             }
             const glm::vec3 eye = player.eye(), at = o->position + glm::vec3(0, 0, 1.2f);
-            if (glm::distance(eye, at) < 38.0f && player.on_ground && fire_grapnel(eye, glm::normalize(at - eye))) {
+            // ("follow": only to keep up with; quest 305's use would blow up Miranda's helicopter)
+            if (m.text != "follow" && glm::distance(eye, at) < 38.0f && player.on_ground && fire_grapnel(eye, glm::normalize(at - eye))) {
                 std::printf("[auto-play] grapnel at %d\n", m.id);
                 return;
             }
@@ -1126,9 +1152,16 @@ PlayerInput Game::auto_drive() {
     }
     in.right = std::clamp(-off / 30.0f, -1.0f, 1.0f);
     const float dist = glm::distance(t->position, bike);
+    // There: what is left is done on foot (the fights at the vans' ends, their consoles).
+    if (dist < 8.0f && !logic.walking(t->id) && logic.can_exit_vehicle && logic.quests.story_quest() != 1000) {
+        logic.use();
+        return in;
+    }
     // Tailing: brake in time to stay over 40 m back (the brakes take v^2 / 2a).
     const float stopping = batpod.speed() > 0 ? batpod.speed() * batpod.speed() / (2 * (batpod.force + batpod.brake_force) / batpod.mass) : 0.0f;
-    if (logic.walking(t->id)) in.forward = dist - stopping < 45.0f ? -1.0f : dist - stopping < 55.0f ? 0.0f : std::abs(off) > 45.0f ? 0.6f : 1.0f;
+    // (quest 1000 fails under 25 m; quest 814's vans only speed up with Batman under 30 m.)
+    const float tail = logic.quests.story_quest() == 1000 ? 45.0f : 18.0f;
+    if (logic.walking(t->id)) in.forward = dist - stopping < tail ? -1.0f : dist - stopping < tail + 10.0f ? 0.0f : std::abs(off) > 45.0f ? 0.6f : 1.0f;
     else in.forward = dist < 6.0f ? -1.0f : std::abs(off) > 45.0f ? 0.6f : 1.0f;
     // Stuck against something: back up a second, turned the other way.
     // Three tries without getting anywhere: on to the next point of the trail (a test's shortcut,
@@ -1141,6 +1174,12 @@ PlayerInput Game::auto_drive() {
         const glm::vec3 to = ride_trail.front();
         std::printf("[auto-play] the Batpod is stuck at (%.1f %.1f %.1f): on to (%.1f %.1f %.1f)\n", bike.x, bike.y, bike.z, to.x, to.y, to.z);
         batpod.place(logic, to, std::remainder(glm::degrees(std::atan2(-to.x + bike.x, to.y - bike.y)), 360.0f));
+        ride_tries = 0, ride_backup = 0, ride_progress = to;
+    }
+    if (ride_tries >= 3 && ride_trail.size() == 1 && dist > 60.0f) {   // a far place with no trail: closer, by the same shortcut
+        const glm::vec3 to = t->position + glm::normalize(bike - t->position) * 50.0f;
+        std::printf("[auto-play] the Batpod is stuck at (%.1f %.1f %.1f): on to (%.1f %.1f %.1f)\n", bike.x, bike.y, bike.z, to.x, to.y, to.z);
+        batpod.place(logic, to, batpod.yaw());
         ride_tries = 0, ride_backup = 0, ride_progress = to;
     }
     if (ride_backup > 0) {

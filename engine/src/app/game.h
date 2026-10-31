@@ -238,6 +238,8 @@ private:
     void auto_play(float dt);   // --auto-play
     glm::vec3 on_floor(const glm::vec3& p) const;
     float auto_play_wait = 3.0f;
+    float auto_idle = 0;   // --auto-play: seconds with nothing marked
+    std::unordered_map<int, int> auto_sniper_tries;
     float auto_play_held = 0;   // seconds it has waited for a fight, a cinematic, ...
     std::vector<glm::vec3> auto_play_path;   // the feet's next positions
     int auto_play_use = -1;                  // the thing to use at the end of it

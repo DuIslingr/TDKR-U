@@ -791,6 +791,7 @@ void Combat::start(bool keep_stats) {
         t.pos = obj.position;
         t.yaw = obj.yaw;
         if (!obj.dead) obj.health = num(*health, 0, 10);   // CHealthComponent: max health
+        if (num(*health, 0, 10) > 0) obj.full_health = num(*health, 0, 10);
         t.max_health = std::max(num(*health, 0, 10), 1.0f);
         if (const float ms = num(*health, 3, 0); ms > 0) t.paralyze_time = ms / 1000.0f;
         if (health->size() > 9) t.hurt_sounds = sound_list((*health)[6]), t.death_sounds = sound_list((*health)[9]);

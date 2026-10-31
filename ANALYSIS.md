@@ -533,6 +533,45 @@ them or cutting the power both do. What it needed:
 - An interaction with neither a script nor a target does nothing (Blake before hangar 3's script gives him one): the
   use button passes it by.
 
+**The Batcave and the decryption missions** (chapter 3: quests 817, 950, 814, 960, 818, 215; spawn 316679 onwards).
+Quest 817's `Accepted` opens the sandbox (traffic, cops, hot spots, side missions: accepted, not played yet) and sends
+Batman to the Batcave exit; `BatCave.lvc` plays its storyboard and Lucius's call, and the computer brings him back.
+Quest 950 is the first bomb cluster (eight detonation cords on three floors, the snipers and thugs around them), quest
+814 the Batpod chase of four transmitter vans (each: drive it down, the thugs at its end, a hack; the last has three
+snipers on the roofs), quest 960 the Stock Exchange's bombs with Bane's men arming the rest against the clock, then
+818 and 215; `RequireLoadLevel` then opens `GothamCity_Island2.lvc` for quest 1101. What they needed:
+
+- **The countdown** (`StartCountdownTimer(ms, red ms)`, `CLevel` +0x30..+0x3c): ms left, the total and the red threshold;
+  `GetCountdownTimer` is the whole seconds left and nil when off (the scripts fail the quest under 1), and at 0 it stops
+  itself. `CHUDDisplay` plays `countdowntimer_instance`'s `open` / `close` and writes `mm:ss` to `countdownTimerText`,
+  or `countdownTimerTextRed` under the threshold. Only the script stops it: `CLevel::RespawnInit` leaves it, so a death
+  does not reset it.
+- **Actors are `CActorBaseComponent` (`0x54989CB1`)**, which `GetType` returns: the Batpod and The Bat have it, the
+  turrets do not. So `IsDead(batpod)` is false (quest 810 polls it); "has NPC AI" was only a proxy.
+- **Walk and run speeds come from `CActorBaseComponent`**: template `[9]` and `[10]` (`ResetWalkSpeed` reads +0x14): 1.5 and
+  4 m/s for people, 3 and 8 for the vans. `SetActorSpeedWalk(actor, speed, ms)` ramps over ms (`SetWalkSpeed`). The vans
+  crawl until Batman comes under 30 m, then gain 1 m/s every 200 ms up to 25: he has to stay on them.
+- `ActorAttackableEnable` is its own flag, not `ActorGrapnelEnable`'s: Batman's strikes and batarangs leave the vans alone.
+- `GetActorHealth`, `GetActorPercentHealth`, `SetActorPercentHealth`, `GetRandomWaypointsInGroup`, `SetCanExitVehicle`,
+  `Helicopter_Crash` (`CHelicopterLogic` state 10; here its `Explode`), `NPCGoToWaypointIgnoreOccupants`. Registered and
+  doing nothing yet, for what is not played: the hot spots' and districts' natives, `SetRopeVisible`,
+  `SetSkyboxAnimation`, the police flashers. `EnterTheBat` is `PlayerComponent::EnterTheBatOrBatPod`, so it takes the
+  Batpod's path here and does not fly.
+- **Functions a script defines as it runs survive a respawn.** `Obj600010_Always` defines the `r_*` helpers when it runs,
+  once. The original's respawn keeps its Lua state and clears only its registered variables
+  (`ResetUserDefinedGlobalVars`); here a respawn loads the chunks into a new state, so the checkpoint keeps such functions
+  as bytecode (`lua_dump`, without their upvalues). Without this a death in quest 305 left 40,000 errors a run.
+- **Sniper rifles are meant to hurt.** Batman has 100 health (`CHealthComponent`); `CWeapon::GetDamage` reads the weapon
+  template's +0x14: 50 to 60 for `Sniper_Rifle_01` (which of `[4]` / `[5]` depends on the struct's start, not settled).
+  `brawl.cpp`'s 25 is kind by comparison, so quest 950 is played by taking the snipers out first, not by standing in their
+  sights for 3 s a bomb.
+- `CMainStoryQuestsComponent::OnQuestCompleted` looks through the whole list: any story quest completing advances the story,
+  not only the current one. So `StartMainStoryFromQuestId(301)` at spawn 600101 overlaps 301 with 305 (the spawn completes
+  838); to test 301 and 305 in order, start 838 and `--exec-at '1:TeleportPlayerToZone(600101)'`.
+- Quest 814's last van loses its `kill` marker part way: the script keeps `m_closest_enemy` on one that has died
+  (`GetDistBetweenObjects` as the original). The snipers are still there to be seen and shooting.
+- Trigger 502486 (quest 601's prisoner scene) is a box on the way in: Batman coming from the far side does not cross it.
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it
@@ -613,6 +652,14 @@ segments (buildings, roads, bridges) in the same world space.
 
 ## Open items found so far
 
+- The story runs through quest 215 (chapter 3), except **quest 305 (Save Miranda, chapter 2.1)**: it had never been played
+  through. It now runs to the rooftop snipers, where the auto-play is too slow and Miranda dies (`STR_SAVE_MIRANDA_LOST_WAS_KILLED`);
+  whether a player can make it is not known. Still to do: quests 1101, 115, 309, 819, 820, 821, 822, 823, 825, 826 and 602.
+  Chapter 4 on needs The Bat's flight (`TheBatDrive`, component `0x222500F6`), `ShowRightPopup`, `StartHacking`
+  (Police_Station: `CHUDDisplay::StartHackMinigame`, not the pipe game) and `EndGame` (`CHUDDisplay::EnterCredits`).
+- Checked by headless `--auto-play` runs only, which drive Batman with shortcuts (it walks a straight path, and the
+  Batpod jumps over what it sticks on); nobody has played chapter 3 by hand. Helicopter guns do no damage yet, so quest
+  960's rooftops are easier than the original's.
 - 46 streamed batches keep the fallback shader (7 effects aren't shipped: `NormalSpecOverbright`, …).
 - Batman's other moves (combat, wall contact, hang/edge moves, grapnel to gargoyles/enemies/vehicles, Batpod) and the
   camera's own rules (`CCameraObject`, `DUMMY_CAMERA`). Glide steering and dive input are PC choices, not the game's.

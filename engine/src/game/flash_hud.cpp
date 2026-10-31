@@ -51,6 +51,7 @@ void FlashHud::set_up() {
     p.goto_and_stop("", "HUD");
     cinematic_ = false, dialog_.clear(), riding_ = false;
     marker_frames_.clear();
+    countdown_shown_ = false;
     hide_unused();
     // CHUDDisplay::SetMinimapSwf / initMap: the level's map goes into the pivot's dummy clip,
     // the pivot scaled by the level's zoom about the minimap centre.
@@ -207,6 +208,7 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     };
     bar("baneHealthBar", "indicator", state.enemy_health);
     bar("disarmInstance", "fill.fill", state.progress);
+    update_countdown(state);
     hide_touch(state);
     screen_.update(dt, width, height);
 }
@@ -232,6 +234,25 @@ void FlashHud::checkpoint_message(const std::string& text) {
     p->set_visible("CheckpointMessageInstance", true);
     p->invoke("CheckpointMessageInstance.CheckpointText", "setText", {swf::Value(text)});
     p->goto_and_play("CheckpointMessageInstance", "Anim");
+}
+
+void FlashHud::update_countdown(const State& state) {
+    swf::Player& p = *screen_.player();
+    const bool on = state.countdown_ms >= 0;
+    if (on != countdown_shown_) {
+        if (on) p.set_visible("countdowntimer_instance", true);
+        p.goto_and_play("countdowntimer_instance", on ? "open" : "close");
+        countdown_shown_ = on;
+    }
+    if (!on) return;
+    const float seconds = state.countdown_ms * 0.001f;
+    const int minutes = std::clamp(int(seconds / 60), 0, 999);
+    char text[16];
+    std::snprintf(text, sizeof text, "%02d:%02d", minutes, std::clamp(int(seconds - float(minutes) * 60), 0, 59));
+    const std::string base = "countdowntimer_instance.countdowntimer_mc.";
+    p.set_visible(base + "countdownTimerText", !state.countdown_red);
+    p.set_visible(base + "countdownTimerTextRed", state.countdown_red);
+    p.invoke(base + (state.countdown_red ? "countdownTimerTextRed" : "countdownTimerText"), "setText", {swf::Value(std::string(text))});
 }
 
 void FlashHud::set_frame(const std::string& frame) {

@@ -30,6 +30,7 @@ bool bool_arg(lua_State* L, int i) { return lua_toboolean(L, i) != 0; }
 constexpr size_t kNoIndex = std::numeric_limits<size_t>::max();
 constexpr int kCompInteraction = 0x34747EBE;   // CInteractionComponent
 constexpr int kCompDistrict = 0x1963F0C0;      // CDistrictComponent
+constexpr int kCompActor = 0x54989CB1;         // CActorBaseComponent: actors and the player's vehicles, not the turrets
 constexpr int kCompNpcAi = 0x0113F791;         // CNpcAIComponent (what makes an actor)
 
 // CLevel::FindObjectOrWaypoint's position: the player's feet for 0.
@@ -290,6 +291,31 @@ int api_weather(lua_State* L) {
     ctx(L).weather = lua_tointeger(L, lua_upvalueindex(2)) != 0;
     return 0;
 }
+// StartCountdownTimer(ms, red ms) (CLevel::StartCountdownTimer), StopCountdownTimer.
+int api_start_countdown(lua_State* L) {
+    LevelLogic::Countdown& t = ctx(L).countdown;
+    t.on = true, t.ms = t.total = float(lua_tointeger(L, 1)), t.red = float(lua_tointeger(L, 2));
+    return 0;
+}
+int api_stop_countdown(lua_State* L) {
+    ctx(L).countdown.on = false;
+    return 0;
+}
+// GetCountdownTimer(): the whole seconds left, nil when it is off.
+int api_get_countdown(lua_State* L) {
+    const LevelLogic::Countdown& t = ctx(L).countdown;
+    if (t.on) lua_pushinteger(L, lua_Integer(t.ms * 0.001f));
+    else lua_pushnil(L);
+    return 1;
+}
+// GetCountdownPercentTimer(): what is left, 0-100; nil when it is off.
+int api_get_countdown_percent(lua_State* L) {
+    const LevelLogic::Countdown& t = ctx(L).countdown;
+    if (t.on && t.total > 0) lua_pushinteger(L, lua_Integer(t.ms * 100 / t.total));
+    else lua_pushnil(L);
+    return 1;
+}
+
 int api_is_weather(lua_State* L) {
     lua_pushboolean(L, ctx(L).weather);
     return 1;
@@ -607,6 +633,28 @@ int api_actor_is_attacked(lua_State* L) {
     lua_pushboolean(L, id == 0 ? !c.attacking_batman.empty() : c.batman_target == id);
     return 1;
 }
+// GetActorSpeedWalk(actor) (CActorBaseComponent::GetWalkSpeed): -1 without such an actor.
+int api_get_actor_speed_walk(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    lua_pushnumber(L, c.object(int_arg(L, 1)) ? c.actor_speed(int_arg(L, 1)) : -1.0);
+    return 1;
+}
+// GetActorHealth(actor), GetActorPercentHealth(actor) (CGameObject::GetPercentHealth): 0
+// without such an actor.
+int api_get_actor_health(lua_State* L) {
+    const LevelLogic::Object* o = ctx(L).object(int_arg(L, 1));
+    const bool percent = lua_tointeger(L, lua_upvalueindex(2)) != 0;
+    lua_pushnumber(L, !o ? 0.0 : percent ? 100.0 * o->health / o->full_health : o->health);
+    return 1;
+}
+int api_set_actor_percent_health(lua_State* L) {   // SetActorPercentHealth(actor, percent)
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->health = o->full_health * float(lua_tonumber(L, 2)) / 100;
+    return 0;
+}
+int api_actor_fade_in(lua_State* L) {   // ActorFadeIn(actor) (the fade itself is not done): shown
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) ctx(L).show(*o, true);
+    return 0;
+}
 int api_actor_fade_out(lua_State* L) {   // ActorFadeOut(actor) (CGameObject::FadeOut): gone
     if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) ctx(L).show(*o, false);
     return 0;
@@ -649,7 +697,7 @@ int api_npc_go_to_waypoint_navmesh(lua_State* L) {
 }
 // SetActorSpeedWalk / SetActorSpeedRun(actor, metres per second).
 int api_set_actor_speed(lua_State* L) {
-    ctx(L).set_actor_speed(int_arg(L, 1), float(lua_tonumber(L, 2)), lua_tointeger(L, lua_upvalueindex(2)) != 0);
+    ctx(L).set_actor_speed(int_arg(L, 1), float(lua_tonumber(L, 2)), lua_tointeger(L, lua_upvalueindex(2)) != 0, float(lua_tonumber(L, 3)));
     return 0;
 }
 
@@ -733,6 +781,20 @@ int api_group_members(lua_State* L) {
         if (!m || (groups ? !c.is_group(id) : m->type != "waypoint")) continue;
         lua_pushinteger(L, id);
         ++n;
+    }
+    return n;
+}
+// GetRandomWaypointsInGroup(group, n) (GetRandomsFromArray): n of the group's waypoints.
+int api_random_waypoints(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    std::vector<int> ids;
+    for (int id : c.group_members(int_arg(L, 1)))
+        if (const LevelLogic::Object* m = c.object(id); m && m->type == "waypoint") ids.push_back(id);
+    int n = 0;
+    for (const int want = int_arg(L, 2); n < want && !ids.empty(); ++n) {
+        const size_t pick = size_t(std::rand()) % ids.size();
+        lua_pushinteger(L, ids[pick]);
+        ids.erase(ids.begin() + long(pick));
     }
     return n;
 }
@@ -916,6 +978,20 @@ int api_exit_batpod(lua_State* L) {
     ctx(L).dismount_batpod();
     return 0;
 }
+// SetCanExitVehicle(on) (PlayerComponent::SetCanExitVehicle): the use button leaves it or not.
+int api_set_can_exit_vehicle(lua_State* L) {
+    ctx(L).can_exit_vehicle = lua_toboolean(L, 1) != 0;
+    return 0;
+}
+// Helicopter_Crash(actor) (CHelicopterLogic::SetState(10)): down it goes.
+int api_helicopter_crash(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    if (LevelLogic::Object* o = c.object(int_arg(L, 1)); o && !o->dead) {
+        o->dead = true, o->health = 0;
+        c.actor_state(*o, "Explode", true);
+    }
+    return 0;
+}
 int api_on_batpod(lua_State* L) {
     lua_pushboolean(L, ctx(L).riding >= 0);
     return 1;
@@ -958,16 +1034,16 @@ int api_stop_combat_music(lua_State* L) {
 }
 // ActorAttackableEnable(actor, on) (CGameObject::SetAttackable): whether Batman may go for it.
 int api_actor_attackable(lua_State* L) {
-    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->targetable = bool_arg(L, 2);
+    if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->attackable = bool_arg(L, 2);
     return 0;
 }
 
-// IsDead(actor): what is not an actor (CZonesManager::FindActor: no NPC AI, e.g. the
-// Underground's electric turret) or not there at all counts as dead.
+// IsDead(actor): what is not an actor (CZonesManager::FindActor: no CActorBaseComponent, e.g.
+// the Underground's electric turret) or not there at all counts as dead.
 int api_is_dead(lua_State* L) {
     LevelLogic& c = ctx(L);
     const LevelLogic::Object* o = lua_isnil(L, 1) ? nullptr : c.object(int_arg(L, 1));
-    lua_pushboolean(L, !o || o->dead || !c.object_component(*o, kCompNpcAi));
+    lua_pushboolean(L, !o || o->dead || !(c.object_component(*o, kCompNpcAi) || c.object_component(*o, kCompActor)));
     return 1;
 }
 // ActorIsDetected(actor): an enemy is aware of it (CAwarenessComponent: its target the actor,
@@ -1441,6 +1517,10 @@ const Entry kTdkr[] = {
     {"StartWeatherEffect", api_weather, 1},
     {"StopWeatherEffect", api_weather, 0},
     {"IsWeatherEffectActive", api_is_weather},
+    {"StartCountdownTimer", api_start_countdown},
+    {"StopCountdownTimer", api_stop_countdown},
+    {"GetCountdownTimer", api_get_countdown},
+    {"GetCountdownPercentTimer", api_get_countdown_percent},
     {"SetGlobalVar", api_set_global_var},
     {"GetGlobalVar", api_get_global_var},
     {"RegisterGlobalVar", api_register_global_var},
@@ -1471,6 +1551,38 @@ const Entry kTdkr[] = {
     {"ActorIsAttacking", api_actor_is_attacking},
     {"ActorIsAttacked", api_actor_is_attacked},
     {"ActorFadeOut", api_actor_fade_out},
+    {"ActorFadeIn", api_actor_fade_in},
+    {"SetActorPercentHealth", api_set_actor_percent_health},
+    {"ActorIsAttackedCloseRange", api_actor_is_attacked},
+    {"NPCGoToWaypointIgnoreOccupants", api_npc_go_to_waypoint_navmesh},
+    {"GetRandomWaypointsInGroup", api_random_waypoints},
+    {"SetCanExitVehicle", api_set_can_exit_vehicle},
+    {"Helicopter_Crash", api_helicopter_crash},
+    {"EnterTheBat", api_enter_batpod},   // (PlayerComponent::EnterTheBatOrBatPod; it does not fly here yet)
+    // Glide speeds of actors (only the fans' script guards use it); dressing not drawn yet.
+    {"SetActorSpeedGlide", api_nothing},
+    {"SetRopeVisible", api_nothing},
+    {"SetSkyboxAnimation", api_nothing},
+    {"Vehicle_EnablePoliceFlasher", api_nothing},
+    {"Vehicle_DisablePoliceFlasher", api_nothing},
+    {"SwfFadeIn", api_nothing},
+    {"StartTutorialFingerprint", api_nothing},
+    {"AddTheBatToInventory", api_nothing},
+    // The crime hot spots and districts: their scripts run only once the hot spots are played.
+    {"MarkCurrentHotspotCanceled", api_nothing},
+    {"MarkCurrentHotspotCleared", api_nothing},
+    {"AddObjectiveOnCrimeArea", api_nothing},
+    {"RemoveObjectiveOnCrimeArea", api_nothing},
+    {"ShowCrimeAreaMessage", api_nothing},
+    {"ShowDistrictCompletion", api_nothing},
+    {"GetActorSpeedWalk", api_get_actor_speed_walk},
+    {"GetActorHealth", api_get_actor_health, 0},
+    {"GetActorPercentHealth", api_get_actor_health, 1},
+    // Kept by the original for what is not played here yet: the crime hot spots' switches, the
+    // statistics screen, the Batpod's inventory item.
+    {"EnableHotSpot", api_nothing},
+    {"IncrementStatisticValue", api_nothing},
+    {"AddBatPodToInventory", api_nothing},
     {"SetOnGargoyle", api_set_on_gargoyle},
     {"SetGlideControlEnable", api_set_control<&LevelLogic::Controls::glide>},
     {"SetTakedownControlEnable", api_set_control<&LevelLogic::Controls::silent>},

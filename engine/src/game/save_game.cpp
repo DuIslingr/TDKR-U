@@ -134,7 +134,7 @@ void write_value(Writer& w, const ScriptRuntime::SavedValue& v) {
     w.out.push_back(uint8_t(v.type));
     if (v.type == T::Bool) w.flag(v.b);
     else if (v.type == T::Number) w.raw(&v.n, 8);
-    else if (v.type == T::String) w.str(v.s);
+    else if (v.type == T::String || v.type == T::Function) w.str(v.s);
     else if (v.type == T::Table) {
         w.u32(uint32_t(v.table.size()));
         for (const ScriptRuntime::SavedValue& e : v.table) write_value(w, e);
@@ -144,11 +144,11 @@ void write_value(Writer& w, const ScriptRuntime::SavedValue& v) {
 bool read_value(Reader& r, ScriptRuntime::SavedValue& v, int depth = 0) {
     using T = ScriptRuntime::SavedValue::Type;
     uint8_t type = 0;
-    if (depth > 32 || !r.raw(&type, 1) || type > uint8_t(T::Table)) return false;
+    if (depth > 32 || !r.raw(&type, 1) || type > uint8_t(T::Function)) return false;
     v.type = T(type);
     if (v.type == T::Bool) v.b = r.flag();
     else if (v.type == T::Number) r.raw(&v.n, 8);
-    else if (v.type == T::String) v.s = r.str();
+    else if (v.type == T::String || v.type == T::Function) v.s = r.str();
     else if (v.type == T::Table) {
         v.table.resize(r.count(2));
         for (ScriptRuntime::SavedValue& e : v.table)

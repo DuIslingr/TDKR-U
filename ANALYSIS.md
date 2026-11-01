@@ -709,7 +709,7 @@ segments (buildings, roads, bridges) in the same world space.
   Still to check: 823 (runs clean, but needs far more district completion than a test run reaches), 825, 826 and 602.
 - Damage to Batman comes from the data: the attack state's combat damage (`CContainerState` +0x38, entry [19]: `Sniper_Shoot` 30, jab and cross 10, kick 15)
   times the weapon's factor (`CGameObject::GetCombatDamage`; `ActorWeaponSetDamage` sets that factor), less the upgrades in
-  `UpgradesManager::GetNpcToPlayerCombatDamage` (0x25 melee, 0x26 ranged). Those two upgrades are not applied yet. The rifle's accuracy is 1.0, so snipers do not miss.
+  `UpgradesManager::GetNpcToPlayerCombatDamage` (0x25 melee, 0x26 ranged). Those two upgrades are not applied yet: `Shop` is still N.O.V.A. 3's (its table, gol 4510, is not in this game's gol.bin), so TDKR's upgrades need their own port. The rifle's accuracy is 1.0, so snipers do not miss.
   The sniper's timings (`kAimTime`, `kCone`, `kReload`) are still approximations: `Aim_Update` depends on distance and `CSniperComponent` template [3].
 - The brawl's `batman_health` is separate from `Combat::player_health`, which the HUD shows, so brawl damage may never reach the health display.
   Chapter 4 on needs The Bat's flares, `ShowRightPopup`, `StartHacking`

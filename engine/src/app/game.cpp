@@ -872,11 +872,15 @@ void Game::auto_play(float dt) {
         }
         return;
     }
+    // A sniper taking aim: no waiting for the next look round, two of them kill in five seconds.
+    if (!logic.aiming_at_batman.empty()) auto_play_wait = std::min(auto_play_wait, 0.2f);
     if ((auto_play_wait -= dt) > 0) return;
     auto_play_wait = 3.0f;
     const bool hanging = logic.hanging_from >= 0;   // (under a helicopter the camera is the script's)
+    const bool aimed_at = !logic.aiming_at_batman.empty();   // (out of a fight: the rifles are what kills)
     if (!hero.active() || (logic.player_locked() && !hanging) || logic.hack.active || logic.button_qte.object >= 0 ||
-        (brawl.busy() && !hanging) || !logic.attacking_batman.empty() || player.grappling || storyboard.active()) {
+        (brawl.busy() && !hanging && !aimed_at) || (!logic.attacking_batman.empty() && !aimed_at) || player.grappling ||
+        storyboard.active()) {
         if ((auto_play_held += 3.0f) >= 30.0f) {   // say why, every half minute
             auto_play_held = 0;
             std::string who;
@@ -907,12 +911,15 @@ void Game::auto_play(float dt) {
     // use can be held in its sights. (Not one far below: quest 215's top of the tower is left
     // only for the helicopter.)
     {
-        float best = 45;
+        float best = 1e9f;
         int sniper = -1;
         for (const auto& [id, watched] : logic.snipers)
             if (const LevelLogic::Object* o = logic.object(id); o && logic.is_enemy(id) && o->attackable && auto_sniper_tries[id] < 10 &&
-                std::abs(o->position.z - player.center.z) < 12.0f)
-                if (const float d = glm::distance(o->position, player.center); d < best) best = d, sniper = id;
+                std::abs(o->position.z - player.center.z) < 12.0f) {
+                const float d = glm::distance(o->position, player.center);
+                const bool aiming = logic.aiming_at_batman.count(id) != 0;   // (those first, however far)
+                if (const float score = aiming ? d - 1000.0f : d; (aiming || d < 45.0f) && score < best) best = score, sniper = id;
+            }
         if (sniper >= 0) ++auto_sniper_tries[sniper], goals.insert(goals.begin(), {sniper, "kill", ""});   // (one out of reach: on after 30 s)
     }
     // Nothing marked for a while (the scripts' next beat may be a moment away, and may start
@@ -1375,6 +1382,7 @@ void Game::step_logic(float dt) {
         logic.respawn_at_checkpoint();
         brawl.reset();
         auto_play_path.clear(), auto_play_use = -1, auto_idle = 0;   // (or the bot walks on from where it was)
+        auto_sniper_tries.clear();
         shop.apply_owned(combat, settings);   // what was bought for good stays
         viewmodel.start();
         hud.start();

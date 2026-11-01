@@ -16,7 +16,8 @@ namespace tdkr {
 namespace {
 
 constexpr int kSpecial = 0x800, kAttack = 0x4, kHurt = 0x80;   // STATE_TYPE_SPECIAL, _ATTACK, _HURT
-constexpr float kStrikeDamage = 25, kCounterDamage = 40, kEnemyDamage = 8;
+constexpr float kStrikeDamage = 25, kCounterDamage = 40;
+constexpr float kSniperDamage = 30;   // Sniper_Shoot's combat damage, times the weapon's (CGameObject::GetCombatDamage)
 constexpr float kCloseIn = 1.3f;        // metres an enemy keeps from Batman to attack
 constexpr float kEnemySpeed = 3.5f;     // m/s closing in
 constexpr float kWindup = 0.7f;         // seconds an attack can be countered before it lands
@@ -31,11 +32,12 @@ struct EnemyAttack {
     const char* counter;   // Batman's
     const char* countered; // the enemy's
     const char* batman_hurt;
+    float damage;          // the state's combat damage
 };
 const EnemyAttack kAttacks[] = {
-    {"Enemy_Attack_01_Jab", "Combat_Attack_06_JabCounter", "Enemy_Hurt_06_JabCounter", "Batman_Hurt_01_Jab"},
-    {"Enemy_Attack_02_Cross", "Combat_Attack_07_CrossCounter", "Enemy_Hurt_07_CrossCounter", "Batman_Hurt_02_Cross"},
-    {"Enemy_Attack_03_Kick", "Combat_Attack_08_KickCounter", "Enemy_Hurt_08_KickCounter", "Batman_Hurt_03_Kick"},
+    {"Enemy_Attack_01_Jab", "Combat_Attack_06_JabCounter", "Enemy_Hurt_06_JabCounter", "Batman_Hurt_01_Jab", 10},
+    {"Enemy_Attack_02_Cross", "Combat_Attack_07_CrossCounter", "Enemy_Hurt_07_CrossCounter", "Batman_Hurt_02_Cross", 10},
+    {"Enemy_Attack_03_Kick", "Combat_Attack_08_KickCounter", "Enemy_Hurt_08_KickCounter", "Batman_Hurt_03_Kick", 15},
 };
 const EnemyAttack& attack_of(const std::string& name) {
     for (const EnemyAttack& a : kAttacks)
@@ -237,7 +239,7 @@ void Brawl::update_snipers(float dt) {
                 s.timer -= dt;
                 if (s.timer <= 0 && std::abs(d) < kCone) {   // the shot
                     actor_state(o->id, "Sniper_Shoot");
-                    hurt_batman(o->gun_damage >= 0 ? o->gun_damage : 25.0f, "Batman_Hurt_02_Cross");
+                    hurt_batman(kSniperDamage * (o->gun_damage >= 0 ? o->gun_damage : 1.0f), "Batman_Hurt_02_Cross");
                     if (logic_.trace) logic_.log("sniper " + std::to_string(o->id) + " shoots Batman");
                     s.phase = Sniper::Phase::Reload, s.timer = kReload;
                 }
@@ -504,7 +506,7 @@ void Brawl::update(float dt) {
             if (fi.timer <= 0) {   // it lands
                 const EnemyAttack& a = attack_of(fi.attack);
                 if (dist < 2.2f && !(busy() && logic_.player_action_mask & kSpecial)) {
-                    hurt_batman(kEnemyDamage, a.batman_hurt);
+                    hurt_batman(a.damage, a.batman_hurt);
                     if (logic_.trace) logic_.log("brawl: Batman hit by " + std::to_string(id));
                 }
                 fi.phase = Fighter::Phase::Ready;

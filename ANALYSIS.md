@@ -707,9 +707,10 @@ segments (buildings, roads, bridges) in the same world space.
   through. It now runs to the rooftop snipers, where the auto-play is too slow and Miranda dies (`STR_SAVE_MIRANDA_LOST_WAS_KILLED`);
   whether a player can make it is not known. Quests 115 and 309 now complete under auto-play, and 819 with `--god`; without it the bot dies on the Stadion's field before the first checkpoint.
   Still to check: 823 (runs clean, but needs far more district completion than a test run reaches), 825, 826 and 602.
-- A sniper's damage per shot is still the port's guess of 25. `Sniper_Rifle_01`'s `CWeaponComponent` damage is 1.0 and scripts use 0.5 and 7, but
-  how that reaches `CHealthComponent::ReceiveDamage` for a bullet is not traced, so whether 1.0 is points or a multiplier is not known. The aim
-  timings (`kAimTime`, `kCone`, `kReload`) are guesses too: `Aim_Update` keeps the aim on target for `CSniperComponent` template [3] and depends on distance.
+- Damage to Batman comes from the data: the attack state's combat damage (`CContainerState` +0x38, entry [19]: `Sniper_Shoot` 30, jab and cross 10, kick 15)
+  times the weapon's factor (`CGameObject::GetCombatDamage`; `ActorWeaponSetDamage` sets that factor), less the upgrades in
+  `UpgradesManager::GetNpcToPlayerCombatDamage` (0x25 melee, 0x26 ranged). Those two upgrades are not applied yet. The rifle's accuracy is 1.0, so snipers do not miss.
+  The sniper's timings (`kAimTime`, `kCone`, `kReload`) are still approximations: `Aim_Update` depends on distance and `CSniperComponent` template [3].
 - The brawl's `batman_health` is separate from `Combat::player_health`, which the HUD shows, so brawl damage may never reach the health display.
   Chapter 4 on needs The Bat's flares, `ShowRightPopup`, `StartHacking`
   (Police_Station: `CHUDDisplay::StartHackMinigame`, not the pipe game) and `EndGame` (`CHUDDisplay::EnterCredits`).

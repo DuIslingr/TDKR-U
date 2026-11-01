@@ -490,7 +490,7 @@ public:
         bool collision_only = false;  // a CollisionMesh: an invisible wall, never drawn
         bool targetable = true;       // ActorGrapnelEnable: Batman may leap or grapple at it
         bool invincible = false;      // SetInvincible: hits leave its health alone
-        float gun_damage = -1;        // ActorWeaponSetDamage (CWeaponComponent::SetDamage); -1: its own
+        float gun_damage = -1;        // ActorWeaponSetDamage: a factor (CWeaponComponent::SetDamage); -1: its own
         // Gotham's mission zones (CZonesManager: a zone record flagged as a mission, its objects
         // the records it spans): an object of one is loaded only while its zone is the current
         // mission (NextMission), fresh from the level each time; unloaded, scripts cannot find it.

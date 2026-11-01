@@ -868,7 +868,7 @@ int api_move_group(lua_State* L) {   // MoveGroup(group, destination, reference)
     ctx(L).move_group(int_arg(L, 1), int_arg(L, 2), int_arg(L, 3));
     return 0;
 }
-// ActorWeaponSetDamage(actor, weapon, damage): its gun's damage per shot.
+// ActorWeaponSetDamage(actor, weapon, damage): the factor on its attack state's damage.
 int api_actor_weapon_set_damage(lua_State* L) {
     if (LevelLogic::Object* o = ctx(L).object(int_arg(L, 1))) o->gun_damage = float(lua_tonumber(L, 3));
     return 0;

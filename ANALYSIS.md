@@ -705,12 +705,13 @@ segments (buildings, roads, bridges) in the same world space.
   an error on its first tick: it reads `r_pockets` before #111 sets it. Whether the original does the same is not known.
 - The story runs through quest 215 (chapter 3), except **quest 305 (Save Miranda, chapter 2.1)**: it had never been played
   through. It now runs to the rooftop snipers, where the auto-play is too slow and Miranda dies (`STR_SAVE_MIRANDA_LOST_WAS_KILLED`);
-  whether a player can make it is not known. Quests 115 and 309 now complete under auto-play, and 819 with `--god`; without it the bot dies on the Stadion's field before the first checkpoint.
+  whether a player can make it is not known. Quests 115, 309, 819 and 838 now complete under auto-play without `--god`.
   Still to check: 823 (runs clean, but needs far more district completion than a test run reaches), 825, 826 and 602.
 - Damage to Batman comes from the data: the attack state's combat damage (`CContainerState` +0x38, entry [19]: `Sniper_Shoot` 30, jab and cross 10, kick 15)
   times the weapon's factor (`CGameObject::GetCombatDamage`; `ActorWeaponSetDamage` sets that factor), less the upgrades in
   `UpgradesManager::GetNpcToPlayerCombatDamage` (0x25 melee, 0x26 ranged). Those two upgrades are not applied yet: `Shop` is still N.O.V.A. 3's (its table, gol 4510, is not in this game's gol.bin), so TDKR's upgrades need their own port. The rifle's accuracy is 1.0, so snipers do not miss.
-  The sniper's timings (`kAimTime`, `kCone`, `kReload`) are still approximations: `Aim_Update` depends on distance and `CSniperComponent` template [3].
+  Snipers follow `CSniperComponent`: `[0]` 60 is the sweep's half angle (not a range), `[1]` 5 its degrees a second, `[2]` 10 the aiming speed past 15 m (40, 80, 180 under 15, 10, 5 m), `[3]` 0.9 s the lock, which restarts while it is still turning, so crossing its aim fast enough stops the shot, and `[4]` 7 to 10.5 s before it gives up.
+  What it sees is `CAwarenessComponent`: 60 m, 10 degrees either side, 66 m in any direction once aware. A cycle is the lock, then `Sniper_Shoot` (0.50 s) and `Sniper_Reload` (1.97 s) played out: 3.37 s. Not ported: the delay in `CNpcAIComponent` before `Attack_Ranged` runs, and aiming at the last known position during a sweep.
 - Batman has one health, `Combat::player_health`: 100 from `Batman`'s `CHealthComponent`, and brawl damage goes through `damage_player`, so the HUD and `GetHealthMC` see it.
   Regeneration is `PlayerComponent` [1], 5000 ms after a hit, at [0], 2 a second. The rate is read from the template's layout: the decompile of `RegenerateHealth` loses the amount.
   Fall damage stays off, as TDKR's falls are not ported. `Combat` and `LevelLogic` still look for a N.O.V.A. 3 type named `Player`, which this game does not have.

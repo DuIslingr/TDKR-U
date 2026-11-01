@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 #include "game/hero.h"
@@ -189,10 +190,12 @@ void Brawl::update_awareness(float dt) {
     }
 }
 
-// CSniperComponent, simplified: sweep, lock on, aim, shoot, reload.
+// CSniperComponent: sweep, lock on, shoot, reload. Its [0] is the sweep's half angle, [1] the sweep's speed,
+// [2] the aiming speed from afar, [3] the lock's seconds, [4] the seconds before it gives up; CAwarenessComponent's
+// [0] is how far it sees, [12] the factor once it is aware, [13] the half angle it sees in.
 void Brawl::update_snipers(float dt) {
-    constexpr float kRange = 60, kCone = 7, kSweepWidth = 35, kSweepSpeed = 18, kAimTime = 1.6f, kReload = 2.2f;
-    constexpr float kTurn = 50;   // degrees per second while aiming (Attack_Update)
+    constexpr int kCompSniper = 0x0E1F5B6F, kCompAwareness = 0x6754056B;
+    auto num = [](const Value& v, size_t i, float fallback) { return i < v.size() ? v[i].as_float() : fallback; };
     const glm::vec3 chest = feet() + glm::vec3(0, 0, 1.2f);
     for (auto it = logic_.snipers.begin(); it != logic_.snipers.end(); ++it) {
         LevelLogic::Object* o = logic_.object(it->first);
@@ -200,6 +203,28 @@ void Brawl::update_snipers(float dt) {
         const LevelLogic::Object* wp = logic_.object(it->second);
         const glm::vec3 watched = wp ? wp->position : feet();   // (0: Batman himself)
         Sniper& s = snipers_[o->id];
+        if (!s.ready) {
+            s.ready = true;
+            const int type = logic_.object_type(*o);
+            if (auto g = logic_.gol.find(type); g != logic_.gol.end()) {
+                if (const Value* v = resolved_template(g->second, logic_.gol, kCompSniper); v && v->size() >= 5)
+                    s.angle = num(*v, 0, 60), s.sweep_speed = num(*v, 1, 5), s.aim_speed = num(*v, 2, 10), s.lock_time = num(*v, 3, 0.9f), s.give_up = num(*v, 4, 7);
+                if (const Value* v = resolved_template(g->second, logic_.gol, kCompAwareness); v && v->size() >= 14)
+                    s.range = num(*v, 0, 60), s.aware_factor = num(*v, 12, 1.1f), s.view = num(*v, 13, 10);
+            }
+            auto length = [&](const char* state, float fallback) {
+                ActorState st;
+                const float l = find_actor_state(logic_.gol, type, state, st) ? scene_.clip_length(o->index, st.clips[0]) : 0;
+                return l > 0 ? l : fallback;
+            };
+            s.shoot_length = length("Sniper_Shoot", 1), s.reload_length = length("Sniper_Reload", 1);
+            if (logic_.trace) {
+                char line[160];
+                std::snprintf(line, sizeof line, "sniper %d (%s): sweep %.0f at %.1f, aim %.1f, lock %.2f, gives up %.1f, sees %.0f in %.0f, shoot %.2f s, reload %.2f s",
+                              o->id, o->type.c_str(), s.angle, s.sweep_speed, s.aim_speed, s.lock_time, s.give_up, s.range, s.view, s.shoot_length, s.reload_length);
+                logic_.log(line);
+            }
+        }
         if (s.phase == Sniper::Phase::Sweep && s.timer == 0 && s.lost == 0 && o->state != "Sniper_Aim_Sweep") {
             s.base = angle_to(o->position, watched);
             actor_state(o->id, "Sniper_Aim_Sweep");
@@ -208,43 +233,58 @@ void Brawl::update_snipers(float dt) {
         const float to_batman = angle_to(o->position, chest);
         const float dist = glm::distance(eye, chest);
         auto off = [](float a, float b) { return std::remainder(a - b, 360.0f); };
-        const bool seen = dist < kRange && !logic_.player_hidden && in_sight(eye, chest);
+        auto clear_view = [&](float range) { return dist < range && !logic_.player_hidden && !(logic_.combat && logic_.combat->player_dead) && in_sight(eye, chest); };
         switch (s.phase) {
             case Sniper::Phase::Sweep:
                 s.base = angle_to(o->position, watched);   // (the scripts may change what it watches)
-                s.sweep += s.dir * kSweepSpeed * dt;
-                if (std::abs(s.sweep) > kSweepWidth) s.dir = -s.dir, s.sweep = std::clamp(s.sweep, -kSweepWidth, kSweepWidth);
+                s.sweep += s.dir * s.sweep_speed * dt;
+                if (std::abs(s.sweep) > s.angle) s.dir = -s.dir, s.sweep = std::clamp(s.sweep, -s.angle, s.angle);
                 o->yaw = s.base + s.sweep;
                 s.timer += dt;   // (marks it started)
-                if (seen && std::abs(off(to_batman, o->yaw)) < kCone) {
-                    s.phase = Sniper::Phase::Aim, s.timer = kAimTime, s.lost = 0;
+                if (std::abs(off(to_batman, o->yaw)) < s.view && clear_view(s.range)) {   // CAwarenessComponent::DetectTarget
+                    s.phase = Sniper::Phase::Aim, s.lock = s.lock_time, s.lost = 0;
+                    s.patience = s.give_up + s.give_up * 0.5f * float(std::rand()) / float(RAND_MAX);   // Aim_OnEnter
                     actor_state(o->id, "Sniper_Aim_Idle");
                     if (logic_.trace) logic_.log("sniper " + std::to_string(o->id) + " has Batman in its sights");
                 }
                 break;
             case Sniper::Phase::Aim: {
-                const float d = off(to_batman, o->yaw);
-                o->yaw += std::clamp(d, -kTurn * dt, kTurn * dt);
-                if (!seen) {
-                    s.lost += dt;
-                    if (s.lost > 3) s.phase = Sniper::Phase::Sweep, s.sweep = off(o->yaw, s.base), actor_state(o->id, "Sniper_Aim_Sweep");
+                if (!clear_view(s.range * s.aware_factor)) {   // (Aim_Update: it holds still, then goes back to its sweep)
+                    s.lock = s.lock_time, s.lost += dt;
+                    if (s.lost > s.patience) s.phase = Sniper::Phase::Sweep, s.sweep = off(o->yaw, s.base), actor_state(o->id, "Sniper_Aim_Sweep");
                     break;
                 }
                 s.lost = 0;
-                s.timer -= dt;
-                if (s.timer <= 0 && std::abs(d) < kCone) {   // the shot
+                // It turns faster the closer he is, and the lock only runs while it is not turning:
+                // crossing its aim fast enough keeps it from firing.
+                const float speed = dist < 5 ? 180 : dist < 10 ? 80 : dist < 15 ? 40 : s.aim_speed;
+                const float d = off(to_batman, o->yaw);
+                if (std::abs(d) > speed * dt) {
+                    o->yaw += std::copysign(speed * dt, d);
+                    s.lock = s.lock_time;
+                    break;
+                }
+                o->yaw = to_batman;
+                s.lock -= dt;
+                if (s.lock < 0) {   // the shot
                     actor_state(o->id, "Sniper_Shoot");
                     hurt_batman(kSniperDamage * (o->gun_damage >= 0 ? o->gun_damage : 1.0f), "Batman_Hurt_02_Cross", o->position);
                     if (logic_.trace) logic_.log("sniper " + std::to_string(o->id) + " shoots Batman");
-                    s.phase = Sniper::Phase::Reload, s.timer = kReload;
+                    s.phase = Sniper::Phase::Shoot, s.timer = s.shoot_length;
                 }
                 break;
             }
-            case Sniper::Phase::Reload:
+            case Sniper::Phase::Shoot:
                 s.timer -= dt;
-                if (s.timer < kReload - 0.6f && o->state == "Sniper_Shoot") actor_state(o->id, "Sniper_Reload");
-                if (s.timer <= 0) s.phase = Sniper::Phase::Aim, s.timer = kAimTime, actor_state(o->id, "Sniper_Aim_Idle");
+                if (s.timer <= 0) s.phase = Sniper::Phase::Reload, s.timer = s.reload_length, actor_state(o->id, "Sniper_Reload");
                 break;
+            case Sniper::Phase::Reload: {
+                const float d = off(to_batman, o->yaw);   // (Update: it keeps turning to him at 50 degrees a second)
+                o->yaw += std::clamp(d, -50 * dt, 50 * dt);
+                s.timer -= dt;
+                if (s.timer <= 0) s.phase = Sniper::Phase::Aim, s.lock = s.lock_time, actor_state(o->id, "Sniper_Aim_Idle");
+                break;
+            }
         }
         if (o->index != std::numeric_limits<size_t>::max()) scene_.set_object_pose(o->index, o->position, o->yaw);
     }

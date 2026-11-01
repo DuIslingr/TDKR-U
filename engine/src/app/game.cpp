@@ -933,6 +933,17 @@ void Game::auto_play(float dt) {
             if (logic.is_enemy(id) && o.attackable)
                 if (const float d = glm::distance(o.position, player.center); d < best) best = d, goals = {{id, "kill", ""}};
     }
+    // Every marker a place that has given nothing: what it waits for may be an enemy still up
+    // (quest 819's barrels are enabled once their guards are dead).
+    if (!goals.empty() && player.center.z < 60.0f &&
+        std::all_of(goals.begin(), goals.end(), [&](const auto& m) { return auto_play_stale[m.id] >= 6; })) {
+        float best = 150;
+        int enemy = -1;
+        for (const auto& [id, o] : logic.objects())
+            if (logic.is_enemy(id) && o.attackable && !o.dead && !o.invincible)
+                if (const float d = glm::distance(o.position, player.center); d < best) best = d, enemy = id;
+        if (enemy >= 0) goals.insert(goals.begin(), {enemy, "kill", ""});
+    }
     if (goals.empty()) {
         float best = 40;
         for (const auto& [id, o] : logic.objects())

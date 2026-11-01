@@ -65,9 +65,13 @@ public:
 
 private:
     struct Sniper {
-        enum class Phase { Sweep, Aim, Reload } phase = Phase::Sweep;
+        enum class Phase { Sweep, Aim, Shoot, Reload } phase = Phase::Sweep;
         float base = 0, sweep = 0, dir = 1;   // degrees: the watched direction, the sweep's offset
-        float timer = 0, lost = 0;
+        float timer = 0, lost = 0, lock = 0, patience = 0;
+        bool ready = false;                   // its type's numbers are read
+        float angle = 60, sweep_speed = 5, aim_speed = 10, lock_time = 0.9f, give_up = 7;
+        float range = 60, aware_factor = 1.1f, view = 10;
+        float shoot_length = 1, reload_length = 1;
     };
     std::unordered_map<int, Sniper> snipers_;
     void update_snipers(float dt);

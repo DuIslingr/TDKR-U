@@ -180,7 +180,6 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
     std::printf("zones: %zu zones, %zu portals\n", scene.zones().zones().size(), scene.zones().portals().size());
     combat.log = [](const std::string& line) { std::printf("[combat] %s\n", line.c_str()); };
     combat.player_invulnerable = opt.god;
-    brawl.invulnerable = opt.god;
     logic.auto_skip_failed_hotspots = opt.auto_play;
     combat.death_screen = !headless;
     logic.combat = &combat;
@@ -878,7 +877,7 @@ void Game::auto_play(float dt) {
     auto_play_wait = 3.0f;
     const bool hanging = logic.hanging_from >= 0;   // (under a helicopter the camera is the script's)
     const bool aimed_at = !logic.aiming_at_batman.empty();   // (out of a fight: the rifles are what kills)
-    if (!hero.active() || (logic.player_locked() && !hanging) || logic.hack.active || logic.button_qte.object >= 0 ||
+    if (combat.player_dead || !hero.active() || (logic.player_locked() && !hanging) || logic.hack.active || logic.button_qte.object >= 0 ||
         (brawl.busy() && !hanging && !aimed_at) || (!logic.attacking_batman.empty() && !aimed_at) || player.grappling ||
         storyboard.active()) {
         if ((auto_play_held += 3.0f) >= 30.0f) {   // say why, every half minute
@@ -914,7 +913,7 @@ void Game::auto_play(float dt) {
         float best = 1e9f;
         int sniper = -1;
         for (const auto& [id, watched] : logic.snipers)
-            if (const LevelLogic::Object* o = logic.object(id); o && logic.is_enemy(id) && o->attackable && auto_sniper_tries[id] < 10 &&
+            if (const LevelLogic::Object* o = logic.object(id); o && logic.is_enemy(id) && o->attackable && !o->invincible && auto_sniper_tries[id] < 10 &&
                 std::abs(o->position.z - player.center.z) < 12.0f) {
                 const float d = glm::distance(o->position, player.center);
                 const bool aiming = logic.aiming_at_batman.count(id) != 0;   // (those first, however far)
@@ -1338,7 +1337,6 @@ void Game::step_logic(float dt) {
         if (!story_callback.empty()) logic.start_script(std::exchange(story_callback, {}), -1);
     }
     if (hero.active()) player.can_glide = logic.controls.glide;   // SetGlideControlEnable
-    if (hero.active()) combat.player_invulnerable = true;   // TDKR: Batman's health is the brawl's, not N.O.V.A. 3's
     if (hero.active()) brawl.update(dt);
     if (!std::isnan(logic.face_request)) {   // ActorLookTo(0, ...)
         hero.face(logic.face_request);

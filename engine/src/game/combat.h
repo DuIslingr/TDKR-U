@@ -104,8 +104,6 @@ struct CombatInput {
 
 class Combat {
 public:
-    float regen_rate() const { return regen_rate_; }
-    float regen_pause() const { return regen_pause_; }
     static constexpr uint32_t kPlayerTeams = 1u << 1;   // the player is team 1
 
     Combat(Scene& scene, Player& player, LevelLogic& logic, const Gol& gol);

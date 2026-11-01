@@ -61,8 +61,6 @@ public:
     int batarang_target(const glm::vec3& eye, const glm::vec3& forward) const;
     bool throw_batarang(const glm::vec3& eye, const glm::vec3& forward);
     void hit(int id, float damage, const std::string& hurt);
-    bool invulnerable = false;   // --god
-    float batman_health = 100;
     bool auto_fight = false;   // headless tests: strike at enemies in reach, counter every attack
 
 private:
@@ -74,7 +72,7 @@ private:
     std::unordered_map<int, Sniper> snipers_;
     void update_snipers(float dt);
     void update_awareness(float dt);   // the watchers spotting Batman
-    void hurt_batman(float damage, const std::string& state);
+    void hurt_batman(float damage, const std::string& state, const glm::vec3& from);
     bool in_sight(const glm::vec3& from, const glm::vec3& to) const;
     struct Fighter {
         enum class Phase { Idle, Close, Ready, Windup, Recover, Hurt, Down } phase = Phase::Idle;
@@ -84,7 +82,6 @@ private:
     };
     Fighter& fighter(int id);
     bool taken_down(int id) const;
-    float regen_delay_ = 0;
     int target(float reach, float ahead) const;   // the best enemy for a strike, or -1
     int leap_target() const;   // an unaware enemy below to drop on (a takedown from above), or -1
     bool enemy(int id) const;

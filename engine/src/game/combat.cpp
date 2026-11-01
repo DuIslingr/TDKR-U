@@ -146,6 +146,14 @@ Combat::Combat(Scene& scene, Player& player, LevelLogic& logic, const Gol& gol)
     vehicle_weapon_ = int(weapons_.size()) - 3, mounted_gun_ = int(weapons_.size()) - 2, mech_weapon_ = int(weapons_.size()) - 1;
     // The player: CHealthComponent and CPlayerBaseComponent (regeneration per second, delay).
     for (const auto& [id, type] : gol_) {
+        if (type.name == "Batman") {
+            if (const Value* h = resolved_template(type, gol_, 0x0DDCD6C4); h && h->size() > 0) player_max_health = num(*h, 0, 100);
+            // PlayerComponent: [0] health back per second, [1] ms after a hit (EnableRegenerateHealth).
+            if (const Value* p = resolved_template(type, gol_, 0x7538C652); p && p->size() > 1)
+                regen_rate_ = num(*p, 0, 2), regen_pause_ = num(*p, 1, 5000) / 1000.0f;
+            fall_damage_from_ = 1e9f;   // (TDKR's falls are not ported)
+            continue;
+        }
         if (type.name != "Player") continue;
         if (const Value* h = resolved_template(type, gol_, kCompHealth)) player_max_health = num(*h, 0, 150);
         // CComponentPlayerComponent: falls (gravity, the fastest fall), the jump, fall damage

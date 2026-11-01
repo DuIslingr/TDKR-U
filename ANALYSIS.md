@@ -711,7 +711,9 @@ segments (buildings, roads, bridges) in the same world space.
   times the weapon's factor (`CGameObject::GetCombatDamage`; `ActorWeaponSetDamage` sets that factor), less the upgrades in
   `UpgradesManager::GetNpcToPlayerCombatDamage` (0x25 melee, 0x26 ranged). Those two upgrades are not applied yet: `Shop` is still N.O.V.A. 3's (its table, gol 4510, is not in this game's gol.bin), so TDKR's upgrades need their own port. The rifle's accuracy is 1.0, so snipers do not miss.
   The sniper's timings (`kAimTime`, `kCone`, `kReload`) are still approximations: `Aim_Update` depends on distance and `CSniperComponent` template [3].
-- The brawl's `batman_health` is separate from `Combat::player_health`, which the HUD shows, so brawl damage may never reach the health display.
+- Batman has one health, `Combat::player_health`: 100 from `Batman`'s `CHealthComponent`, and brawl damage goes through `damage_player`, so the HUD and `GetHealthMC` see it.
+  Regeneration is `PlayerComponent` [1], 5000 ms after a hit, at [0], 2 a second. The rate is read from the template's layout: the decompile of `RegenerateHealth` loses the amount.
+  Fall damage stays off, as TDKR's falls are not ported. `Combat` and `LevelLogic` still look for a N.O.V.A. 3 type named `Player`, which this game does not have.
   Chapter 4 on needs The Bat's flares, `ShowRightPopup`, `StartHacking`
   (Police_Station: `CHUDDisplay::StartHackMinigame`, not the pipe game) and `EndGame` (`CHUDDisplay::EnterCredits`).
 - Checked by headless `--auto-play` runs only, which drive Batman with shortcuts (it walks a straight path, and the

@@ -181,6 +181,7 @@ Game::Game(const Options& options, const Vfs& vfs_, const Gol& gol_, SDL_Window*
     combat.log = [](const std::string& line) { std::printf("[combat] %s\n", line.c_str()); };
     combat.player_invulnerable = opt.god;
     brawl.invulnerable = opt.god;
+    logic.auto_skip_failed_hotspots = opt.auto_play;
     combat.death_screen = !headless;
     logic.combat = &combat;
     if (opt.credits >= 0) settings.credits = opt.credits;
@@ -553,6 +554,14 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             fs.attack_on = logic.controls.combat || brawl.can_take_down();
             fs.grapnel_on = logic.controls.grapnel;
             fs.riding = logic.riding >= 0;
+            fs.flying = logic.riding_bat;
+            if (const LevelLogic::Object* lock = logic.riding_bat ? logic.object(thebat.target()) : nullptr) {
+                const glm::vec4 c = f.proj * f.view * glm::vec4(lock->position, 1);
+                if (c.w > 1e-3f) {
+                    fs.lock = true;
+                    fs.lock_at = glm::vec2((c.x / c.w * 0.5f + 0.5f) * float(w), (0.5f - c.y / c.w * 0.5f) * float(h));
+                }
+            }
             if (const LevelLogic::Object* b = logic.object(logic.health_bar)) fs.enemy_health = b->dead ? 0.0f : b->health / logic.health_bar_full;
             if (logic.held_use.object >= 0 && logic.held_use.total > 0) fs.progress = 1 - logic.held_use.left / logic.held_use.total;
             if (logic.countdown.on) fs.countdown_ms = logic.countdown.ms, fs.countdown_red = logic.countdown.ms < logic.countdown.red;
@@ -1047,7 +1056,7 @@ void Game::auto_play(float dt) {
                 auto_play_wait = 6.0f;
                 return;
             }
-            float best = 15;
+            float best = 25;   // (quest 821's dock trigger is 20 m past its marker)
             int through = -1;
             for (const auto& [id, t] : logic.objects())
                 if (t.trigger >= 0 && t.enabled && !auto_play_entered.count(id) &&
@@ -1093,9 +1102,39 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
         logic.hanging_from = -1;
     }
     if (hanging_) hanging_ = false, hero.stop_riding();   // let go: he falls
+    if (!opt.scripts || logic.riding < 0 || !logic.riding_bat) {
+        if (thebat.object() >= 0) {
+            thebat.clear_rockets(logic), thebat.stop(), hero.stop_riding();
+            hero.ride_camera_distance = 6.5f, hero.ride_pivot_height = 1.4f, hero.ride_view_pitch = -10.0f;
+            logic.player_hidden = false;
+        }
+    }
     if (!opt.scripts || logic.riding < 0) {
         if (batpod.object() >= 0) batpod.stop(), hero.stop_riding();
         return false;
+    }
+    // The Bat (EnterTheBat): the view swings round behind it; Batman is inside, not drawn. (The
+    // camera's numbers are this port's: CCameraMgr's for vehicles are not read yet.)
+    if (logic.riding_bat) {
+        if (thebat.object() != logic.riding) {
+            thebat.start(logic, logic.riding);
+            hero.ride_camera_distance = 15.0f, hero.ride_pivot_height = 3.0f, hero.ride_view_pitch = -8.0f;
+            logic.player_hidden = true;
+        }
+        const TheBat::Input fly = opt.bat_test > 0 ? bat_test(dt) : opt.auto_play ? auto_fly()
+                                                   : TheBat::Input{in.forward, in.right, in.climb, in.descend, in.fire};
+        thebat.update(logic, scene.collision(), fly, dt);
+        thebat.update_weapons(logic, fly.fire, dt, [this](int id, float damage) {
+            // (the mission's script takes a helicopter down; a person falls as under a blow)
+            if (!logic.is_helicopter(id)) return brawl.hit(id, damage, "Enemy_Hurt_01_Jab");
+            if (LevelLogic::Object* o = logic.object(id); o && !o->invincible) o->health = std::max(o->health - damage, 0.0f);
+        });
+        player.center = thebat.position() + glm::vec3(0, 0, player.radius.z);
+        player.on_ground = true, player.vertical_speed = 0, player.gliding = player.plunging = player.grappling = false;
+        hero.ride(scene, thebat.position(), thebat.yaw(), "_751_batpod_idle");
+        player.yaw += std::remainder(thebat.yaw() - player.yaw, 360.0f) * std::min(1.0f, dt * 2.5f);
+        cam.yaw = player.yaw;
+        return true;
     }
     if (batpod.object() != logic.riding) batpod.start(logic, logic.riding);
     batpod.update(logic, scene.collision(), opt.auto_play ? auto_drive() : in, dt);
@@ -1110,6 +1149,62 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
     player.yaw += std::remainder(batpod.yaw() - player.yaw, 360.0f) * std::min(1.0f, dt * 2.5f);
     cam.yaw = player.yaw;
     return true;
+}
+
+TheBat::Input Game::bat_test(float dt) {
+    // Measured against what the data says: 40 m/s^2 up to 10 m/s of climb, the ceiling, 55 m/s^2
+    // to the top speed, 180 degrees/s at full steer, and the friction's 9.81 m/s^2 to a stop.
+    if (bat_test_t_ == 0)   // the guns are at the nose: where the model's front really is
+        if (const LevelLogic::Object* o = logic.object(thebat.object()); o && o->index != std::numeric_limits<size_t>::max())
+            for (const char* node : {"gun2_muzzle_01", "gun2_muzzle_02"}) {
+                const glm::vec3 at = glm::vec3(scene.object_matrix(o->index, node)[3]) - thebat.position();
+                const float y = glm::radians(thebat.yaw());
+                std::printf("[bat-test] %s: %.2f m along the nose, %.2f to the right, %.2f up\n", node,
+                            glm::dot(glm::vec2(at), glm::vec2(-std::sin(y), std::cos(y))),
+                            glm::dot(glm::vec2(at), glm::vec2(std::cos(y), std::sin(y))), at.z);
+            }
+    bat_test_t_ += dt;
+    bat_test_report_ += dt;
+    const float t = bat_test_t_;
+    TheBat::Input in;
+    const char* phase = "idle";
+    if (t < 10) in.up = true, phase = "climb";
+    else if (t < 10.5f) in.down = true, phase = "descend";
+    else if (t < 13) in.forward = 1, phase = "full ahead";
+    else if (t < 15) in.forward = 1, in.right = 1, phase = "turn right";
+    else if (t < 17) in.right = 1, phase = "turn, no gas";
+    else if (t < 19) in.forward = -1, phase = "brake, astern";
+    else if (t < 21) in.forward = 1, phase = "ahead";
+    else if (t < 25) phase = "let go";
+    if (bat_test_report_ >= 0.25f) {
+        bat_test_report_ = 0;
+        const glm::vec3 v = thebat.velocity(), p = thebat.position();
+        std::printf("[bat-test] %5.1fs %-13s pos (%7.1f %7.1f %5.1f) speed %5.1f climb %5.1f yaw %7.1f roll %5.1f pitch %5.1f steer %5.1f/%5.1f hits %d n (%.2f %.2f %.2f)%s\n", t,
+                    phase, p.x, p.y, p.z, thebat.speed(), v.z, thebat.yaw(), thebat.roll(), thebat.pitch(), thebat.steer(), thebat.steer_limit(),
+                    thebat.hits(), thebat.last_normal().x, thebat.last_normal().y, thebat.last_normal().z, thebat.reversing() ? " astern" : "");
+    }
+    return in;
+}
+
+TheBat::Input Game::auto_fly() {
+    TheBat::Input in;
+    const LevelLogic::Object* t = nullptr;
+    for (const LevelLogic::ObjectiveMarker& m : logic.objective_markers)
+        if ((t = logic.object(m.id)) && !t->dead && m.id != logic.riding) break;
+        else t = nullptr;
+    if (!t) return in;
+    // High enough to clear the roofs, then down onto the marker; heading for it as it goes.
+    const glm::vec3 p = thebat.position();
+    const glm::vec2 to(t->position - p);
+    const float dist = glm::length(to);
+    const float want = dist > 200 ? thebat.ceiling - 3 : std::clamp(t->position.z, thebat.floor + 1, thebat.ceiling - 3);
+    in.fire = true;
+    in.up = p.z < want - 1, in.down = p.z > want + 1;
+    if (p.z < std::min(want, 30.0f) || dist < 6) return in;   // up first
+    const float off = std::remainder(glm::degrees(std::atan2(-to.x, to.y)) - thebat.yaw(), 360.0f);
+    in.right = std::clamp(-off / 30.0f, -1.0f, 1.0f);
+    in.forward = std::abs(off) > 60 ? 0.2f : dist < 30 ? 0.3f : 1.0f;
+    return in;
 }
 
 PlayerInput Game::auto_drive() {
@@ -1278,6 +1373,7 @@ void Game::step_logic(float dt) {
         scene.load_level(opt.level, logic.checkpoint_section());
         loading.active = false;
         logic.respawn_at_checkpoint();
+        brawl.reset();
         shop.apply_owned(combat, settings);   // what was bought for good stays
         viewmodel.start();
         hud.start();

@@ -623,7 +623,7 @@ int api_actor_is_attacking(lua_State* L) {
     const int id = int_arg(L, 1), target = lua_gettop(L) >= 2 ? int_arg(L, 2) : -1;
     bool on = false;
     if (id == 0) on = c.batman_target >= 0 && (target == -1 || target == c.batman_target);
-    else on = c.attacking_batman.count(id) && (target == -1 || target == 0);
+    else on = (c.attacking_batman.count(id) || c.aiming_at_batman.count(id)) && (target == -1 || target == 0);
     lua_pushboolean(L, on);
     return 1;
 }
@@ -765,9 +765,7 @@ int api_player_is_fighting(lua_State* L) {
 // its enabled crime hot spots cleared; -1 for what is not a district. The hot spots are not
 // played yet, so none is cleared: 0.
 int api_get_district_completion(lua_State* L) {
-    LevelLogic& c = ctx(L);
-    const LevelLogic::Object* o = c.object(int_arg(L, 1));
-    lua_pushinteger(L, o && c.object_component(*o, kCompDistrict) ? 0 : -1);
+    lua_pushinteger(L, ctx(L).district_completion(int_arg(L, 1)));
     return 1;
 }
 // GetWaypointsInGroup(group) / GetGroupsInGroup(group) (CGroupObject::GetWaypointsIds /
@@ -784,6 +782,38 @@ int api_group_members(lua_State* L) {
     }
     return n;
 }
+int api_current_hotspot(lua_State* L) {   // GetCurrentHotspot(): -1, none going
+    lua_pushinteger(L, ctx(L).current_hotspot());
+    return 1;
+}
+int api_current_district(lua_State* L) {   // GetCurrentDistrict()
+    lua_pushinteger(L, ctx(L).current_district());
+    return 1;
+}
+int api_hotspot_cleared(lua_State* L) {   // MarkCurrentHotspotCleared()
+    ctx(L).hotspot_cleared();
+    return 0;
+}
+int api_hotspot_canceled(lua_State* L) {   // MarkCurrentHotspotCanceled()
+    ctx(L).hotspot_canceled();
+    return 0;
+}
+int api_enable_hotspot(lua_State* L) {   // EnableHotSpot(id, on)
+    ctx(L).enable_hotspot(int_arg(L, 1), bool_arg(L, 2));
+    return 0;
+}
+int api_enable_hotspot_manager(lua_State* L) {   // EnableHotSpotManager(on)
+    ctx(L).enable_hotspot_manager(bool_arg(L, 1));
+    return 0;
+}
+int api_mark_crime_area(lua_State* L) {   // AddObjectiveOnCrimeArea(?, kind)
+    ctx(L).mark_nearest_hotspot(lua_isstring(L, 2) ? str_arg(L, 2) : "none");
+    return 0;
+}
+int api_unmark_crime_area(lua_State* L) {   // RemoveObjectiveOnCrimeArea()
+    ctx(L).unmark_hotspot();
+    return 0;
+}
 // GetRandomWaypointsInGroup(group, n) (GetRandomsFromArray): n of the group's waypoints.
 int api_random_waypoints(lua_State* L) {
     LevelLogic& c = ctx(L);
@@ -799,10 +829,9 @@ int api_random_waypoints(lua_State* L) {
     return n;
 }
 // GenerateDistrict(district, count) (CDistrictComponent::GenerateDistrictCrimeZones): the
-// district's crime hot spots, `count` of them, on the map. The hot spots are not played yet.
+// district's crime hot spots, `count` of them.
 int api_generate_district(lua_State* L) {
-    LevelLogic& c = ctx(L);
-    if (c.trace) c.log("district " + std::to_string(int_arg(L, 1)) + ": " + std::to_string(int_arg(L, 2)) + " crime zones (not played yet)");
+    ctx(L).generate_district(int_arg(L, 1), int_arg(L, 2));
     return 0;
 }
 // NPCSavePosition(actor) (CNpcAIComponent::StartRecordingPath): where it stands now is where
@@ -985,11 +1014,7 @@ int api_set_can_exit_vehicle(lua_State* L) {
 }
 // Helicopter_Crash(actor) (CHelicopterLogic::SetState(10)): down it goes.
 int api_helicopter_crash(lua_State* L) {
-    LevelLogic& c = ctx(L);
-    if (LevelLogic::Object* o = c.object(int_arg(L, 1)); o && !o->dead) {
-        o->dead = true, o->health = 0;
-        c.actor_state(*o, "Explode", true);
-    }
+    ctx(L).crash_helicopter(int_arg(L, 1));
     return 0;
 }
 int api_on_batpod(lua_State* L) {
@@ -1568,11 +1593,13 @@ const Entry kTdkr[] = {
     {"SwfFadeIn", api_nothing},
     {"StartTutorialFingerprint", api_nothing},
     {"AddTheBatToInventory", api_nothing},
-    // The crime hot spots and districts: their scripts run only once the hot spots are played.
-    {"MarkCurrentHotspotCanceled", api_nothing},
-    {"MarkCurrentHotspotCleared", api_nothing},
-    {"AddObjectiveOnCrimeArea", api_nothing},
-    {"RemoveObjectiveOnCrimeArea", api_nothing},
+    // The crime hot spots' messages: not on the HUD yet.
+    {"GetCurrentHotspot", api_current_hotspot},
+    {"GetCurrentDistrict", api_current_district},
+    {"MarkCurrentHotspotCanceled", api_hotspot_canceled},
+    {"MarkCurrentHotspotCleared", api_hotspot_cleared},
+    {"AddObjectiveOnCrimeArea", api_mark_crime_area},
+    {"RemoveObjectiveOnCrimeArea", api_unmark_crime_area},
     {"ShowCrimeAreaMessage", api_nothing},
     {"ShowDistrictCompletion", api_nothing},
     {"GetActorSpeedWalk", api_get_actor_speed_walk},
@@ -1580,7 +1607,7 @@ const Entry kTdkr[] = {
     {"GetActorPercentHealth", api_get_actor_health, 1},
     // Kept by the original for what is not played here yet: the crime hot spots' switches, the
     // statistics screen, the Batpod's inventory item.
-    {"EnableHotSpot", api_nothing},
+    {"EnableHotSpot", api_enable_hotspot},
     {"IncrementStatisticValue", api_nothing},
     {"AddBatPodToInventory", api_nothing},
     {"SetOnGargoyle", api_set_on_gargoyle},
@@ -1750,7 +1777,7 @@ const Entry kTdkr[] = {
     {"ResetGlobalIllumination", api_nothing},
     {"DisableCopAI", api_nothing},
     {"EnableCopAI", api_nothing},
-    {"EnableHotSpotManager", api_nothing},
+    {"EnableHotSpotManager", api_enable_hotspot_manager},
     {"Traffic_JeepPatrolSet", api_nothing},
     {"Traffic_JeepPatrolRanges", api_nothing},
 };

@@ -199,6 +199,7 @@ public:
     // An object's own copy of a model's vertices, for vertices that change (morph targets);
     // it shares the model's indices and ranges.
     GpuModel* instance_model(const Model& model, const GpuModel& shared);
+    void release_instance(GpuModel* model);   // done with such a copy (its level has gone)
     // Replace vertices [first, first + count) of such a copy, before the next frame is drawn.
     void update_vertices(GpuModel* model, int32_t first, const Vertex* vertices, size_t count);
     const GpuTexture* upload_texture(const Image& image);

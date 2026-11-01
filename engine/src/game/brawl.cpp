@@ -438,6 +438,9 @@ void Brawl::update(float dt) {
     logic_.attacking_batman.clear();
     for (const auto& [id, f] : fighters_)
         if (f.phase == Fighter::Phase::Windup) logic_.attacking_batman.insert(id);
+    logic_.aiming_at_batman.clear();
+    for (const auto& [id, s] : snipers_)
+        if (s.phase != Sniper::Phase::Sweep) logic_.aiming_at_batman.insert(id);
     logic_.batman_target = busy() && (logic_.player_action_mask & kAttack) ? strike_target_ : -1;
     // In a cinematic, or with Batman hidden (a stand-in plays him), nobody fights.
     if (logic_.player_hidden || logic_.player_locked()) return;

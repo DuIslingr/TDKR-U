@@ -120,6 +120,8 @@ public:
     // Who attacks whom now (the brawl's: enemies winding up at Batman, Batman's strike target),
     // for ActorIsAttacking / ActorIsAttacked; and those Batman killed (NPCIsKilledByMC).
     std::unordered_set<int> attacking_batman;
+    std::unordered_set<int> aiming_at_batman;   // snipers with him in their sights: ActorIsAttacking's too
+                                                // (CNpcAIComponent::IsAttacking: its combat states), not a blow
     int batman_target = -1;
     std::unordered_set<int> killed_by_batman;
     // NPCSetStance(..., "Aggressive") on an enemy not yet aware of Batman: it watches
@@ -227,6 +229,7 @@ public:
     int health_bar = -1;
     float health_bar_full = 1;
     int riding = -1;
+    bool riding_bat = false;   // and it is The Bat (a CTheBatHandleComponent), not the Batpod
     // Batman's grapnel at a helicopter (CHelicopterLogic): he hangs under it (Grab_Heli_Idle),
     // carried along, until UnlinkObject(0) lets go (its use, Templ<heli>_OnScriptEvent: the EMP).
     // -1: not hanging.
@@ -239,6 +242,19 @@ public:
     } held_use;
     void grab_helicopter(int id);
     bool is_helicopter(int id) const;
+    void crash_helicopter(int id);   // Helicopter_Crash
+    // The crime hot spots (hotspots.cpp).
+    void generate_district(int district, int count);
+    int district_completion(int district) const;
+    int current_district() const;
+    int current_hotspot() const { return active_hotspot_; }
+    void enable_hotspot(int id, bool on);
+    void enable_hotspot_manager(bool on);
+    void hotspot_cleared();
+    void hotspot_canceled();
+    void mark_nearest_hotspot(const std::string& kind);
+    void unmark_hotspot();
+    bool auto_skip_failed_hotspots = false;   // --auto-play
     // CAIController's behaviour events (CNpcAIComponent [0]: the behaviour): the AIController
     // type's Templ<type>_<behaviour>_<event>, the actor current.
     void ai_event(int id, const std::string& event);
@@ -826,6 +842,29 @@ private:
     bool camera_held_ = false, restore_view_ = false;
     float held_yaw_ = 0, held_pitch_ = 0;
     void update_movers(float dt);
+    void init_helicopter_health(Object& o);
+    struct HotSpot {
+        int id = 0, quest = -1;
+        glm::vec2 at{0};
+        float radius = 90;
+        bool enabled = false, cleared = false, canceled = false;
+        int failures = 0;
+    };
+    std::map<int, HotSpot> hotspots_;
+    std::map<int, std::vector<int>> districts_;
+    std::map<int, int> hotspot_flags_;   // by id, across levels: 1 lit, 2 cleared
+    bool hotspot_manager_ = false;
+    int active_hotspot_ = -1, crime_marker_ = -1;
+    void load_hotspots();
+    void update_hotspots();
+    void remember_hotspot(const HotSpot& h);
+    void restore_hotspots(const std::map<int, int>& flags, bool manager);
+    void update_crashes(float dt);
+    struct Crash {
+        int id = 0;
+        float seconds = 0;
+    };
+    std::vector<Crash> crashes_;
     struct Walker {
         int id = 0, target = -1;
         bool run = false;

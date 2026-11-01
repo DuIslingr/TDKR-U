@@ -101,7 +101,7 @@ public:
     size_t spawn_object(int type, int id, const glm::vec3& position, float yaw);
     // Actors: objects that game logic moves. Place the object's model at `position`
     // turned `yaw` degrees about Z (keeping its scale), and update its bounds and lighting.
-    bool set_object_pose(size_t object, const glm::vec3& position, float yaw);
+    bool set_object_pose(size_t object, const glm::vec3& position, float yaw, float pitch = 0, float roll = 0);   // degrees
     // A model added at runtime without a gol type (returns its object index); `hud`: its
     // draws belong to the HUD pass (FrameParams::hud), not the world.
     size_t spawn_model(const std::string& model_file, bool hud, const std::string& anim_file = {}, const std::string& clip = {});

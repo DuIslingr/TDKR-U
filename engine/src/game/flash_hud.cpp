@@ -122,6 +122,18 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         }
         grapple_shown_ = state.grapple;
     }
+    // CHUDDisplay::SetLockTargetVisible / SetLockTargetPosition: The Bat's reticle on its target.
+    if (swf::Instance* lock = p.find("mVehicleTarget")) {
+        lock->visible = state.lock && state.visible;
+        if (state.lock) {
+            const glm::vec2 at = (state.lock_at - p.offset()) / p.scale();
+            lock->matrix.tx = at.x * 20.0f;
+            lock->matrix.ty = at.y * 20.0f;
+            lock->accept_moves = false;
+            if (!lock_shown_) p.goto_and_play("mVehicleTarget", "vehicleTarget_1");
+        }
+        lock_shown_ = state.lock;
+    }
     // CHUDDisplay::AddButtonToScene: the QTE button over its object, from its QTEStart.
     if (swf::Instance* b = p.find("mQTEButtonInstance")) {
         b->visible = state.qte && state.visible;
@@ -185,7 +197,8 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     // of Batman's (SetBatmanInterface(false)).
     if (state.riding != riding_) {
         riding_ = state.riding;
-        p.set_visible("mCarInterfaceInstance", riding_);
+        p.set_visible("mCarInterfaceInstance", riding_ && !state.flying);
+        p.set_visible("mVehicleInterface", riding_ && state.flying);
         for (auto& [slot, last] : buttons_) p.set_visible(slot, !riding_), last = {"", -1};
     }
     // refreshBatmanButtons / Update: the action slots follow what Batman can do now.

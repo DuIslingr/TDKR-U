@@ -41,6 +41,9 @@ public:
         bool counter = false;            // the counter button is up (an attack can be countered)
         bool jump_on = true, attack_on = true, grapnel_on = true;   // what the scripts leave enabled
         bool riding = false;             // on the Batpod: its buttons instead of Batman's
+        bool flying = false;             // and in The Bat: mVehicleInterface's (SetTheBatInterface)
+        bool lock = false;               // SetLockTargetVisible: The Bat has a target,
+        glm::vec2 lock_at{0};            // here on the screen (SetLockTargetPosition)
         std::string dialog;              // the line being said (ShowMessage): subtitles in a cinematic
         // Objective markers (ObjectiveAdd): where the object shows on screen (pixels), or the
         // screen edge towards it with the arrow's angle (degrees) when it is off screen.
@@ -122,6 +125,7 @@ private:
     int hack_serial_ = 0, hack_result_ = 0;
     void start_hack(const State::Hack& h);
     bool qte_shown_ = false;
+    bool lock_shown_ = false;
     // CHUDDisplay::StartCountdownTimer / UpdateCountdownTimer / StopCountdownTimer:
     // countdowntimer_instance opens and closes; its figures are "mm:ss", the red ones near the end.
     void update_countdown(const State& state);

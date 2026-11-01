@@ -11,6 +11,8 @@ struct PlayerInput {
     float forward = 0, right = 0;   // -1..1
     bool jump = false, run = false;
     bool grapple = false;           // TDKR: fire the grapnel at the aimed edge
+    bool climb = false, descend = false;   // TDKR: The Bat's height
+    bool fire = false;              // TDKR: The Bat's rockets
 };
 
 class Player {

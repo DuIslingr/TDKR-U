@@ -281,9 +281,14 @@ void Game::pad_event(const SDL_Event& e) {
     // A: the use button within reach of something usable (or to get off the Batpod); else the
     // jump, which the frame's input reads while A is down (held_use takes the hold).
     if (down && b == SDL_GAMEPAD_BUTTON_SOUTH && opt.scripts && !logic.player_locked() && !logic.limited_tap() &&
-        (logic.riding >= 0 || logic.usable_in_reach() >= 0)) {
+        ((logic.riding >= 0 && !logic.riding_bat) || (logic.riding < 0 && logic.usable_in_reach() >= 0))) {
         logic.use();
         pad_a_used = true;
+        return;
+    }
+    // In The Bat A climbs and B descends (the frame's input reads them); Y gets out.
+    if (down && b == SDL_GAMEPAD_BUTTON_NORTH && opt.scripts && logic.riding_bat && !logic.player_locked()) {
+        logic.use();
         return;
     }
     // The fight: X strike (and a leap takedown), Y counter, B the batarang.
@@ -734,6 +739,9 @@ void Game::run_window() {
                 const bool pad_a = pad && !pad_a_used && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH);
                 const bool pad_run = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_STICK);
                 in.jump = lc.jump && !mech && (keys[SDL_SCANCODE_SPACE] || touch_in.jump || pad_a);
+                in.climb = keys[SDL_SCANCODE_SPACE] || (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH));
+                in.descend = keys[SDL_SCANCODE_LSHIFT] || (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST));
+                in.fire = fire_held || (pad && pad_axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 0.5f);
                 in.run = lc.rush && logic.player_rush && !aiming && (keys[SDL_SCANCODE_LSHIFT] || touch_in.run || pad_run);
                 // Auto-leveling (touch): walking without turning, the view comes back level.
                 if (touch_mode && settings.auto_leveling && touch_in.look == glm::vec2(0) && (in.forward != 0 || in.right != 0))

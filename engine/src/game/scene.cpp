@@ -850,6 +850,8 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
         global_probe_ = ambient_probe(ambient, dir, light);
         break;
     }
+    for (const auto& a : animated_)
+        if (a->own_gpu) renderer_.release_instance(a->own_gpu);
     animated_.clear();
     lod_instances_.clear();
     corona_controllers_.clear();
@@ -903,8 +905,14 @@ void Scene::load_level(const std::string& lvc_name, uint32_t section_mask) {
     if (const std::string zip = stem + ".zip"; vfs_.exists(zip)) {
         LoadedModel& lm = models_[to_lower(zip)];
         try {
-            lm.cpu = load_level_stream(vfs_.read(zip));
-            if (const LoadedModel* done = finish_model(lm)) add_instance(*done, glm::mat4(1.0f), nullptr);
+            // Once per level, as any other model: a respawn loads the level again, and each new
+            // upload of the city left the last one on the GPU.
+            if (lm.gpu) {
+                add_instance(lm, glm::mat4(1.0f), nullptr);
+            } else {
+                lm.cpu = load_level_stream(vfs_.read(zip));
+                if (const LoadedModel* done = finish_model(lm)) add_instance(*done, glm::mat4(1.0f), nullptr);
+            }
         } catch (const FormatError& ex) {
             std::fprintf(stderr, "stream %s: %s\n", zip.c_str(), ex.what());
         }
@@ -1191,7 +1199,7 @@ bool Scene::move_object(size_t object, const glm::vec3& position) {
     return set_object_pose(object, position, base.rotation.z);
 }
 
-bool Scene::set_object_pose(size_t object, const glm::vec3& position, float yaw) {
+bool Scene::set_object_pose(size_t object, const glm::vec3& position, float yaw, float pitch, float roll) {
     auto it = object_instances_.find(object);
     if (it == object_instances_.end()) return false;
     Instance& inst = instances_[it->second];
@@ -1199,7 +1207,11 @@ bool Scene::set_object_pose(size_t object, const glm::vec3& position, float yaw)
     if (!a) return false;
     const glm::vec3 scale(glm::length(glm::vec3(a->placement[0])), glm::length(glm::vec3(a->placement[1])),
                           glm::length(glm::vec3(a->placement[2])));
-    a->placement = glm::scale(glm::rotate(glm::translate(glm::mat4(1), position), glm::radians(yaw), glm::vec3(0, 0, 1)), scale);
+    // (ISceneNode::setRotation's order: X, then Y, then Z)
+    glm::mat4 turn = glm::rotate(glm::translate(glm::mat4(1), position), glm::radians(yaw), glm::vec3(0, 0, 1));
+    if (roll != 0) turn = glm::rotate(turn, glm::radians(roll), glm::vec3(0, 1, 0));
+    if (pitch != 0) turn = glm::rotate(turn, glm::radians(pitch), glm::vec3(1, 0, 0));
+    a->placement = glm::scale(turn, scale);
     a->placement_inverse = glm::inverse(a->placement);
     pose(*a);
     // Bounds from the placement-space box; actors leave their zone, so test them against the view.

@@ -572,6 +572,53 @@ snipers on the roofs), quest 960 the Stock Exchange's bombs with Bane's men armi
   (`GetDistBetweenObjects` as the original). The snipers are still there to be seen and shooting.
 - Trigger 502486 (quest 601's prisoner scene) is a box on the way in: Batman coming from the far side does not cross it.
 
+**The Bat** (`CTheBatHandleComponent` `0x222500F6`, `engine/src/game/thebat.cpp`). `PlayerComponent::EnterTheBatOrBatPod` takes
+whichever handle the object has. It is no aeroplane, and has no gravity. `CComponentTheBatHandle`'s fields: `[0]` mass 200,
+`[1]` 24 (`UpdateNavigate`'s flat out, for the engine sound), `[2]` 15 m/s astern, `[3]` 7 steering units, `[4]` / `[5]` 11000 /
+8000 N ahead / astern, `[6]` 8000 N up or down, `[7]` / `[8]` friction and brake in g, `[9]` 3 handling, `[10]` 10 m/s climb,
+`[12]` / `[13]` 85 and 4 m, the heights it stays between, `[14]` 30 degrees of bank, `[15]` 15 of pitch, `[20]` 500 ms between rockets.
+
+- **Input** (`SetInputControlDir`): the stick's share of the engine along the nose, but with the stick anywhere at least the
+  friction, so a turn off the throttle keeps its speed. Events `0xB3` / `0xB5` / `0xB4`, `0xB6` set the climb force, `0xAE`
+  gets out, `0xB1` fires. Steering builds at 0.06 a ms and returns at 0.18; `+0xB4` is `max(min(limit, |steer|), |stick| * 7)`, so a
+  half stick steers half as hard.
+- **Physics** (`UpdatePhysics`): friction (`mass * [7] * 9.81`, five times that when nobody is in it) along the velocity, never
+  past a stop; then thrust; speed capped flat and in climb apart. The turn **rotates the velocity** by
+  `ms * 0.06 * |steer| * stick * ([9] / [3])` degrees, 180 a second at full stick; the body follows it (`UpdateRotation`: yaw from the
+  velocity, astern when it opposes the nose, bank and pitch following at 30 degrees a second).
+- **A wall** (`SmoothCollisionBehavior`): it slides along, its speed times `(cos + 2) / 3`, cos being between the old and new
+  direction, the nose kicked away; moving under about 0.6 m/s, three tenths of the speed is left.
+- The HUD is `mVehicleInterface` (`bUp`, `bDown`, `bRocket`, ...: `CHUDDisplay::SetTheBatInterface`). Out of it Batman is put 3.5 m
+  above, to fall; it stays hanging where it was. Flares, damage to it, and the vehicle camera are not done.
+- **Rockets** (`onEvent` `0xB1`, `CBulletRocket`, 20 of them): only with a target (`UpdateTarget`: the nearest enemy within `[18]` 45
+  degrees of the nose and the range; the original also takes some object types and destroyables), one per `[20]` 500 ms, from
+  the muzzles in turn. They fly at `[24]` 100 m/s, re-aimed at the target each step, and blow at it or at `[25]` 300 m: `emp_trail`,
+  `emp`. Damage (`CAIController::SplashDamage`) runs from the most at the middle to the least at the radius; `[21]` 10, `[22]` 50, `[23]` 5 are
+  taken as radius, most and least, an inference from the explosion event's order. The HUD's reticle is `mVehicleTarget`.
+- **Helicopters** have their `CHealthComponent` (`0x0DDCD6C4`) health, 300 (other actors keep the health the fights are tuned to).
+  Quest 308 calls one beaten under 100 and `Helicopter_Crash`es it (state 10): it drops, and is gone where it lands.
+- Its first story use is mission 17 (Up In The Air, quest 820, then 308): `--mission 17 --auto-play` reaches the craft,
+  `Obj600551_OnScriptEvent` boards it (`SetCanExitVehicle(false)`), and it flies to the helicopters; taking them out needs the
+  rockets. Quest 1101 (chapter 4.1) stalls after its `Accepted`: not looked at yet.
+- The forward top speed is `UpgradesManager::GetTheBatMaxSpeed`, item 22, from an item table this port has not found: `[1]` is
+  used. Item 16 is the Batpod's, likewise. `--bat-test` measures 10 m/s climb, the 85 m ceiling, 24 ahead, 15 astern, 9.81 m/s^2 coasting,
+  and 121 / 173 degrees a second diagonal / full stick (thrust on the last step's nose takes 4% off).
+
+**Crime hot spots** (`engine/src/game/hotspots.cpp`; `CQuestManager`, `CDistrictComponent`, `CCrimeHotSpotComponent` `0x1402FD4B`). Not side
+content: quest 1101 waits for `GetDistrictCompletion` to reach 25, 50, 75, 100. In level order a `District` is followed by its
+`DistrictZone`s, each by its `Hotspot`s. A hot spot is a circle (its cylinder's radius, 90 or 120) with a quest, `[0]`: 930 landmark, 908
+bombs, 931 sabotage, 932 surveillance (stealth), 933 hostages; the five are shared. `GenerateDistrict(d, n)` lights n at random, not
+over each other if it can be helped; walking into a lit one enables its quest (`CheckActiveHotSpot`), whose scripts end in
+`MarkCurrentHotspotCleared`, or `Canceled` (not again until he has left the circle). Completion is cleared * 100 / lit. Lit and cleared go
+in checkpoints and `save.bin` (`SaveSaveHotSpots`; version 4), or a Continue would wait for ever at 0. `GetCurrentDistrict` is the
+nearest hot spot's here, the original's the zone he is in. Not done: their map icons, `ShowRightPopup`, `ShowCrimeAreaMessage`,
+`ShowDistrictCompletion`. `--auto-play` cannot sneak: a hot spot failed twice it counts as cleared, and logs `SKIPPED`.
+
+**Goose Chase** (quest 822) fails on `ActorIsAttacking(sniper, 0)`; its distance test passes the whole array, which is object 0, so it is
+always true. `CNpcAIComponent::IsAttacking` is the NPC's combat states, so a sniper with Batman in its sights counts
+(`aiming_at_batman`, kept apart from `attacking_batman`, which also breaks held uses). The main respawn path now resets the brawl: an
+enemy caught mid-swing kept that state through a respawn, which here failed the mission again at once, for ever.
+
 **Sound and music** (`engine/src/game/tdkr_sound_api.cpp`): `sounds.xml` (VoxSoundPackXML: sounds, groups, banks and
 events) is the sound table; `StartMusicEvent(event)` stops the music and plays the event, `StartSoundWithState` /
 `SetSoundState`, `StartSoundAtObjectNode` / `StartEventAtObjectNode` play at an object and follow it
@@ -655,7 +702,7 @@ segments (buildings, roads, bridges) in the same world space.
 - The story runs through quest 215 (chapter 3), except **quest 305 (Save Miranda, chapter 2.1)**: it had never been played
   through. It now runs to the rooftop snipers, where the auto-play is too slow and Miranda dies (`STR_SAVE_MIRANDA_LOST_WAS_KILLED`);
   whether a player can make it is not known. Still to do: quests 1101, 115, 309, 819, 820, 821, 822, 823, 825, 826 and 602.
-  Chapter 4 on needs The Bat's flight (`TheBatDrive`, component `0x222500F6`), `ShowRightPopup`, `StartHacking`
+  Chapter 4 on needs The Bat's flares, `ShowRightPopup`, `StartHacking`
   (Police_Station: `CHUDDisplay::StartHackMinigame`, not the pipe game) and `EndGame` (`CHUDDisplay::EnterCredits`).
 - Checked by headless `--auto-play` runs only, which drive Batman with shortcuts (it walks a straight path, and the
   Batpod jumps over what it sticks on); nobody has played chapter 3 by hand. Helicopter guns do no damage yet, so quest

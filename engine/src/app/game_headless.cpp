@@ -361,6 +361,10 @@ int Game::run_screenshot() {
     if (opt.trace_scripts && hero.active())
         std::printf("hero: at (%.1f %.1f %.1f), %s\n", player.center.x, player.center.y, player.center.z,
                     logic.player_hidden ? (scene.object_hidden(hero.object()) ? "hidden" : "hidden by script but drawn") : "shown");
+    if (opt.trace_scripts && thebat.object() >= 0)
+        std::printf("the bat: at (%.1f %.1f %.1f), speed %.1f, %d steps met something, the last with normal (%.2f %.2f %.2f)\n",
+                    thebat.position().x, thebat.position().y, thebat.position().z, thebat.speed(), thebat.hits(),
+                    thebat.last_normal().x, thebat.last_normal().y, thebat.last_normal().z);
     if (opt.trace_scripts && !logic.missing_calls.empty()) {   // the unimplemented natives the run called, most first
         std::vector<std::pair<int, std::string>> calls;
         for (const auto& [name, n] : logic.missing_calls) calls.push_back({n, name});

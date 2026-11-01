@@ -23,6 +23,7 @@ namespace {
 constexpr int kCompTrigger = 0x37F7A8AE;  // CTriggerComponent
 constexpr int kCompRunScript = 0x1E;      // CRunScriptComponent (OnDead)
 constexpr int kCompHelicopter = 0x786F6ECB;   // CHelicopterLogic
+constexpr int kCompHealthTdkr = 0x0DDCD6C4;   // CHealthComponent: [0] its health
 constexpr int kCompGroup = 0x2AD2A046;        // CGroupObject's builtin data: its members
 constexpr int kCompInteractive = 0x34747EBE;   // CInteractionComponent: radius, ?, script (OnScriptEvent), button frame
 constexpr int kCompDoor = 0x61;           // CDoorAIComponent
@@ -37,6 +38,7 @@ constexpr int kCompCinematic = 0x41;      // CCinematicComponent: length ms, ...
 // relative to the object), [8] object clips ([[object, [[clip, start, speed, loop, length]], ...]]).
 constexpr int kCompCinematicTdkr = 0x17AC851F;
 constexpr int kCompPullable = 0x4891830C;   // PullableObjectComponent: idle, struggle, fall, back clips, struggle ms, ...
+constexpr int kCompTheBatHandle = 0x222500F6;   // CComponentTheBatHandle
 constexpr int kCompNpcAi = 0x0113F791;     // CNpcAIComponent: behaviour, enemy, ...
 constexpr int kCompDestroyable = 0x068D1134;   // CDestroyableComponent
 constexpr int kCompPath = 0x15;            // CPathComponent: id, ?, first waypoint, last waypoint, ?
@@ -232,6 +234,7 @@ void LevelLogic::load_objects() {
         // A group (CGroupObject::ReadBuiltinData: c c [member ids]).
         if (auto gc = o.components.find(kCompGroup); gc != o.components.end() && gc->second.size() >= 3)
             for (const Value& m : gc->second[2].list) groups_[obj.id].push_back(m.type == Value::Int ? m.i : m.size() ? m[0].i : -1);
+        init_helicopter_health(obj);
         objects_[obj.id] = obj;
     }
     stats_.objects = objects_.size();
@@ -361,7 +364,9 @@ void LevelLogic::start(StartMode mode) {
     // scripting the levels' chunks call), then the level, its quests and the main story.
     for (const auto& [type, g] : gol)
         if (g.name == "AIController") load_type_scripts(type);
+    if (mode == StartMode::New && !quests.carry_over) hotspot_flags_.clear(), hotspot_manager_ = false;
     load_objects();
+    load_hotspots();
     find_cameras();
     find_fans();
     // Mission zones load when they become the current mission (none yet).
@@ -372,14 +377,15 @@ void LevelLogic::start(StartMode mode) {
     mission_zone = -1;
     walkers_.clear();
     attack_targets.clear(), snipers.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
-    attacking_batman.clear(), batman_target = -1, killed_by_batman.clear(), watchers.clear(), stances.clear();
+    attacking_batman.clear(), aiming_at_batman.clear(), batman_target = -1, killed_by_batman.clear(), watchers.clear(), stances.clear();
     player_did = {};
     play_time = 0, player_speed = 0, last_interaction = -1, camera_anim = -1, weather = false, player_hidden = false;
     win = {};
     gadget_ = {}, hud_state = "HUD", script_cam_ = {};
     hack = {.serial = hack.serial}, button_qte = {}, minigame_object = -1, pull_ = {};
     story_request = {};
-    riding = -1, hanging_from = -1, held_use = {}, health_bar = -1, qte_navigation = false, bruce_style = false;
+    crashes_.clear();
+    riding = -1, riding_bat = false, hanging_from = -1, held_use = {}, health_bar = -1, qte_navigation = false, bruce_style = false;
     scene.show_coronas(true);
     map_icons.clear();
     level_request = {};
@@ -578,6 +584,7 @@ void LevelLogic::save_checkpoint(int spawn_id) {
     cp->mech = player_mech_, cp->vehicle = player_vehicle_, cp->gun = player_gun_;
     if (combat) cp->combat = combat->save();
     cp->global_vars = global_vars;
+    cp->hotspots = hotspot_flags_, cp->hotspot_manager = hotspot_manager_;
     saved_ = std::move(cp);
     checkpoint_ = spawn_id;
     log("checkpoint " + std::to_string(spawn_id));
@@ -603,6 +610,7 @@ void LevelLogic::respawn_at_checkpoint() {
     start(StartMode::Respawn);
     if (combat) combat->start(true);
     runtime_.restore_globals(cp->globals);   // (CLevel::RespawnInit: LoadCurrentProgress, the scripts' _G)
+    restore_hotspots(cp->hotspots, cp->hotspot_manager);   // (SaveLoadHotSpots)
     global_vars = cp->global_vars;           // (and LoadGlobalData: CScriptGlobals)
     restoring_ = true;
     runtime_.update(0);
@@ -674,7 +682,10 @@ void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
     if (combat) combat->restore(cp.combat);
     // PlayerComponent::SpawnPlayer at the checkpoint, in what it was in; then the spawn
     // point's script (CSpawnPointObject::SpawnedHere).
-    if (Object* sp = object(cp.spawn)) teleport_player(*sp);
+    // (Its own map: object() hides what is in an unloaded mission zone, and a checkpoint's spawn
+    // may be in one. Left where he fell, Batman could fall into the same fail trigger for ever.)
+    if (const auto sp = objects_.find(cp.spawn); sp != objects_.end()) teleport_player(sp->second);
+    else log("checkpoint: no spawn point " + std::to_string(cp.spawn));
     if (Object* m = cp.mech >= 0 ? object(cp.mech) : nullptr) {
         m->position = player.center - glm::vec3(0, 0, player.radius.z), m->yaw = player.yaw;
         enter_mech(cp.mech);
@@ -779,8 +790,52 @@ LevelLogic::Object& LevelLogic::add_object(int id, size_t index, const std::stri
     o.enabled = o.visible = false;
     if (index < scene.level().objects.size()) read_effects(o, scene.level().objects[index]);
     o.state = default_state(o, 1);
+    init_helicopter_health(o);
     ++stats_.objects;
     return o;
+}
+
+// A helicopter's health is its CHealthComponent's (quest 308's scripts read it). Other actors
+// keep the health the fights are tuned to.
+void LevelLogic::init_helicopter_health(Object& o) {
+    if (!object_component(o, kCompHelicopter)) return;
+    if (const Value* h = object_component(o, kCompHealthTdkr); h && h->size() > 0 && (*h)[0].as_float() > 0)
+        o.health = o.full_health = (*h)[0].as_float();
+}
+
+// Helicopter_Crash (CHelicopterLogic state 10): it drops, and is gone where it lands.
+void LevelLogic::crash_helicopter(int id) {
+    Object* o = object(id);
+    if (!o || o->dead) return;
+    o->dead = true, o->health = 0;
+    stop_walking(id);
+    actor_state(*o, "Explode", true);
+    crashes_.push_back({id});
+    if (trace) log("helicopter " + std::to_string(id) + " goes down");
+}
+
+void LevelLogic::update_crashes(float dt) {
+    for (size_t i = 0; i < crashes_.size();) {
+        Crash& c = crashes_[i];
+        Object* o = object(c.id);
+        c.seconds += dt;
+        bool down = !o || c.seconds > 6.0f;
+        if (o) {
+            float ground = 0;
+            const bool over = scene.collision().ray_down(o->position, 200.0f, ground);
+            teleport_object(*o, o->position - glm::vec3(0, 0, std::min(c.seconds * 9.81f, 30.0f) * dt));
+            down = down || (over && o->position.z <= ground + 1);
+        }
+        if (!down) {
+            ++i;
+            continue;
+        }
+        if (o) {
+            scene.particles().start("explosionCafe", glm::translate(glm::mat4(1), o->position));
+            enable(*o, false), show(*o, false);
+        }
+        crashes_.erase(crashes_.begin() + long(i));
+    }
 }
 
 void LevelLogic::enable(Object& o, bool on) {
@@ -2066,6 +2121,8 @@ void LevelLogic::update(float dt) {
     update_button_qte(dt);
     if (script_cam_.on) script_cam_.t += dt;
     update_walkers(dt);
+    update_crashes(dt);
+    update_hotspots();
     update_cameras(dt);
     update_held_use(dt);
     update_triggers();
@@ -2112,23 +2169,26 @@ void LevelLogic::mount_batpod(int id) {
     if (!o || riding == id) return;
     if (riding >= 0) dismount_batpod();
     riding = id;
+    riding_bat = object_component(*o, kCompTheBatHandle) != nullptr;   // (PlayerComponent::EnterTheBatOrBatPod)
     enable(*o, true);
     o->interact_enabled = false;
     if (o->index < scene.level().objects.size()) scene.set_object_collision(o->index, false);
-    if (trace) log("on the Batpod " + std::to_string(id));
+    if (trace) log(std::string(riding_bat ? "in The Bat " : "on the Batpod ") + std::to_string(id));
 }
 
 void LevelLogic::dismount_batpod() {
     Object* o = object(riding);
+    const bool bat = std::exchange(riding_bat, false);
     riding = -1;
     if (!o) return;
-    // Off to its left, standing (CBatpodHandleComponent::ExitVehicle).
+    // Off to its left, standing (CBatpodHandleComponent::ExitVehicle); out of The Bat's top, to
+    // fall or glide (CTheBatHandleComponent::ExitVehicle), and it hangs there.
     const float y = glm::radians(o->yaw);
     const glm::vec3 left(-std::cos(y), -std::sin(y), 0);
-    player.center = o->position + left * 1.2f + glm::vec3(0, 0, player.radius.z + 0.1f);
+    player.center = o->position + (bat ? glm::vec3(0, 0, 3.5f) : left * 1.2f + glm::vec3(0, 0, player.radius.z + 0.1f));
     o->interact_enabled = true;
     if (o->index < scene.level().objects.size()) scene.set_object_collision(o->index, true);
-    if (trace) log("off the Batpod " + std::to_string(o->id));
+    if (trace) log(std::string(bat ? "out of The Bat " : "off the Batpod ") + std::to_string(o->id));
 }
 
 bool LevelLogic::press_button_qte() {

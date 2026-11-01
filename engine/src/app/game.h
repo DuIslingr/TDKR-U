@@ -31,6 +31,7 @@
 #include "game/main_menu.h"
 #include "game/pause_menu.h"
 #include "game/batpod.h"
+#include "game/thebat.h"
 #include "game/brawl.h"
 #include "game/hero.h"
 #include "game/player.h"
@@ -225,6 +226,10 @@ private:
     std::unordered_set<int> auto_fans_used;   // the fans risen on since
     bool ride_step(const PlayerInput& in, float dt);
     Batpod batpod;
+    TheBat thebat;
+    TheBat::Input auto_fly();   // --auto-play in The Bat
+    TheBat::Input bat_test(float dt);   // --bat-test: climbs, flies flat out, turns, lets go; reports
+    float bat_test_t_ = 0, bat_test_report_ = 0;
     Storyboard storyboard;   // StartIntroStory
     std::string story_callback;
     // --auto-play on the Batpod: after the first objective marker, along its trail (an object

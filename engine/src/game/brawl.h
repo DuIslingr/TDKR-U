@@ -60,6 +60,7 @@ public:
     // ("Batarang_01"); it lands a moment later for a heavy hit.
     int batarang_target(const glm::vec3& eye, const glm::vec3& forward) const;
     bool throw_batarang(const glm::vec3& eye, const glm::vec3& forward);
+    void hit(int id, float damage, const std::string& hurt);
     bool invulnerable = false;   // --god
     float batman_health = 100;
     bool auto_fight = false;   // headless tests: strike at enemies in reach, counter every attack
@@ -87,7 +88,6 @@ private:
     bool enemy(int id) const;
     void act(const std::string& state, int mask, float yaw, float seconds);
     bool actor_state(int id, const std::string& state, bool loop = false);
-    void hit(int id, float damage, const std::string& hurt);
     glm::vec3 feet() const;
     float yaw_to(const glm::vec3& at) const;
 

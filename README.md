@@ -58,6 +58,10 @@ The gamepad follows the Android build's own controller layout (the PowerA pad's,
 | Gadgets | left trigger (the gadget wheel is not done yet) | - |
 | Answer a QTE button | A or X | E, F or a click |
 | Batpod: throttle / brakes, steer | left stick | W / S, A / D |
+| The Bat: thrust / astern, steer | left stick | W / S, A / D |
+| The Bat: climb, descend | A, B | Space, Left Shift |
+| The Bat: rockets, with a target locked | right trigger | left button |
+| The Bat: get out | Y | E |
 | Pause | Start | Escape |
 | Skip a storyboard | any button | any key or click |
 | Win screen: continue; death and level-end screens | A; D-pad to move | Enter, Space or a click; arrows |
@@ -129,6 +133,8 @@ chunk under its object; `--gol gol.bin` for the object library's). To check the 
 `python3 tools/lvc.py work/extracted/data/game_config/*.lvc`; to preview one:
 `python3 tools/level2gltf.py work/extracted/data/game_config/Stadion.lvc -o stadion.glb` (Gotham adds its streamed city;
 `tools/streaming.py` exports just that).
+
+`--bat-test` (with The Bat entered, `--exec "EnterTheBat(300051)"` in `GothamCity_Island2.lvc`) flies its manoeuvres and reports them. `--mission 17 --auto-play` flies it in its first story mission and shoots down the helicopters, on to quest 821.
 
 To run a level in the engine: `engine/build/tdkr --data work/data --level Stadion.lvc --no-scripts` (add
 `--screenshot OUT.bmp` for one frame, `--eye X,Y,Z,YAW,PITCH` to place the camera, `--walk-test SECONDS` to walk

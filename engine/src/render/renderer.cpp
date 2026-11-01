@@ -788,6 +788,12 @@ GpuModel* Renderer::instance_model(const Model& model, const GpuModel& shared) {
     return models_.back().get();
 }
 
+void Renderer::release_instance(GpuModel* model) {
+    std::erase_if(vertex_updates_, [model](const auto& u) { return u.buffer == model->vertices; });
+    SDL_ReleaseGPUBuffer(device_, model->vertices);   // (SDL holds it until work using it is done)
+    std::erase_if(models_, [model](const auto& m) { return m.get() == model; });
+}
+
 void Renderer::update_vertices(GpuModel* model, int32_t first, const Vertex* vertices, size_t count) {
     if (!model || !count) return;
     const uint32_t offset = uint32_t(first) * uint32_t(sizeof(Vertex));

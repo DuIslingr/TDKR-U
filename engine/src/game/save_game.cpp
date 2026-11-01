@@ -16,7 +16,7 @@ constexpr char kMagic[4] = {'N', '3', 'S', 'V'};
 // 2: the scripts' globals, the cameras switched off, the ammo, the quests; 3: TDKR's: the
 // mission, the story and script globals outside a checkpoint, the spawn point of a level
 // change, the quests of every level, CScriptGlobals.
-constexpr uint32_t kVersion = 4;
+constexpr uint32_t kVersion = 5;
 
 // Little-endian fields; strings and lists carry their lengths.
 struct Writer {
@@ -228,6 +228,9 @@ std::vector<uint8_t> LevelLogic::checkpoint_data() const {
     write_global_vars(w, cp.global_vars);
     w.u32(uint32_t(cp.hotspots.size())), w.flag(cp.hotspot_manager);
     for (const auto& [id, flags] : cp.hotspots) w.i32(id), w.i32(flags);
+    w.i32(cp.mission_zone);
+    w.u32(uint32_t(cp.snipers.size()));
+    for (const auto& [id, watched] : cp.snipers) w.i32(id), w.i32(watched);
     return out;
 }
 
@@ -283,6 +286,12 @@ bool LevelLogic::load_checkpoint_data(const std::vector<uint8_t>& data) {
     for (uint32_t i = 0; i < hotspots; ++i) {
         const int id = r.i32();
         cp->hotspots[id] = r.i32();
+    }
+    cp->mission_zone = r.i32();
+    const uint32_t snipers = r.count(8);
+    for (uint32_t i = 0; i < snipers; ++i) {
+        const int id = r.i32();
+        cp->snipers[id] = r.i32();
     }
     if (!r.ok) return false;
     checkpoint_ = cp->spawn;

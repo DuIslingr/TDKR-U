@@ -30,6 +30,8 @@ struct LevelLogic::Checkpoint {
     std::unordered_map<int, SavedObject> objects;
     std::map<int, int> hotspots;        // CQuestManager::SaveSaveHotSpots: by id, 1 lit, 2 cleared
     bool hotspot_manager = false;
+    std::unordered_map<int, int> snipers;   // CSniperComponent::SaveSave: those sweeping, and at what
+    int mission_zone = -1;              // the mission's zone: loaded again on Continue too
     std::vector<int> trigger_runs;      // CTriggerComponent::SaveSave
     std::vector<int> cameras_off;       // CSurveillanceCameraComponent::SaveSave: those switched off
     std::vector<std::pair<std::string, int>> ammo;   // CInventory::SaveSaveGlobal: the batarangs, ...

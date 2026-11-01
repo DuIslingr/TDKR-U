@@ -88,6 +88,12 @@ public:
     std::unordered_map<int, int> attack_targets;
     // NPCSetSniper(actor, waypoint, stand ground, sweep): snipers sweeping around a point.
     std::unordered_map<int, int> snipers;   // actor -> the waypoint it watches
+    struct PlayedEffect {   // PlayEffectOnObject's, for StopEffectOnObject
+        int object = 0;
+        std::string name;
+        int handle = -1;
+    };
+    std::vector<PlayedEffect> played_effects;
     std::map<std::string, int> weapon_ammo;   // SetWeaponAmmo / GetWeaponAmmo, by weapon name ("Batarang_01")
     // AddGenericObjectOnMap(object, icon, ?): icons on the minimap (not drawn yet).
     std::map<int, std::string> map_icons;
@@ -623,6 +629,9 @@ public:
     // checkpoint state, and the player spawns at the checkpoint, whose Obj<id>_Default runs.
     // Without a checkpoint the level starts over.
     void save_checkpoint(int spawn_id);
+    // SaveGame only notes the spawn point (SetSaveGameSpawnpointId); the checkpoint is taken once the
+    // scripts have run (CheckSaveGame), so what a script sets right after SaveGame is in it.
+    void request_save(int spawn_id) { if (!restoring_) save_request_ = spawn_id; }
     // The player died and goes back: sets respawn_pending for the caller, who reloads the
     // scene with checkpoint_section() and calls respawn_at_checkpoint() (no checkpoint:
     // reloads the level).
@@ -715,6 +724,7 @@ public:
         return it == waypoint_next_.end() ? -1 : it->second;
     }
     std::vector<Trigger> triggers_;
+    std::vector<int> trigger_order_;   // object ids, as the level lists them
     std::vector<Door> doors_;
     std::unordered_set<std::string> warned_;   // unimplemented API functions already reported
     std::map<std::string, int> missing_calls;   // calls to unimplemented API functions, by name
@@ -724,6 +734,7 @@ private:
     void start(StartMode mode);
     struct Checkpoint;
     std::shared_ptr<const Checkpoint> saved_;
+    int save_request_ = -1;
     bool restoring_ = false;   // between the scripts' restart and the checkpoint put back
     void restore_checkpoint(const Checkpoint& cp);
     void load_objects();

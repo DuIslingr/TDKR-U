@@ -3,6 +3,7 @@
 // does more than this port can yet (NPC AI, the HUD's per-object buttons), the note says so.
 //
 // The scripts' id for the player is 0 (TeleportPlayerToZone, ActorIsInStateType(0, ...)).
+#include <strings.h>
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -607,7 +608,15 @@ int api_npc_set_sniper(lua_State* L) {
 }
 // MissionFailedAutoReload(): back to the checkpoint.
 int api_mission_failed_reload(lua_State* L) {
-    ctx(L).respawn_player();
+    LevelLogic& c = ctx(L);
+    if (c.trace) {
+        std::string who;
+        for (int id : c.aiming_at_batman) who += " " + std::to_string(id);
+        who += ", attacking:";
+        for (int id : c.attacking_batman) who += " " + std::to_string(id);
+        c.log("MissionFailedAutoReload, aiming:" + who);
+    }
+    c.respawn_player();
     return 0;
 }
 // NPCIsKilledByMC(actor[, any way]): dead, and Batman's doing.
@@ -1241,12 +1250,28 @@ int api_is_enabled(lua_State* L) {   // IsEnabled(object)
 // object's node, offset (CEffectsManager). (It does not follow the object here.)
 int api_play_effect_on_object(lua_State* L) {
     LevelLogic& c = ctx(L);
-    const LevelLogic::Object* o = c.object(int_arg(L, 2));
+    const int id = int_arg(L, 2);
+    const LevelLogic::Object* o = id ? c.object(id) : &c.player_object();
     if (!o) return 0;
     glm::mat4 at = glm::translate(glm::mat4(1), o->position);
     if (o->index != kNoIndex) at = c.scene.object_matrix(o->index, str_arg(L, 7));
     at = at * glm::translate(glm::mat4(1), glm::vec3(float(lua_tonumber(L, 3)), float(lua_tonumber(L, 4)), float(lua_tonumber(L, 5))));
-    c.scene.particles().start(str_arg(L, 1), at);
+    if (const int handle = c.scene.particles().start(str_arg(L, 1), at); handle >= 0)
+        c.played_effects.push_back({id, str_arg(L, 1), handle});
+    return 0;
+}
+// StopEffectOnObject(object, node, effect): the first such effect PlayEffectOnObject put on it.
+int api_stop_effect_on_object(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const int id = int_arg(L, 1);
+    const std::string name = str_arg(L, 3);
+    const auto same = [&](const LevelLogic::PlayedEffect& e) {
+        return e.object == id && strcasecmp(e.name.c_str(), name.c_str()) == 0;
+    };
+    if (const auto e = std::find_if(c.played_effects.begin(), c.played_effects.end(), same); e != c.played_effects.end()) {
+        c.scene.particles().stop(e->handle);
+        c.played_effects.erase(e);
+    }
     return 0;
 }
 
@@ -1625,6 +1650,7 @@ const Entry kTdkr[] = {
     {"NPCGetStance", api_npc_get_stance},
     {"IsEnabled", api_is_enabled},
     {"PlayEffectOnObject", api_play_effect_on_object},
+    {"StopEffectOnObject", api_stop_effect_on_object},
     {"ResumeSound", api_nothing},   // (PauseSound stops it here)
     {"NPCSetSniper", api_npc_set_sniper},
     {"NPCSetCanBePulledAllTheWay", api_nothing},   // (every pull here lands at Batman)

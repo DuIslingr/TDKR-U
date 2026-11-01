@@ -699,9 +699,18 @@ segments (buildings, roads, bridges) in the same world space.
 
 ## Open items found so far
 
+- `SaveGame` only notes the spawn point; the checkpoint is taken after the scripts have run (`PlayerComponent::CheckSaveGame`), so
+  a global set right after `SaveGame` is in it (the Vet Center's `vc_blakeIsSafe`). Snipers are kept in checkpoints and saves
+  (`CSniperComponent::SaveSave`, save version 5), as is the mission zone, which Continue needs, and triggers run in the level's order. `Obj600103_Always` in Stadion still logs
+  an error on its first tick: it reads `r_pockets` before #111 sets it. Whether the original does the same is not known.
 - The story runs through quest 215 (chapter 3), except **quest 305 (Save Miranda, chapter 2.1)**: it had never been played
   through. It now runs to the rooftop snipers, where the auto-play is too slow and Miranda dies (`STR_SAVE_MIRANDA_LOST_WAS_KILLED`);
-  whether a player can make it is not known. Still to do: quests 1101, 115, 309, 819, 820, 821, 822, 823, 825, 826 and 602.
+  whether a player can make it is not known. Quests 115 and 309 now complete under auto-play, and 819 with `--god`; without it the bot dies on the Stadion's field before the first checkpoint.
+  Still to check: 823 (runs clean, but needs far more district completion than a test run reaches), 825, 826 and 602.
+- A sniper's damage per shot is still the port's guess of 25. `Sniper_Rifle_01`'s `CWeaponComponent` damage is 1.0 and scripts use 0.5 and 7, but
+  how that reaches `CHealthComponent::ReceiveDamage` for a bullet is not traced, so whether 1.0 is points or a multiplier is not known. The aim
+  timings (`kAimTime`, `kCone`, `kReload`) are guesses too: `Aim_Update` keeps the aim on target for `CSniperComponent` template [3] and depends on distance.
+- The brawl's `batman_health` is separate from `Combat::player_health`, which the HUD shows, so brawl damage may never reach the health display.
   Chapter 4 on needs The Bat's flares, `ShowRightPopup`, `StartHacking`
   (Police_Station: `CHUDDisplay::StartHackMinigame`, not the pipe game) and `EndGame` (`CHUDDisplay::EnterCredits`).
 - Checked by headless `--auto-play` runs only, which drive Batman with shortcuts (it walks a straight path, and the

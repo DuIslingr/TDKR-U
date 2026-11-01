@@ -1,4 +1,5 @@
 #include "game/brawl.h"
+#include "game/combat.h"
 
 #include <algorithm>
 #include <cmath>
@@ -53,11 +54,16 @@ void Brawl::reset() {
     fighters_.clear();
     snipers_.clear();
     action_left_ = 0, strike_target_ = -1, strike_impact_ = -1, takedown_ = false, combo_ = 0;
-    batman_health = 100;
+    batman_health = 100, regen_delay_ = 0;
     logic_.player_action.clear(), logic_.player_action_mask = 0;
 }
 
 Brawl::Fighter& Brawl::fighter(int id) { return fighters_[id]; }
+
+bool Brawl::taken_down(int id) const {
+    const auto f = fighters_.find(id);
+    return f != fighters_.end() && f->second.phase == Fighter::Phase::Down;
+}
 
 glm::vec3 Brawl::feet() const { return player_.center - glm::vec3(0, 0, player_.radius.z); }
 float Brawl::yaw_to(const glm::vec3& at) const { return angle_to(feet(), at); }
@@ -137,6 +143,7 @@ void Brawl::hit(int id, float damage, const std::string& hurt) {
 
 void Brawl::hurt_batman(float damage, const std::string& state) {
     if (!invulnerable) batman_health = std::max(batman_health - damage, 0.0f);
+    regen_delay_ = logic_.combat ? logic_.combat->regen_pause() : 3.0f;
     if (player_.on_ground && !player_.gliding && !player_.grappling) act(state, kHurt, hero_.facing(), 0.5f);
     if (batman_health <= 0) {
         if (logic_.trace) logic_.log("brawl: Batman is down");
@@ -187,12 +194,12 @@ void Brawl::update_awareness(float dt) {
 
 // CSniperComponent, simplified: sweep, lock on, aim, shoot, reload.
 void Brawl::update_snipers(float dt) {
-    constexpr float kRange = 70, kCone = 7, kSweepWidth = 35, kSweepSpeed = 18, kAimTime = 1.6f, kReload = 2.2f;
+    constexpr float kRange = 60, kCone = 7, kSweepWidth = 35, kSweepSpeed = 18, kAimTime = 1.6f, kReload = 2.2f;
     constexpr float kTurn = 50;   // degrees per second while aiming (Attack_Update)
     const glm::vec3 chest = feet() + glm::vec3(0, 0, 1.2f);
     for (auto it = logic_.snipers.begin(); it != logic_.snipers.end(); ++it) {
         LevelLogic::Object* o = logic_.object(it->first);
-        if (!o || o->dead || !o->enabled || logic_.attack_targets.count(o->id)) continue;
+        if (!o || o->dead || !o->enabled || logic_.attack_targets.count(o->id) || taken_down(o->id)) continue;
         const LevelLogic::Object* wp = logic_.object(it->second);
         const glm::vec3 watched = wp ? wp->position : feet();   // (0: Batman himself)
         Sniper& s = snipers_[o->id];
@@ -440,7 +447,8 @@ void Brawl::update(float dt) {
         if (f.phase == Fighter::Phase::Windup) logic_.attacking_batman.insert(id);
     logic_.aiming_at_batman.clear();
     for (const auto& [id, s] : snipers_)
-        if (s.phase != Sniper::Phase::Sweep) logic_.aiming_at_batman.insert(id);
+        if (const LevelLogic::Object* o = logic_.object(id); s.phase != Sniper::Phase::Sweep && o && !o->dead && !taken_down(id))
+            logic_.aiming_at_batman.insert(id);
     logic_.batman_target = busy() && (logic_.player_action_mask & kAttack) ? strike_target_ : -1;
     // In a cinematic, or with Batman hidden (a stand-in plays him), nobody fights.
     if (logic_.player_hidden || logic_.player_locked()) return;
@@ -539,6 +547,9 @@ void Brawl::update(float dt) {
     }
     update_awareness(dt);
     update_snipers(dt);
+    // The health comes back after a pause without a hit (CPlayerBaseComponent, as Combat's).
+    if ((regen_delay_ -= dt) <= 0 && batman_health < 100 && logic_.combat)
+        batman_health = std::min(batman_health + logic_.combat->regen_rate() * dt, 100.0f);
     if (batarang_flight_ >= 0) {   // the batarang lands: a heavy hit
         batarang_flight_ -= dt;
         if (batarang_flight_ < 0) {

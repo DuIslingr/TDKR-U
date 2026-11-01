@@ -83,6 +83,8 @@ private:
         std::string attack;       // the attack being made (its counter and hurt follow from it)
     };
     Fighter& fighter(int id);
+    bool taken_down(int id) const;
+    float regen_delay_ = 0;
     int target(float reach, float ahead) const;   // the best enemy for a strike, or -1
     int leap_target() const;   // an unaware enemy below to drop on (a takedown from above), or -1
     bool enemy(int id) const;

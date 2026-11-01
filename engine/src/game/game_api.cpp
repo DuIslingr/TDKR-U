@@ -646,7 +646,7 @@ int api_tutorial_message(lua_State* L) {
 
 // SaveGame(spawn point): a checkpoint. ShowProgressSavedMessage().
 int api_save_game(lua_State* L) {
-    ctx(L).save_checkpoint(int(lua_tointeger(L, 1)));
+    ctx(L).request_save(int(lua_tointeger(L, 1)));
     return 0;
 }
 int api_progress_saved(lua_State* L) {

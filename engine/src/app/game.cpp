@@ -1374,6 +1374,7 @@ void Game::step_logic(float dt) {
         loading.active = false;
         logic.respawn_at_checkpoint();
         brawl.reset();
+        auto_play_path.clear(), auto_play_use = -1, auto_idle = 0;   // (or the bot walks on from where it was)
         shop.apply_owned(combat, settings);   // what was bought for good stays
         viewmodel.start();
         hud.start();

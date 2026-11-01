@@ -194,6 +194,7 @@ void LevelLogic::load_objects() {
             }
             obj.trigger = int(triggers_.size());
             triggers_.push_back(tr);
+            trigger_order_.push_back(obj.id);
             ++stats_.triggers;
         } else {
             auto tf = o.base ? o.base : std::optional<Transform>();
@@ -347,7 +348,7 @@ void LevelLogic::start(StartMode mode) {
     objects_.clear();
     groups_.clear();
     group_refs_.clear();
-    triggers_.clear();
+    triggers_.clear(), trigger_order_.clear();
     doors_.clear();
     delayed_.clear();
     messages_.clear();
@@ -376,6 +377,7 @@ void LevelLogic::start(StartMode mode) {
     runtime_.mark_chunk_functions();
     mission_zone = -1;
     walkers_.clear();
+    save_request_ = -1, played_effects.clear();
     attack_targets.clear(), snipers.clear(), player_action.clear(), player_action_mask = 0, grapple_lock = -1;
     attacking_batman.clear(), aiming_at_batman.clear(), batman_target = -1, killed_by_batman.clear(), watchers.clear(), stances.clear();
     player_did = {};
@@ -585,6 +587,7 @@ void LevelLogic::save_checkpoint(int spawn_id) {
     if (combat) cp->combat = combat->save();
     cp->global_vars = global_vars;
     cp->hotspots = hotspot_flags_, cp->hotspot_manager = hotspot_manager_;
+    cp->snipers = snipers, cp->mission_zone = mission_zone;
     saved_ = std::move(cp);
     checkpoint_ = spawn_id;
     log("checkpoint " + std::to_string(spawn_id));
@@ -597,8 +600,9 @@ uint32_t LevelLogic::checkpoint_section() const { return saved_ ? saved_->sectio
 
 void LevelLogic::respawn_at_checkpoint() {
     respawn_pending = false;
-    const int zone = mission_zone;   // the mission it was in stays loaded
     const std::shared_ptr<const Checkpoint> cp = saved_;
+    // The mission it was in stays loaded; on Continue, the one the save was in.
+    const int zone = mission_zone >= 0 || !cp ? mission_zone : cp->mission_zone;
     if (!cp) {
         start(StartMode::New);
         if (combat) combat->start(true);
@@ -622,9 +626,12 @@ void LevelLogic::respawn_at_checkpoint() {
     restore_checkpoint(*cp);
     quests.restore(cp->quests);
     quests.respawned();
+    if (trace) log("back at (" + std::to_string(player.center.x) + " " + std::to_string(player.center.y) + " " +
+                   std::to_string(player.center.z) + ")");
 }
 
 void LevelLogic::restore_checkpoint(const Checkpoint& cp) {
+    snipers = cp.snipers;   // (CSniperComponent::SaveLoad starts the sweep again)
     for (const auto& [id, so] : cp.objects) {
         Object* o = object(id);
         if (!o) continue;
@@ -966,7 +973,10 @@ void LevelLogic::update_fog(float dt) {
 void LevelLogic::update_triggers() {
     const glm::vec3 feet = player.center - glm::vec3(0, 0, player.radius.z);
     const float height = 2 * player.radius.z, r = player.radius.x;
-    for (auto& [id, o] : objects_) {
+    for (const int id : trigger_order_) {   // (the level's order: one script's globals may be for the next)
+        const auto found = objects_.find(id);
+        if (found == objects_.end()) continue;
+        Object& o = found->second;
         if (o.trigger < 0) continue;
         Trigger& t = triggers_[size_t(o.trigger)];
         if (!o.enabled) continue;
@@ -2130,6 +2140,7 @@ void LevelLogic::update(float dt) {
     update_zone_fog();
     update_fog(dt);
     runtime_.update(dt * 1000.0f);
+    if (save_request_ != -1) save_checkpoint(std::exchange(save_request_, -1));
 }
 
 

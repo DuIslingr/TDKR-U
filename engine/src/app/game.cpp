@@ -1352,7 +1352,7 @@ void Game::step_logic(float dt) {
         if (window && flash_menus && front_end.show(FrontEnd::Screen::About)) {
             main_menu.open = true;
             SDL_SetWindowRelativeMouseMode(window, false);
-            if (logic.audio) logic.audio->set_paused(true);
+            title_music("mmenu");   // (VoxSoundManager::PlayMusic m_title)
         }
     }
     if (!logic.level_request.file.empty() && !(window && (logic.win.pending || flash_hud.win_open()))) {

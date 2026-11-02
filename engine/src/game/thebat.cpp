@@ -15,6 +15,7 @@ namespace tdkr {
 namespace {
 
 constexpr int kCompTheBatHandle = 0x222500F6;   // CComponentTheBatHandle
+constexpr int kCompHealth = 0x0DDCD6C4;         // CHealthComponent: [0] its health
 constexpr float kGravity = 9.81f;               // (the friction's force: mass * [7] * g)
 constexpr float kSteerRate = 0.06f, kSteerBack = 0.18f;   // per ms, stick over and let go
 constexpr float kBodyRate = 0.03f;              // degrees per ms the roll and pitch follow
@@ -33,6 +34,10 @@ void TheBat::start(LevelLogic& logic, int object) {
     const LevelLogic::Object* o = logic.object(object);
     if (!o) return;
     object_ = object;
+    if (const Value* h = logic.object_component(*o, kCompHealth); h && h->size() > 0 && o->full_health != (*h)[0].as_float()) {
+        LevelLogic::Object* own = logic.object(object);
+        own->health = own->full_health = (*h)[0].as_float();
+    }
     position_ = o->position, yaw_ = o->yaw;
     velocity_ = thrust_ = drag_ = glm::vec3(0);
     roll_ = pitch_ = steer_ = steer_limit_ = turn_ = 0;
@@ -283,6 +288,45 @@ void TheBat::clear_rockets(LevelLogic& logic) {
         r = {};
     }
     target_ = -1;
+}
+
+bool TheBat::take_damage(LevelLogic& logic, float damage) {
+    LevelLogic::Object* o = logic.object(object_);
+    if (!o || wreck_ >= 0) return false;
+    o->health = std::max(o->health - damage, 0.0f);
+    if (logic.trace) logic.log("The Bat takes " + std::to_string(int(damage)) + ", " + std::to_string(int(o->health)) + " left");
+    if (o->health > 0) return false;
+    lost_ = true, wreck_ = object_, wreck_ms_ = 0, wreck_stage_ = 0, wreck_effect_ = -1;
+    return true;
+}
+
+// UpdateDead: steam for 3 s, then it blows up and sinks at 10 m/s; gone at 5 s.
+void TheBat::update_wreck(LevelLogic& logic, float dt) {
+    LevelLogic::Object* o = logic.object(wreck_);
+    if (!o) {
+        wreck_ = -1;
+        return;
+    }
+    const float ms = dt * 1000;
+    wreck_ms_ += ms;
+    auto effect = [&](const char* name) {
+        if (wreck_effect_ >= 0) logic.scene.particles().stop(wreck_effect_);
+        wreck_effect_ = logic.scene.particles().start(name, glm::translate(glm::mat4(1), o->position));
+        ++wreck_stage_;
+    };
+    if (wreck_stage_ == 0) effect("Steam");
+    if (wreck_ms_ >= 5000) {
+        if (wreck_effect_ >= 0) logic.scene.particles().stop(wreck_effect_);
+        logic.enable(*o, false);   // (CGameObject::DisableOnDeath)
+        if (logic.trace) logic.log("The Bat is gone");
+        wreck_ = -1;
+        return;
+    }
+    if (wreck_ms_ >= 3000) {
+        if (wreck_stage_ == 1) effect("explosion_high");
+        logic.teleport_object(*o, o->position - glm::vec3(0, 0, ms * 0.01f));
+        if (o->index != std::numeric_limits<size_t>::max()) logic.scene.set_object_pose(o->index, o->position, o->yaw, 0, 0);
+    }
 }
 
 void TheBat::deploy_flares(LevelLogic& logic) {

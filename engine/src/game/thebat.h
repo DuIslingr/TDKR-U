@@ -52,6 +52,12 @@ public:
     // object, id and damage.
     void update_weapons(LevelLogic& logic, bool fire, float dt, const std::function<void(int, float)>& hurt);
     void clear_rockets(LevelLogic& logic);   // none left in the air (a level going away)
+    // A hit (HandleReceivedDamage): its own CHealthComponent's 150, not Batman's. True when that
+    // is the end of it: ExitVehicle throws him out, UpdateDead takes the wreck.
+    bool take_damage(LevelLogic& logic, float damage);
+    void update_wreck(LevelLogic& logic, float dt);   // UpdateDead
+    bool lost() const { return lost_; }               // shot down in this level
+    void forget_loss() { lost_ = false; }
     void deploy_flares(LevelLogic& logic);   // DeployFlares: the show of it; Missiles takes the rocket
     int flares_deployed() const { return flares_; }
     int target() const { return target_; }   // what the rockets would go for, -1 none
@@ -105,6 +111,11 @@ private:
     int target_ = -1;               // +0xC4
     int fired_ = 0;
     int flares_ = 0;
+    bool lost_ = false;
+    int wreck_ = -1;          // the object UpdateDead has (+0xC8 is 1)
+    float wreck_ms_ = 0;      // +0xD4
+    int wreck_stage_ = 0;     // +0xD8: 0 nothing yet, 1 steaming, 2 exploded
+    int wreck_effect_ = -1;
 };
 
 }  // namespace tdkr

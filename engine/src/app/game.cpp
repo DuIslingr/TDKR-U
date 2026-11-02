@@ -753,6 +753,7 @@ void Game::draw_text(FrameParams& f, int w, int h) {
 
 // A level from its start (the next campaign level, Restart Level); the arsenal carries over.
 void Game::load_level(const std::string& level) {
+    thebat.forget_loss();
     opt.level = level;
     show_loading(level);
     if (window) SDL_SetWindowTitle(window, ("The Dark Knight Rises - " + opt.level).c_str());
@@ -995,6 +996,19 @@ void Game::auto_play(float dt) {
         }
         // A helicopter: the grapnel at it from within reach, then (hanging from it) its use.
         if (logic.is_helicopter(m.id)) {
+            // The Bat was shot down: the level's spare stands parked (2100038, quest 308).
+            if (thebat.lost() && !logic.riding_bat) {
+                for (const auto& [id, c] : logic.objects()) {
+                    if (c.dead || !c.enabled || !logic.object_component(c, 0x222500F6)) continue;
+                    const glm::vec3 from = player.center - glm::vec3(0, 0, player.radius.z);
+                    const glm::vec3 to(c.position.x, c.position.y + 2, from.z);
+                    const int n = std::max(int(glm::distance(to, from) / 0.5f), 1);
+                    std::printf("[auto-play] back to the parked Bat %d\n", id);
+                    for (int k = 1; k <= n; ++k) auto_play_path.push_back(on_floor(glm::mix(from, to, float(k) / float(n))));
+                    auto_play_use = id;
+                    return;
+                }
+            }
             if (logic.hanging_from == m.id) {
                 if (use && logic.use()) std::printf("[auto-play] use %d (from under it)\n", m.id), auto_play_wait = 6.0f;
                 return;
@@ -1156,7 +1170,7 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
             logic.player_hidden = true;
         }
         if (opt.bat_hover && !bat_hovering_) bat_hovering_ = true, thebat.place(logic, opt.bat_hover_at);   // --bat-hover: a sitting target
-        const TheBat::Input fly = opt.bat_hover ? TheBat::Input{} : opt.bat_test > 0 ? bat_test(dt) : opt.auto_play ? auto_fly()
+        const TheBat::Input fly = opt.bat_hover && !thebat.lost() ? TheBat::Input{} : opt.bat_test > 0 ? bat_test(dt) : opt.auto_play ? auto_fly()
                                                    : TheBat::Input{in.forward, in.right, in.climb, in.descend, in.fire};
         // The counter button (PlayerComponent::onEvent 0x44): the flares take the nearest rocket.
         // The bot waits until it would be close, as a person would.
@@ -1393,10 +1407,15 @@ void Game::step_logic(float dt) {
     if (hero.active() && opt.scripts) {
         const bool flying = logic.riding_bat && thebat.object() >= 0;
         const glm::vec3 at = flying ? thebat.position() : player.center;
-        missiles.update(logic, scene.collision(), at, flying, dt, [this](float damage, const glm::vec3& from) {
-            if (logic.combat) logic.combat->damage_player(damage, from);
+        missiles.update(logic, scene.collision(), at, flying, dt, [this, flying](float damage, const glm::vec3& from) {
             if (logic.trace) logic.log("a rocket hits for " + std::to_string(int(damage)));
+            if (!flying) {
+                if (logic.combat) logic.combat->damage_player(damage, from);
+            } else if (thebat.take_damage(logic, damage)) {
+                logic.dismount_batpod();   // (ExitVehicle(true, true, true): above it, to fall)
+            }
         });
+        thebat.update_wreck(logic, dt);
     }
     if (!std::isnan(logic.face_request)) {   // ActorLookTo(0, ...)
         hero.face(logic.face_request);

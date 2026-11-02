@@ -705,7 +705,10 @@ segments (buildings, roads, bridges) in the same world space.
   an error on its first tick: it reads `r_pockets` before #111 sets it. Whether the original does the same is not known.
 - Auto-play without `--god` completes quests 115, 301, 305, 309, 814, 819, 838, 960 and 818, and the Police Station (quest 601 there, then `GothamCity_Island2.lvc`), and quest 601 in Gotham (the power plant) reaches its main building.
   **Quest 822 (Goose Chase)** is stealth: any sniper taking aim fails it (`Obj700035_Always` passes `GetDistFromMC` the table, so its 15 m limit never applies here; what the original returns for a table is not checked). The bot cannot sneak: it takes three snipers, then is seen. Past that point it was only tested with the snipers killed by `--exec-at`; the quest then wins and 823 starts.
-  Still to check: 823 (needs far more district completion than a test run reaches: 932's surveillance hot spots are stealth too), 825, 826, 602, and the rest of 1101 past 420 s.
+  825 hands over to 826, 826 to 602, and 602 ends in `EndGame`, from the debug spawns 316733, 316734 and 316759 (`--spawn-at` does not run a spawn's `OnSpawn`, so start the quest with `--exec`). `--auto-play` skipped one stealth hot spot on the way (quest 932).
+  Still to check: 823 (needs far more district completion than a test run reaches), the rest of 1101 past 420 s, and one unbroken run of the whole story, which 822 prevents for now.
+- `EndGame` is `CHUDDisplay::EnterCredits`: active quests fail, the game saves, and the menu opens on `screenAbout`. The original loads `MainMenu.swf` into the HUD's `mHackArea` and plays `m_title`; here it is the front end's own menu, the music is not started, and neither the screen nor `ShowRightPopup`'s `rewardController.addRightPopup(text, 250)` has been seen in a window.
+- Auto-play walks far faster than Batman (0.5 m a step), which outruns scripts written for a walk: a quest ending 6 s after `MarkCurrentHotspotCleared` fails at 110 m, and its Failed cancels the next hot spot; a hostage's use during the last one's 8 s thanks is lost. It waits both out. `SetQuestStatus` has no guard against Completed to Failed in the original either.
 - A cinematic's speed is component `0x17AC851F` [2]: timeline ms a real ms (`CCinematicComponent::Update`, +0xC). Clips run off the timeline at their own speed (record: name, offset, speed, start, end). Seven cinematics are slower than 1 and one is 2.0; 600023, the Police Station's intro, is 2030 ms at 0.06, so 33.8 s. Ignored until 2026-11-01, which ended that intro 32 s early with Batman out in the fight on a black screen. `UpdateAnimations`' other clip records are not ported: a track plays its first clip only.
 - Damage to Batman comes from the data: the attack state's combat damage (`CContainerState` +0x38, entry [19]: `Sniper_Shoot` 30, jab and cross 10, kick 15)
   times the weapon's factor (`CGameObject::GetCombatDamage`; `ActorWeaponSetDamage` sets that factor), less the upgrades in
@@ -715,8 +718,7 @@ segments (buildings, roads, bridges) in the same world space.
 - Batman has one health, `Combat::player_health`: 100 from `Batman`'s `CHealthComponent`, and brawl damage goes through `damage_player`, so the HUD and `GetHealthMC` see it.
   Regeneration is `PlayerComponent` [1], 5000 ms after a hit, at [0], 2 a second. The rate is read from the template's layout: the decompile of `RegenerateHealth` loses the amount.
   Fall damage stays off, as TDKR's falls are not ported. `Combat` and `LevelLogic` still look for a N.O.V.A. 3 type named `Player`, which this game does not have.
-  Chapter 4 on needs The Bat's flares, `ShowRightPopup`, `StartHacking`
-  (Police_Station: `CHUDDisplay::StartHackMinigame`, not the pipe game) and `EndGame` (`CHUDDisplay::EnterCredits`).
+  Still to port: The Bat's flares and `StartHacking` (Police_Station: `CHUDDisplay::StartHackMinigame`, not the pipe game).
 - Checked by headless `--auto-play` runs only, which drive Batman with shortcuts (it walks a straight path, and the
   Batpod jumps over what it sticks on); nobody has played chapter 3 by hand. Helicopter guns do no damage yet, so quest
   960's rooftops are easier than the original's.

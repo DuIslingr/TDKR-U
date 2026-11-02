@@ -703,10 +703,10 @@ segments (buildings, roads, bridges) in the same world space.
   a global set right after `SaveGame` is in it (the Vet Center's `vc_blakeIsSafe`). Snipers are kept in checkpoints and saves
   (`CSniperComponent::SaveSave`, save version 5), as is the mission zone, which Continue needs, and triggers run in the level's order. `Obj600103_Always` in Stadion still logs
   an error on its first tick: it reads `r_pockets` before #111 sets it. Whether the original does the same is not known.
-- The story runs through quest 215 (chapter 3), except **quest 305 (Save Miranda, chapter 2.1)**: it had never been played
-  through. It now runs to the rooftop snipers, where the auto-play is too slow and Miranda dies (`STR_SAVE_MIRANDA_LOST_WAS_KILLED`);
-  whether a player can make it is not known. Quests 115, 309, 819 and 838 now complete under auto-play without `--god`.
-  Still to check: 823 (runs clean, but needs far more district completion than a test run reaches), 825, 826 and 602.
+- Auto-play without `--god` completes quests 115, 301, 305, 309, 814, 819, 838, 960 and 818, and the Police Station (quest 601 there, then `GothamCity_Island2.lvc`), and quest 601 in Gotham (the power plant) reaches its main building.
+  **Quest 822 (Goose Chase)** is stealth: any sniper taking aim fails it (`Obj700035_Always` passes `GetDistFromMC` the table, so its 15 m limit never applies here; what the original returns for a table is not checked). The bot cannot sneak: it takes three snipers, then is seen. Past that point it was only tested with the snipers killed by `--exec-at`; the quest then wins and 823 starts.
+  Still to check: 823 (needs far more district completion than a test run reaches: 932's surveillance hot spots are stealth too), 825, 826, 602, and the rest of 1101 past 420 s.
+- A cinematic's speed is component `0x17AC851F` [2]: timeline ms a real ms (`CCinematicComponent::Update`, +0xC). Clips run off the timeline at their own speed (record: name, offset, speed, start, end). Seven cinematics are slower than 1 and one is 2.0; 600023, the Police Station's intro, is 2030 ms at 0.06, so 33.8 s. Ignored until 2026-11-01, which ended that intro 32 s early with Batman out in the fight on a black screen. `UpdateAnimations`' other clip records are not ported: a track plays its first clip only.
 - Damage to Batman comes from the data: the attack state's combat damage (`CContainerState` +0x38, entry [19]: `Sniper_Shoot` 30, jab and cross 10, kick 15)
   times the weapon's factor (`CGameObject::GetCombatDamage`; `ActorWeaponSetDamage` sets that factor), less the upgrades in
   `UpgradesManager::GetNpcToPlayerCombatDamage` (0x25 melee, 0x26 ranged). Those two upgrades are not applied yet: `Shop` is still N.O.V.A. 3's (its table, gol 4510, is not in this game's gol.bin), so TDKR's upgrades need their own port. The rifle's accuracy is 1.0, so snipers do not miss.

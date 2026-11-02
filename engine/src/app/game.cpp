@@ -1067,7 +1067,7 @@ void Game::auto_play(float dt) {
         hero.face(glm::degrees(std::atan2(back.x, -back.y)));
         // At a place that has not gone away: the nearest trigger with an OnEnter around it, not
         // yet walked into (the way there leads through it in the game).
-        if (!use && !logic.is_enemy(m.id) && glm::distance(to, player.center) < 2.0f) {
+        if (!use && !logic.is_enemy(m.id) && (glm::distance(to, player.center) < 2.0f || auto_play_stale[m.id] >= 3)) {
             if (logic.use()) {   // something usable here (the Pit's valve beside its marker)
                 std::printf("[auto-play] used what is at %d\n", m.id);
                 auto_play_wait = 6.0f;

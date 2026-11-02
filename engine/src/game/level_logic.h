@@ -826,7 +826,8 @@ private:
     struct Cinematic {
         int id = 0;
         size_t index = 0;
-        float time = 0, duration = 0;   // ms
+        float time = 0, duration = 0, speed = 1;   // ms of its timeline
+        std::vector<size_t> clips;                 // the objects whose clips it plays
         std::vector<std::pair<float, std::string>> events;   // start ms, script function
         size_t next = 0;
         bool was_visible = true;

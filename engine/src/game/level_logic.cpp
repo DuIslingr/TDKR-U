@@ -1249,6 +1249,7 @@ bool LevelLogic::start_cinematic(int id) {
         Cinematic cin;
         cin.id = id, cin.index = o->index;
         cin.duration = c[0].as_float();
+        cin.speed = c[2].as_float();   // timeline ms a real ms (0.06: the Police Station's 34 s intro)
         cin.was_visible = o->visible;
         cin.origin = o->position;
         collect_events(c[6], cin.events);
@@ -1267,6 +1268,9 @@ bool LevelLogic::start_cinematic(int id) {
             if (!obj || obj->index == std::numeric_limits<size_t>::max() || obj == o) continue;   // (the placeholder's own idle)
             if (!obj->visible) show(*obj, true);
             scene.play_clip(obj->index, e[1][0][0].s, e[1][0][3].i != 0);
+            // (UpdateAnimations sets a clip's time from the timeline, at the clip's own speed)
+            scene.set_clip_speed(obj->index, cin.speed * e[1][0][2].as_float());
+            cin.clips.push_back(obj->index);
         }
         if (trace) log("cinematic " + std::to_string(id) + " for " + std::to_string(int(cin.duration)) + " ms, " +
                        std::to_string(cin.events.size()) + " events, " + std::to_string(cin.camera.size()) + " camera keys");
@@ -1308,6 +1312,7 @@ void LevelLogic::end_cinematic(int id) {
     for (auto it = cinematics_.begin(); it != cinematics_.end(); ++it) {
         if (it->id != id) continue;
         if (Object* o = object(id); o && !it->was_visible) show(*o, false);
+        for (size_t index : it->clips) scene.set_clip_speed(index, 1);
         cinematics_.erase(it);
         runtime_.send_event("CinematicEnd_" + std::to_string(id), id);
         return;
@@ -1317,7 +1322,7 @@ void LevelLogic::end_cinematic(int id) {
 void LevelLogic::update_cinematics(float dt) {
     for (size_t i = 0; i < cinematics_.size();) {
         Cinematic& c = cinematics_[i];
-        c.time += dt * 1000.0f;
+        c.time += dt * 1000.0f * c.speed;
         while (c.next < c.events.size() && c.events[c.next].first <= c.time) start_script(c.events[c.next++].second, c.id);
         if (c.time >= c.duration && !c.ending) {
             c.ending = true;   // let scripts started now see the cinematic (and its camera)

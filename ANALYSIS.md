@@ -589,7 +589,7 @@ whichever handle the object has. It is no aeroplane, and has no gravity. `CCompo
 - **A wall** (`SmoothCollisionBehavior`): it slides along, its speed times `(cos + 2) / 3`, cos being between the old and new
   direction, the nose kicked away; moving under about 0.6 m/s, three tenths of the speed is left.
 - The HUD is `mVehicleInterface` (`bUp`, `bDown`, `bRocket`, ...: `CHUDDisplay::SetTheBatInterface`). Out of it Batman is put 3.5 m
-  above, to fall; it stays hanging where it was. Flares, damage to it, and the vehicle camera are not done.
+  above, to fall; it stays hanging where it was. The vehicle camera is not done.
 - **Rockets** (`onEvent` `0xB1`, `CBulletRocket`, 20 of them): only with a target (`UpdateTarget`: the nearest enemy within `[18]` 45
   degrees of the nose and the range; the original also takes some object types and destroyables), one per `[20]` 500 ms, from
   the muzzles in turn. They fly at `[24]` 100 m/s, re-aimed at the target each step, and blow at it or at `[25]` 300 m: `emp_trail`,
@@ -603,6 +603,13 @@ whichever handle the object has. It is no aeroplane, and has no gravity. `CCompo
 - The forward top speed is `UpgradesManager::GetTheBatMaxSpeed`, item 22, from an item table this port has not found: `[1]` is
   used. Item 16 is the Batpod's, likewise. `--bat-test` measures 10 m/s climb, the 85 m ceiling, 24 ahead, 15 astern, 9.81 m/s^2 coasting,
   and 121 / 173 degrees a second diagonal / full stick (thrust on the last step's nose takes 4% off).
+
+**Bazooka rockets and flares** (`engine/src/game/missiles.cpp`; `CMissileComponent` `0x35C5E0A0`, gol 20011 `Rocket`, fired by `RocketLauncher` 20012).
+- **Flight:** it climbs to three quarters of the height up to its target (at least 2 m), then follows at 200 / 400 degrees a second, 10 to 25 m/s, for 10 s. `[9]`-`[12]` are the blast: outer 6 m, inner 0.5, 10 to 35 damage. It blows on the target or on the scene; within 5 m the slow motion goes to 0.1. Its lost-lock branch (+0x44 = 2) cannot be reached as the original is written: the wait only runs with the lock on.
+- **Firing:** `Bazooka_Enemy` runs `Templ9801_2`'s `Attack_Aim` (4 to 6 s) then `Attack_Ranged`. `Attack_TestRanged` wants the weapon's range (`[5]`, 100 m, not the awareness 70), a clear line, one of its own rockets in the air at most, and for Batman on foot more than 20 m (`CanBeHitByBazooka`).
+- **Flares** (`DeployFlares`, `onEvent 0x44`, F or pad north): destroy the nearest rocket with no blast damage, within `GetTheBatCountermeasuresRange`, upgrade item 26. That table is not found: 30 m here is a guess.
+- `--bat-hover X Y Z` parks The Bat, `--no-flares` stops the bot using them. `--mission 17 --bat-hover -636 45 52`: 36 fired, 34 flared, no hits; with `--no-flares` 12 fired, 9 hits of 19, one death.
+- **Inferred or missing:** a hit takes Batman's own health; the original's target may be The Bat's own object, whose damage is not ported. The rocket's model, muzzle dummy (1.5 m above the feet stands in), eye height and vehicle capsule are approximate. Flares show a blast, not `TheBatFlares`' model and emitters. The HUD's rocket warning (`SetRocket`, `SetRocketLock`, `MissileLockOn_*`) and touch `bMissileCounter` are not wired. Batman's glide counter (state type 0x200000, item 30) is not done. Actors in `logic.snipers` keep the sniper code, so no on-foot run has yet drawn a rocket. How a human target reaches the rocket (`CWeapon::SetTarget`'s caller) was not found.
 
 **Crime hot spots** (`engine/src/game/hotspots.cpp`; `CQuestManager`, `CDistrictComponent`, `CCrimeHotSpotComponent` `0x1402FD4B`). Not side
 content: quest 1101 waits for `GetDistrictCompletion` to reach 25, 50, 75, 100. In level order a `District` is followed by its
@@ -718,7 +725,7 @@ segments (buildings, roads, bridges) in the same world space.
 - Batman has one health, `Combat::player_health`: 100 from `Batman`'s `CHealthComponent`, and brawl damage goes through `damage_player`, so the HUD and `GetHealthMC` see it.
   Regeneration is `PlayerComponent` [1], 5000 ms after a hit, at [0], 2 a second. The rate is read from the template's layout: the decompile of `RegenerateHealth` loses the amount.
   Fall damage stays off, as TDKR's falls are not ported. `Combat` and `LevelLogic` still look for a N.O.V.A. 3 type named `Player`, which this game does not have.
-  Still to port: The Bat's flares. `StartHacking` (`CHUDDisplay::StartHackMinigame`) needs no port: its only caller is object 600030 in Police_Station, which only its own lose callback enables, and `HackMinigame.swf` is in neither the Android nor the iOS data.
+  `StartHacking` (`CHUDDisplay::StartHackMinigame`) needs no port: its only caller is object 600030 in Police_Station, which only its own lose callback enables, and `HackMinigame.swf` is in neither the Android nor the iOS data.
 - Checked by headless `--auto-play` runs only, which drive Batman with shortcuts (it walks a straight path, and the
   Batpod jumps over what it sticks on); nobody has played chapter 3 by hand. Helicopter guns do no damage yet, so quest
   960's rooftops are easier than the original's.

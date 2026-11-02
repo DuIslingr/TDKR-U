@@ -1138,6 +1138,7 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
     if (!opt.scripts || logic.riding < 0 || !logic.riding_bat) {
         if (thebat.object() >= 0) {
             thebat.clear_rockets(logic), thebat.stop(), hero.stop_riding();
+            missiles.reset(logic);
             hero.ride_camera_distance = 6.5f, hero.ride_pivot_height = 1.4f, hero.ride_view_pitch = -10.0f;
             logic.player_hidden = false;
         }
@@ -1154,8 +1155,14 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
             hero.ride_camera_distance = 15.0f, hero.ride_pivot_height = 3.0f, hero.ride_view_pitch = -8.0f;
             logic.player_hidden = true;
         }
-        const TheBat::Input fly = opt.bat_test > 0 ? bat_test(dt) : opt.auto_play ? auto_fly()
+        if (opt.bat_hover && !bat_hovering_) bat_hovering_ = true, thebat.place(logic, opt.bat_hover_at);   // --bat-hover: a sitting target
+        const TheBat::Input fly = opt.bat_hover ? TheBat::Input{} : opt.bat_test > 0 ? bat_test(dt) : opt.auto_play ? auto_fly()
                                                    : TheBat::Input{in.forward, in.right, in.climb, in.descend, in.fire};
+        // The counter button (PlayerComponent::onEvent 0x44): the flares take the nearest rocket.
+        // The bot waits until it would be close, as a person would.
+        const bool flare = opt.auto_play ? !opt.no_flares && missiles.nearest() >= 0 && missiles.nearest() < 12 : in.flare && !flare_held_;
+        flare_held_ = in.flare;
+        if (flare && missiles.counter(logic)) thebat.deploy_flares(logic);
         thebat.update(logic, scene.collision(), fly, dt);
         thebat.update_weapons(logic, fly.fire, dt, [this](int id, float damage) {
             // (the mission's script takes a helicopter down; a person falls as under a blow)
@@ -1222,9 +1229,15 @@ TheBat::Input Game::bat_test(float dt) {
 TheBat::Input Game::auto_fly() {
     TheBat::Input in;
     const LevelLogic::Object* t = nullptr;
-    for (const LevelLogic::ObjectiveMarker& m : logic.objective_markers)
-        if ((t = logic.object(m.id)) && !t->dead && m.id != logic.riding) break;
-        else t = nullptr;
+    for (const LevelLogic::ObjectiveMarker& m : logic.objective_markers) {   // the mission's before a side mission's
+        const LevelLogic::Object* o = logic.object(m.id);
+        if (!o || o->dead || m.id == logic.riding) continue;
+        if (m.text == "objective") {
+            t = o;
+            break;
+        }
+        if (!t) t = o;
+    }
     if (!t) return in;
     // High enough to clear the roofs, then down onto the marker; heading for it as it goes.
     const glm::vec3 p = thebat.position();
@@ -1377,6 +1390,14 @@ void Game::step_logic(float dt) {
     }
     if (hero.active()) player.can_glide = logic.controls.glide;   // SetGlideControlEnable
     if (hero.active()) brawl.update(dt);
+    if (hero.active() && opt.scripts) {
+        const bool flying = logic.riding_bat && thebat.object() >= 0;
+        const glm::vec3 at = flying ? thebat.position() : player.center;
+        missiles.update(logic, scene.collision(), at, flying, dt, [this](float damage, const glm::vec3& from) {
+            if (logic.combat) logic.combat->damage_player(damage, from);
+            if (logic.trace) logic.log("a rocket hits for " + std::to_string(int(damage)));
+        });
+    }
     if (!std::isnan(logic.face_request)) {   // ActorLookTo(0, ...)
         hero.face(logic.face_request);
         logic.face_request = NAN;

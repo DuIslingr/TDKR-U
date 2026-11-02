@@ -31,6 +31,7 @@
 #include "game/main_menu.h"
 #include "game/pause_menu.h"
 #include "game/batpod.h"
+#include "game/missiles.h"
 #include "game/thebat.h"
 #include "game/brawl.h"
 #include "game/hero.h"
@@ -227,6 +228,9 @@ private:
     bool ride_step(const PlayerInput& in, float dt);
     Batpod batpod;
     TheBat thebat;
+    Missiles missiles;
+    bool bat_hovering_ = false;
+    bool flare_held_ = false;   // the flare key: once a press
     TheBat::Input auto_fly();   // --auto-play in The Bat
     TheBat::Input bat_test(float dt);   // --bat-test: climbs, flies flat out, turns, lets go; reports
     float bat_test_t_ = 0, bat_test_report_ = 0;

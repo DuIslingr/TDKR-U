@@ -97,6 +97,8 @@ Options parse_options(int argc, char** argv) {
         else if (a == "--did") o.did = next();
         else if (a == "--list-actors") o.list_actors = true;
         else if (a == "--mission") o.mission = next(), o.level_given = true;
+        else if (a == "--bat-hover") o.bat_hover = true, o.bat_hover_at.x = std::stof(next()), o.bat_hover_at.y = std::stof(next()), o.bat_hover_at.z = std::stof(next());
+        else if (a == "--no-flares") o.no_flares = true;
         else if (a == "--list-missions") o.list_missions = true;
         else if (a == "--gamepad") o.gamepad = true;
         else if (a == "--audit") o.audit = std::stoi(next());

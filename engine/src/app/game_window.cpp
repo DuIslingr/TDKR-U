@@ -742,6 +742,7 @@ void Game::run_window() {
                 in.climb = keys[SDL_SCANCODE_SPACE] || (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH));
                 in.descend = keys[SDL_SCANCODE_LSHIFT] || (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST));
                 in.fire = fire_held || (pad && pad_axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 0.5f);
+                in.flare = keys[SDL_SCANCODE_F] || (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH));
                 in.run = lc.rush && logic.player_rush && !aiming && (keys[SDL_SCANCODE_LSHIFT] || touch_in.run || pad_run);
                 // Auto-leveling (touch): walking without turning, the view comes back level.
                 if (touch_mode && settings.auto_leveling && touch_in.look == glm::vec2(0) && (in.forward != 0 || in.right != 0))

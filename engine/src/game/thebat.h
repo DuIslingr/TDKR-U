@@ -52,6 +52,8 @@ public:
     // object, id and damage.
     void update_weapons(LevelLogic& logic, bool fire, float dt, const std::function<void(int, float)>& hurt);
     void clear_rockets(LevelLogic& logic);   // none left in the air (a level going away)
+    void deploy_flares(LevelLogic& logic);   // DeployFlares: the show of it; Missiles takes the rocket
+    int flares_deployed() const { return flares_; }
     int target() const { return target_; }   // what the rockets would go for, -1 none
     int rockets_fired() const { return fired_; }
 
@@ -102,6 +104,7 @@ private:
     float rocket_wait_ = 0;         // +0x12C, ms
     int target_ = -1;               // +0xC4
     int fired_ = 0;
+    int flares_ = 0;
 };
 
 }  // namespace tdkr

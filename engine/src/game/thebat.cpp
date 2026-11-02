@@ -285,6 +285,13 @@ void TheBat::clear_rockets(LevelLogic& logic) {
     target_ = -1;
 }
 
+void TheBat::deploy_flares(LevelLogic& logic) {
+    ++flares_;
+    if (logic.trace) logic.log("The Bat deploys its flares");
+    // (TheBatFlares' model and its six emitters are not placed yet: the blast stands in for them.)
+    logic.scene.particles().start(blast_effect_, glm::translate(glm::mat4(1), position_ - glm::vec3(0, 0, 2)));
+}
+
 void TheBat::update(LevelLogic& logic, const CollisionWorld& world, const Input& in, float dt) {
     LevelLogic::Object* o = logic.object(object_);
     if (!o || dt <= 0) return;

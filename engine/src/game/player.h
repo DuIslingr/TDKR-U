@@ -13,6 +13,7 @@ struct PlayerInput {
     bool grapple = false;           // TDKR: fire the grapnel at the aimed edge
     bool climb = false, descend = false;   // TDKR: The Bat's height
     bool fire = false;              // TDKR: The Bat's rockets
+    bool flare = false;             // TDKR: The Bat's flares
 };
 
 class Player {

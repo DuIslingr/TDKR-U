@@ -54,6 +54,8 @@ struct Options {
     float grapple_test = 0;             // --grapple-test: like --walk-test, but fire the grapnel after 1 s instead of walking
     bool log_player = false;    // print the player's state every second (interactive)
     float combat_test = 0;      // headless: aim at the nearest enemy and fire for this many seconds
+    bool bat_hover = false, no_flares = false;   // --bat-hover X Y Z: The Bat sits there; --no-flares: the bot lets rockets hit
+    glm::vec3 bat_hover_at{0};
     float grenade_test = -1;    // headless: at this time, throw a grenade at the nearest enemy
     float mine_test = -1;       // headless: at this time, throw a mine at the nearest enemy; detonate 2 s later
     float power_test = -1;      // headless: at this time, use Repel at the nearest enemy

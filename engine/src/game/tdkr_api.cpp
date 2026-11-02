@@ -799,6 +799,23 @@ int api_current_district(lua_State* L) {   // GetCurrentDistrict()
     lua_pushinteger(L, ctx(L).current_district());
     return 1;
 }
+int api_show_right_popup(lua_State* L) {   // ShowRightPopup(string id)
+    LevelLogic& c = ctx(L);
+    const std::string id = str_arg(L, 1), text = c.strings.find(id);
+    c.right_popups.push_back(text.empty() ? id : text);
+    if (c.trace) c.log("right popup: " + id);
+    return 0;
+}
+// EndGame(): CHUDDisplay::EnterCredits, which fails the active quests (FailActiveQuests(2)) and
+// goes to the menu's About screen.
+int api_end_game(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    for (const Quests::Quest& q : c.quests.all())
+        if (q.status == Quests::Running) c.quests.set_status(q.id, Quests::Failed);
+    c.end_game = true;
+    if (c.trace) c.log("end game: the credits");
+    return 0;
+}
 int api_hotspot_cleared(lua_State* L) {   // MarkCurrentHotspotCleared()
     ctx(L).hotspot_cleared();
     return 0;
@@ -1751,6 +1768,8 @@ const Entry kTdkr[] = {
     {"Traffic_FreezeSemaphore", api_nothing},
     {"Traffic_UnfreezeSemaphore", api_nothing},
     {"StartSideMissionManager", api_nothing},
+    {"ShowRightPopup", api_show_right_popup},
+    {"EndGame", api_end_game},
     {"StopSideMissionManager", api_nothing},
     {"SideMissionManagerQuestAdd", api_nothing},
     {"SideMissionManagerQuestRemove", api_nothing},

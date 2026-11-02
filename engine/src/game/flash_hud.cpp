@@ -249,6 +249,10 @@ void FlashHud::checkpoint_message(const std::string& text) {
     p->goto_and_play("CheckpointMessageInstance", "Anim");
 }
 
+void FlashHud::right_popup(const std::string& text) {
+    if (swf::Player* p = screen_.player()) p->invoke("rewardController", "addRightPopup", {swf::Value(text), swf::Value(250.0)});
+}
+
 void FlashHud::update_countdown(const State& state) {
     swf::Player& p = *screen_.player();
     const bool on = state.countdown_ms >= 0;

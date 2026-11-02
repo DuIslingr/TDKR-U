@@ -80,6 +80,7 @@ public:
     void win_screen(const std::string& title, int xp, int coins, float seconds);
     // The checkpoint notice (CheckpointMessageInstance: its text, then its Anim).
     void checkpoint_message(const std::string& text);
+    void right_popup(const std::string& text);   // CHUDDisplay::ShowRightPopup
     bool win_open() const { return win_open_; }
     // The hacking game (minigame.swf in mHackArea): it takes the pointer while it is up; its
     // outcome once (registerInGameEvent GAME_PIPE WIN / LOSE; its skip button counts as a win):

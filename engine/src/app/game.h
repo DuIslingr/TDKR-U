@@ -251,6 +251,8 @@ private:
     std::unordered_set<int> auto_play_entered;   // triggers walked into to get a place marker to go
     std::unordered_map<int, int> auto_play_stale;   // place markers stood on with nothing happening
     std::vector<int> auto_play_markers;   // the markers when it last looked
+    int auto_hotspots_cleared = 0;   // --auto-play: as of the last look
+    float auto_settle = 0;           // --auto-play: seconds to stay put
     float fight_test_hack = 0;   // --fight-test: seconds into a hacking game
     int fight_test_lock = -1;    // --fight-test: the grapnel lock it last flew to
     bool hud_pointer = false;    // the HUD (the hacking game) has the mouse pointer

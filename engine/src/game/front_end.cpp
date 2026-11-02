@@ -33,9 +33,10 @@ bool FrontEnd::show(Screen screen) {
     }
     // (the main menu's backdrop is the menu level, drawn by the game behind it)
     screen_ = screen;
-    if (screen == Screen::Main) start_screen("main");
+    if (screen == Screen::Main || screen == Screen::About) start_screen("main");
     else if (screen == Screen::Pause) start_screen("ingame");
     else if (screen == Screen::Death) start_screen("death");
+    if (screen == Screen::About) menu_->player()->invoke("screenManager", "jumpTo", {swf::Value("screenAbout")});
     return true;
 }
 

@@ -129,6 +129,7 @@ void LevelLogic::hotspot_cleared() {   // MarkCurrentHotspotCleared
     if (active_hotspot_ < 0) return;
     HotSpot& h = hotspots_[active_hotspot_];
     h.cleared = true;
+    ++hotspots_cleared;
     remember_hotspot(h);
     const int id = h.id;
     std::erase_if(objective_markers, [id](const ObjectiveMarker& m) { return m.id == id; });

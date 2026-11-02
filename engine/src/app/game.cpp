@@ -542,6 +542,10 @@ void Game::draw_text(FrameParams& f, int w, int h) {
                 flash_hud.checkpoint_message(t.empty() ? "Progress Saved" : t);
             }
         }
+        if (opt.scripts) {
+            for (const std::string& text : logic.right_popups) flash_hud.right_popup(text);
+            logic.right_popups.clear();
+        }
         fs.position = glm::vec2(player.center);
         fs.facing = hero.facing();
         using HM = FlashHud::State::Move;
@@ -819,6 +823,13 @@ glm::vec3 Game::on_floor(const glm::vec3& p) const {
 // it), or else to the nearest usable thing.
 void Game::auto_play(float dt) {
     if (logic.riding >= 0) return;   // on the Batpod: auto_drive() steers
+    // A hot spot cleared: its quest ends some 6 s on, and fails if he is 110 m away by then,
+    // which on foot he is not. (Its Failed cancels whichever hot spot is current.)
+    if (logic.hotspots_cleared != auto_hotspots_cleared) auto_hotspots_cleared = logic.hotspots_cleared, auto_settle = 8.0f;
+    if (auto_settle > 0) {
+        auto_settle -= dt;
+        return;
+    }
     // Aloft from a fan it jumped up: the view, which the glide turns to, on the first marker.
     // On the way, the fans not yet risen on that are nearer the marker: through their updrafts.
     if (auto_fan_flight && !player.gliding && player.on_ground) auto_fan_flight = false, auto_fans_used.clear();
@@ -874,6 +885,11 @@ void Game::auto_play(float dt) {
     // A sniper taking aim: no waiting for the next look round, two of them kill in five seconds.
     if (!logic.aiming_at_batman.empty()) auto_play_wait = std::min(auto_play_wait, 0.2f);
     if ((auto_play_wait -= dt) > 0) return;
+    // What the last use set going still at it (a hostage's thanks are 8 s, and a use meanwhile
+    // finds their trigger's script running and is lost).
+    if (const LevelLogic::Object* u = logic.object(logic.last_interaction);
+        u && u->interact_target >= 0 && logic.runtime().running("Obj" + std::to_string(u->interact_target) + "_Always"))
+        return;
     auto_play_wait = 3.0f;
     const bool hanging = logic.hanging_from >= 0;   // (under a helicopter the camera is the script's)
     const bool aimed_at = !logic.aiming_at_batman.empty();   // (out of a fight: the rifles are what kills)
@@ -1327,6 +1343,18 @@ void Game::step_logic(float dt) {
     logic.update(dt);
     // RequireLoadLevel: the next level, the quests carried over; in a window, once the win
     // screen asked for just before (the Stock Exchange's end) has been closed.
+    // EndGame (CHUDDisplay::EnterCredits): saved, then the menu's About screen (once the win
+    // screen before it has been dismissed).
+    if (logic.end_game && !(window && (logic.win.pending || flash_hud.win_open()))) {
+        logic.end_game = false;
+        write_save(SaveKind::Checkpoint);
+        std::printf("[script] end of the game: the credits\n");
+        if (window && flash_menus && front_end.show(FrontEnd::Screen::About)) {
+            main_menu.open = true;
+            SDL_SetWindowRelativeMouseMode(window, false);
+            if (logic.audio) logic.audio->set_paused(true);
+        }
+    }
     if (!logic.level_request.file.empty() && !(window && (logic.win.pending || flash_hud.win_open()))) {
         const LevelLogic::LevelRequest r = logic.level_request;
         std::printf("[script] loading %s (spawn %d)\n", r.file.c_str(), r.spawn);

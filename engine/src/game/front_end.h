@@ -5,6 +5,7 @@
 //             level's background); Chapters is filled through CHAPTER_LIST_INIT
 //   pause     MainMenu.swf, startScreen("ingame") (CHUDDisplay::EnterIGM), over the game
 //   death     the same, startScreen("death")
+//   about     the main menu, then screenManager.jumpTo("screenAbout") (the end of the game)
 // The scripts report presses with registerInGameEvent(NAME, ...): NEW_GAME, CONTINUE_GAME,
 // MISSION_ACTIVATED, EXIT_GAME, BACK_TO_MAIN_MENU, BUTTON_RESTART_CHECKPOINT/LEVEL...; those
 // become actions for the game.
@@ -28,7 +29,7 @@ public:
     FrontEnd(const Vfs& vfs, Renderer& renderer, const StringTable* strings, const std::vector<Mission>* missions);
     ~FrontEnd();
 
-    enum class Screen { None, Title, Main, Pause, Death };
+    enum class Screen { None, Title, Main, Pause, Death, About };
     // False if the game's menu movies are missing (then nothing shows).
     bool show(Screen screen);
     void close();

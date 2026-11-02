@@ -431,6 +431,9 @@ public:
     bool trace = false;              // log every started script function
     bool skip_intro = false;         // (testing) the start spawn point's script does not run
     bool level_ended = false;        // EndLevel() was called
+    bool end_game = false;           // EndGame(): CHUDDisplay::EnterCredits, for the game to take
+    std::vector<std::string> right_popups;   // ShowRightPopup's texts, for the HUD to take
+    int hotspots_cleared = 0;        // MarkCurrentHotspotCleared calls (the bot waits on them)
     bool level_success = true;       // EndLevel(false): the mission failed
     bool fog_locked = false;         // Fog_SetLock: zone changes keep the current fog
     // TDKR's objective popup (ShowObjectiveMessage / ClearObjectiveMessage): its text, and a

@@ -234,6 +234,7 @@ private:
     // CLevel::Render2DInterface's low-health overlay: +0x104 (its alpha, here only a timer for
     // the fade), +0x108 (the pulse's speed), PlayerComponent +0x350 (the health a step ago).
     float hurt_alpha_ = -1, hurt_speed_ = 0.3f, old_health_ = -1;
+    bool fall_gliding_ = false, fall_grappling_ = false;   // for LevelLogic::fall_top
     TheBat::Input auto_fly();   // --auto-play in The Bat
     TheBat::Input bat_test(float dt);   // --bat-test: climbs, flies flat out, turns, lets go; reports
     float bat_test_t_ = 0, bat_test_report_ = 0;

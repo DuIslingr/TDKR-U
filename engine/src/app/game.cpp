@@ -1476,6 +1476,13 @@ void Game::step_logic(float dt) {
     if (hero.active()) player.can_glide = logic.controls.glide;   // SetGlideControlEnable
     if (hero.active()) brawl.update(dt);
     if (hero.active() && opt.scripts) {
+        // GetFallDist's start (LevelLogic::fall_top): kept while in the air and not going down,
+        // set where a glide or the grapnel's flight begins.
+        if (!player.on_ground && ((player.gliding && !fall_gliding_) || (player.grappling && !fall_grappling_) ||
+                                  (!player.gliding && !player.grappling && player.vertical_speed >= 0)))
+            logic.fall_top = player.center.z;
+        fall_gliding_ = player.gliding, fall_grappling_ = player.grappling;
+        if (!hero.acting() && !hero.riding()) logic.run_hero_scripts(hero.object());
         const bool flying = logic.riding_bat && thebat.object() >= 0;
         const glm::vec3 at = flying ? thebat.position() : player.center;
         missiles.update(logic, scene.collision(), at, flying, dt, [this, flying](float damage, const glm::vec3& from) {

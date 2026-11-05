@@ -24,7 +24,7 @@ public:
     // Play the events object `index` (of gol type `type`) has passed since the last call
     // (sounds only with `audio`).
     void update(Scene& scene, Audio* audio, size_t index, int type);
-    void clear() { last_.clear(); }
+    void clear() { last_.clear(), last_scripts_.clear(); }
     // A state of the type's state set: its first clip and the sounds of its events
     // (each a list to pick one from). Null if the type has no such state.
     // A timed sound event of a clip.
@@ -44,6 +44,10 @@ public:
     const State* state(int type, const std::string& name);
     // Play (or stop) a state's sounds at `at`; returns the handles of those started.
     std::vector<int> play_state(Audio& audio, int type, const std::string& name, const glm::vec3& at);
+    // The Script track functions (Templ<set>_<state>_..._OnScriptEvent) of the clip object `index`
+    // plays whose times it has passed since the last call, from the first state listing the clip
+    // (for a body that plays clips, not states: Batman's).
+    std::vector<std::string> passed_scripts(Scene& scene, size_t index, int type);
 
 private:
     using ClipEvents = std::unordered_map<std::string, std::vector<Event>>;   // by lowercase clip name
@@ -55,6 +59,7 @@ private:
         ClipEvents clips;
         std::unordered_map<std::string, std::vector<EffectEvent>> effects;   // by lowercase clip name
         std::unordered_map<std::string, State> states;   // by lowercase name
+        std::unordered_map<std::string, std::vector<std::pair<float, std::string>>> clip_scripts;   // by lowercase clip
     };
     const TypeInfo& info(int type);
     const ClipEvents& events(int type) { return info(type).clips; }
@@ -65,7 +70,7 @@ private:
         uint32_t serial = 0;
         float ms = 0;
     };
-    std::unordered_map<size_t, Last> last_;
+    std::unordered_map<size_t, Last> last_, last_scripts_;
 };
 
 }  // namespace tdkr

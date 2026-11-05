@@ -365,6 +365,20 @@ void LevelLogic::start(StartMode mode) {
     // scripting the levels' chunks call), then the level, its quests and the main story.
     for (const auto& [type, g] : gol)
         if (g.name == "AIController") load_type_scripts(type);
+    // Batman's state sets (Batman_01_Movement ..): their script events' functions, for
+    // run_hero_scripts (he is no level object, so load_objects would not load them).
+    for (const auto& [type, g] : gol)
+        if (g.name == "Batman") {
+            std::vector<int> todo{type};
+            std::unordered_set<int> done;
+            while (!todo.empty()) {
+                const int t = todo.back();
+                todo.pop_back();
+                if (!done.insert(t).second) continue;
+                load_type_scripts(t);
+                if (auto p = gol.find(t); p != gol.end()) todo.insert(todo.end(), p->second.parents.begin(), p->second.parents.end());
+            }
+        }
     if (mode == StartMode::New && !quests.carry_over) hotspot_flags_.clear(), hotspot_manager_ = false;
     load_objects();
     load_hotspots();
@@ -779,6 +793,17 @@ void LevelLogic::load_zone(int zone, bool load) {
         }
     }
     if (trace && n) log(std::string(load ? "mission zone in: " : "mission zone out: ") + std::to_string(zone) + " (" + std::to_string(n) + " objects)");
+}
+
+void LevelLogic::run_hero_scripts(size_t object) {
+    static int batman = -1;
+    if (batman < 0)
+        for (const auto& [type, g] : gol)
+            if (g.name == "Batman") batman = type;
+    for (const std::string& fn : anim_sounds_->passed_scripts(scene, object, batman)) {
+        const bool ran = runtime_.start(fn, 0);   // the player is actor 0 (logged once each: every footstep)
+        if (trace && warned_.insert("hero " + fn).second) log("hero script " + fn + (ran ? "" : ": not loaded"));
+    }
 }
 
 void LevelLogic::start_script(const std::string& function, int owner) {

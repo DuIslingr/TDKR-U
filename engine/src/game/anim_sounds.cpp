@@ -14,6 +14,7 @@ namespace tdkr {
 namespace {
 
 constexpr int kCompStatesSet = 0x0e;
+constexpr int kCompStateSet = 0x5441A117;   // TDKR's CStateSetComponent: [[name, mask, ?, loop, ..., [27] clips], ...]
 
 std::string lower(std::string s) {
     for (char& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
@@ -39,6 +40,41 @@ const AnimSounds::TypeInfo& AnimSounds::info(int type) {
         for (int p : g->second.parents) gather(p);
     };
     gather(type);
+    // TDKR's state sets, breadth by depth as find_actor_state: a clip's Script events are
+    // [start ms, end ms, "function Templ<set>_<state>_..._OnScriptEvent(...) ..."] in its tracks.
+    std::vector<int> level{type};
+    seen.clear();
+    for (int depth = 0; depth < 8 && !level.empty(); ++depth) {
+        std::vector<int> next;
+        for (int t : level) {
+            auto g = gol_.find(t);
+            if (g == gol_.end() || !seen.insert(t).second) continue;
+            if (auto st = g->second.templates.find(kCompStateSet); st != g->second.templates.end() && st->second.size() > 0)
+                for (const Value& s : st->second[0].list) {
+                    if (s.size() < 28) continue;
+                    for (const Value& clip : s[27].list) {
+                        if (clip.size() < 2 || clip[0].type != Value::String) continue;
+                        auto [list, first] = out.clip_scripts.try_emplace(lower(clip[0].s));
+                        if (!first) continue;   // the first state listing the clip has it
+                        std::function<void(const Value&)> walk = [&](const Value& x) {
+                            if (x.type != Value::List) return;
+                            if (x.size() >= 3 && x[0].type != Value::List && x[2].type == Value::String) {
+                                const std::string& code = x[2].s;
+                                const size_t f = code.find("function ");
+                                const size_t e = f == std::string::npos ? f : code.find('(', f + 9);
+                                if (e != std::string::npos) list->second.push_back({x[0].as_float(), code.substr(f + 9, e - f - 9)});
+                                return;
+                            }
+                            for (const Value& y : x.list) walk(y);
+                        };
+                        for (size_t i = 1; i < clip.size(); ++i) walk(clip[i]);
+                    }
+                }
+            next.insert(next.end(), g->second.parents.begin(), g->second.parents.end());
+        }
+        level = std::move(next);
+    }
+    for (auto it = out.clip_scripts.begin(); it != out.clip_scripts.end();) it = it->second.empty() ? out.clip_scripts.erase(it) : std::next(it);
     if (states.empty()) return out;
     // States: [name, ..., [clips]] (clips at [11]); a clip: [name, speed, track groups...];
     // a group: [name, kind, [events]]; a sound event: [name, start ms, end ms, ..., [[sound]...] at 12].
@@ -131,6 +167,21 @@ std::vector<int> AnimSounds::play_state(Audio& audio, int type, const std::strin
         }
     }
     return started;
+}
+
+std::vector<std::string> AnimSounds::passed_scripts(Scene& scene, size_t index, int type) {
+    std::vector<std::string> out;
+    const TypeInfo& ti = info(type);
+    Scene::ClipState cs;
+    if (ti.clip_scripts.empty() || !scene.clip_state(index, cs) || cs.reverse) return out;
+    Last& last = last_scripts_[index];
+    const float from = last.serial != cs.serial ? -1.0f : last.ms;   // a new clip: events at its start count
+    last.serial = cs.serial, last.ms = cs.ms;
+    auto it = ti.clip_scripts.find(lower(cs.name));
+    if (it == ti.clip_scripts.end()) return out;
+    for (const auto& [ms, fn] : it->second)   // passed: (from, ms], or across the loop's end
+        if (cs.ms >= from ? (ms > from && ms <= cs.ms) : (ms > from || ms <= cs.ms)) out.push_back(fn);
+    return out;
 }
 
 const AnimSounds::State* AnimSounds::state(int type, const std::string& name) {

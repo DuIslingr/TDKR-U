@@ -494,6 +494,28 @@ int api_actor_get_state(lua_State* L) {
     return 1;
 }
 // ActorIsInStateType(actor, STATE_TYPE_* mask).
+// GetFallDist(actor) (CActorBaseComponent::GetFallDist): how far the player is below where his
+// fall began (LevelLogic::fall_top), 0 at least; other actors 0 (none of theirs ask).
+int api_get_fall_dist(lua_State* L) {
+    LevelLogic& c = ctx(L);
+    const int id = int(lua_tointeger(L, 1));
+    lua_pushnumber(L, id == 0 || id == LevelLogic::kPlayerId ? std::max(c.fall_top - c.player.center.z, 0.0f) : 0.0f);
+    return 1;
+}
+// CheckGroundMaterial(actor) (CActorBaseComponent::CheckGroundSoundFlag): the ground's kind for
+// the footsteps, from the sound flags of the triangle underfoot (1 -> 0 concrete, 8 -> 1,
+// 0x10 -> 2 dirt, 0x20 -> 3, 2 -> 4 wet concrete, 4 -> 5; -1 none). Which triangles carry which
+// flags (GPMaterial's table) is not read yet: the player is on concrete.
+int api_check_ground_material(lua_State* L) {
+    const int id = int(lua_tointeger(L, 1));
+    lua_pushinteger(L, id == 0 || id == LevelLogic::kPlayerId ? 0 : -1);
+    return 1;
+}
+// IsInCinematic() (PlayerComponent +0x270 == 1).
+int api_is_in_cinematic(lua_State* L) {
+    lua_pushboolean(L, ctx(L).cinematic_active());
+    return 1;
+}
 int api_actor_is_in_state_type(lua_State* L) {
     LevelLogic& c = ctx(L);
     const int id = int_arg(L, 1), mask = int_arg(L, 2);
@@ -1607,6 +1629,9 @@ const Entry kTdkr[] = {
     {"ActorSetState", api_actor_set_state},
     {"ActorGetState", api_actor_get_state},
     {"ActorIsInStateType", api_actor_is_in_state_type},
+    {"GetFallDist", api_get_fall_dist},
+    {"CheckGroundMaterial", api_check_ground_material},
+    {"IsInCinematic", api_is_in_cinematic},
     {"ActorLookTo", api_actor_look_to},
     {"IsActorLookingAt", api_is_actor_looking_at},
     {"SpawnObject", api_spawn_object},

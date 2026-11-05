@@ -228,8 +228,17 @@ public:
     // the Batpod Batman rides (-1: on foot); the game drives it (game/batpod.h). Mounting takes
     // the bike's own collision and use button away; getting off puts Batman beside it.
     // SetFallDistances(a, b, c) (PlayerComponent +0x488, +0x48c, +0x490: the falls Batman
-    // lands from unhurt, hurt, dead): kept; Batman takes no fall damage here yet.
+    // lands from unhurt, hurt, dead): kept; nothing in TDKR reads them (no fall damage).
     glm::vec3 fall_distances{-1};
+    // CActorBaseComponent +0x180: the height the player fell from. UpdateNavNormal keeps it while
+    // he is in the air and not going down (the top of a jump, the edge he walked off);
+    // StartGlide / StartFly set it where the glide or the grapnel's flight began. GetFallDist is
+    // how far below it he is (0 at least): his landings pick light or hard at 10 m by it.
+    float fall_top = 0;
+    // Batman's body plays clips, not his state sets' states: the Script tracks of the clips it
+    // plays (Batman_01_Movement's footsteps, jumps and landings, the cape's and grapnel's sounds)
+    // run as the clip passes them, with the player as CurrentActor.
+    void run_hero_scripts(size_t object);
     // AddHealthBar(actor) (CHUDDisplay::AddEnemyHealthBar): the boss whose health the HUD shows
     // (against its health then); -1 / 0: none.
     int health_bar = -1;

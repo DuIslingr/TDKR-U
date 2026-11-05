@@ -17,7 +17,11 @@
 
 namespace tdkr {
 
-constexpr uint8_t kMaterialNone = 255;           // triangles taken from a model
+constexpr uint8_t kMaterialNone = 255;           // no collision type
+// GPMaterial::GetCollisionTypeFromMaterialName: a collision model's material named exactly one of
+// GConcrete, GWetConcrete, GMetal, GWood, GDirt, GWater, Solid, Box, WalkNoNavMesh, Fence, Stop,
+// SolidNoEdge, BoxNoEdge is that type, 0..12 (TDKR's collision is all models; "Ground" is none).
+uint8_t collision_type(const std::string& material);
 inline bool is_invisible_material(uint8_t m) {   // CPhysicsManager::isColMatInvisible
     return m == 18 || m == 19;
 }

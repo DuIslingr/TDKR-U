@@ -1,5 +1,7 @@
 #include "assets/collision.h"
 
+#include <iterator>
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -25,6 +27,14 @@ CollisionMesh load_col(const Bytes& data) {
     return mesh;
 }
 
+uint8_t collision_type(const std::string& material) {
+    static const char* const kTypes[] = {"GConcrete", "GWetConcrete", "GMetal", "GWood", "GDirt", "GWater", "Solid",
+                                         "Box", "WalkNoNavMesh", "Fence", "Stop", "SolidNoEdge", "BoxNoEdge"};
+    for (uint8_t i = 0; i < std::size(kTypes); ++i)
+        if (material == kTypes[i]) return i;
+    return kMaterialNone;
+}
+
 namespace {
 
 // All triangles of a model, with its node transforms applied (CCollisionComponent's fallback).
@@ -41,7 +51,9 @@ CollisionMesh model_triangles(const Model& model) {
         for (int m : node.meshes) {
             for (const Primitive& p : model.meshes[m].primitives) {
                 for (uint32_t idx : p.indices) out.vertices.push_back(glm::vec3(world * glm::vec4(p.vertices[idx].position, 1)));
-                out.materials.insert(out.materials.end(), p.indices.size() / 3, kMaterialNone);
+                const uint8_t type = p.material >= 0 && size_t(p.material) < model.materials.size()
+                                         ? collision_type(model.materials[size_t(p.material)].id) : kMaterialNone;
+                out.materials.insert(out.materials.end(), p.indices.size() / 3, type);
             }
         }
         for (int c : node.children) stack.emplace_back(c, world);

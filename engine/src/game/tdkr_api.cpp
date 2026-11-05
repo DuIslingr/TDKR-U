@@ -503,12 +503,22 @@ int api_get_fall_dist(lua_State* L) {
     return 1;
 }
 // CheckGroundMaterial(actor) (CActorBaseComponent::CheckGroundSoundFlag): the ground's kind for
-// the footsteps, from the sound flags of the triangle underfoot (1 -> 0 concrete, 8 -> 1,
-// 0x10 -> 2 dirt, 0x20 -> 3, 2 -> 4 wet concrete, 4 -> 5; -1 none). Which triangles carry which
-// flags (GPMaterial's table) is not read yet: the player is on concrete.
+// the footsteps. A triangle's flags are 1 << its collision material (CollisionGeometry::AddData;
+// GPMaterial: 0 GConcrete, 1 GWetConcrete, 2 GMetal, 3 GWood, 4 GDirt, 5 GWater, then Solid, Box,
+// WalkNoNavMesh, Fence, Stop, SolidNoEdge, BoxNoEdge), tested as 1 -> 0, 8 -> 1, 0x10 -> 2,
+// 0x20 -> 3, 2 -> 4, 4 -> 5; -1 for the rest. The player's only (no other actor asks).
 int api_check_ground_material(lua_State* L) {
+    LevelLogic& c = ctx(L);
     const int id = int(lua_tointeger(L, 1));
-    lua_pushinteger(L, id == 0 || id == LevelLogic::kPlayerId ? 0 : -1);
+    int kind = -1;
+    float t = 0;
+    uint8_t m = kMaterialNone;
+    const glm::vec3 feet = c.player.center - glm::vec3(0, 0, c.player.radius.z);
+    if ((id == 0 || id == LevelLogic::kPlayerId) && c.scene.collision().raycast(c.player.center, feet - glm::vec3(0, 0, 0.5f), t, &m)) {
+        static constexpr int kKind[6] = {0, 4, 5, 1, 2, 3};   // by material 0..5
+        if (m < 6) kind = kKind[m];
+    }
+    lua_pushinteger(L, kind);
     return 1;
 }
 // IsInCinematic() (PlayerComponent +0x270 == 1).

@@ -244,10 +244,11 @@ bool Hero::grapple_target(const Player& player, const glm::vec3& eye, const glm:
 glm::vec3 Hero::camera_position(const Player& player, float yaw, float pitch, const CollisionWorld& world) const {
     const float k = glide_blend_ * glide_blend_ * (3 - 2 * glide_blend_);   // smoothstep
     const float distance = riding_ ? ride_camera_distance : camera_distance + (glide_camera_distance - camera_distance) * k;
-    const glm::vec3 pivot = feet_of(player) + glm::vec3(0, 0, riding_ ? ride_pivot_height : pivot_height + (glide_pivot_height - pivot_height) * k);
+    glm::vec3 pivot = feet_of(player) + glm::vec3(0, 0, riding_ ? ride_pivot_height : pivot_height + (glide_pivot_height - pivot_height) * k);
     const float y = glm::radians(yaw), p = glm::radians(pitch);
     const glm::vec3 forward{-std::sin(y) * std::cos(p), std::cos(y) * std::cos(p), std::sin(p)};
     const glm::vec3 right{std::cos(y), std::sin(y), 0};
+    if (riding_) pivot += glm::vec3(-std::sin(y), std::cos(y), 0) * ride_pivot_ahead;
     const glm::vec3 wanted = pivot - forward * distance + right * camera_side;
     float t = 1;
     glm::vec3 normal;

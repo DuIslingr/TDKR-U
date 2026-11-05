@@ -55,6 +55,7 @@ public:
     void stop_riding() { riding_ = false, have_last_ = false; }
     bool riding() const { return riding_; }
     float ride_camera_distance = 6.5f, ride_pivot_height = 1.4f, ride_view_pitch = -10.0f;
+    float ride_pivot_ahead = 0;   // metres ahead of the vehicle along the view's heading
     bool active() const { return object_ != kNone; }
     size_t object() const { return object_; }
     const std::string& clip() const { return clip_; }

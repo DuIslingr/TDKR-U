@@ -15,6 +15,34 @@ namespace tdkr {
 
 namespace {
 
+// A vehicle's follow camera from its CCameraParamsComponent (Camera_16_Batpod, Camera_17_TheBat):
+// [1]-[3] the eye's offset (right, ahead, up), [4]-[6] the look-at's, turned with the vehicle
+// (CCameraObject::ComputePositionAndLookAt), and [7] raising the eye's base only (UpdateCameraFollow-
+// Player's branch for an object that is not the player's own actor; with both raised, The Bat
+// would sit 32 degrees under the view's middle, out of the picture). As this port's ride camera: a
+// pivot at the look-at point, the eye behind it at its distance and pitch. ([1] / [4], sideways,
+// are not kept: the Batpod's look-at is 0.5 m to the right.)
+void vehicle_camera(const Gol& gol, const char* name, Hero& hero) {
+    for (const auto& [type, g] : gol) {
+        (void)type;
+        if (g.name != name) continue;
+        for (const auto& [comp, flags] : g.components) {
+            (void)flags;
+            const Value* v = resolved_template(g, gol, comp);
+            if (!v || v->size() < 22 || (*v)[13].s.empty()) continue;   // (the camera's two bone names)
+            const float eye_ahead = (*v)[2].as_float(), eye_up = (*v)[3].as_float() + (*v)[7].as_float();
+            const float look_ahead = (*v)[5].as_float(), look_up = (*v)[6].as_float();
+            const glm::vec2 back(look_ahead - eye_ahead, eye_up - look_up);
+            hero.ride_camera_distance = glm::length(back);
+            hero.ride_pivot_height = look_up, hero.ride_pivot_ahead = look_ahead;
+            hero.ride_view_pitch = -glm::degrees(std::atan2(back.y, back.x));
+            std::printf("[camera] %s: %.2f m back, pivot %.2f up, %.2f ahead, pitch %.1f\n", name, hero.ride_camera_distance,
+                        hero.ride_pivot_height, hero.ride_pivot_ahead, hero.ride_view_pitch);
+            return;
+        }
+    }
+}
+
 // A viewpoint looking at the Nth placement whose object type contains `spec` (NAME[#N]),
 // from whichever side has the most open space. Returns false if there is no such object.
 bool focus_camera(const Scene& scene, const Gol& gol, const std::string& spec, glm::vec3& eye, float& yaw, float& pitch) {
@@ -1153,7 +1181,6 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
         if (thebat.object() >= 0) {
             thebat.clear_rockets(logic), thebat.stop(), hero.stop_riding();
             missiles.reset(logic);
-            hero.ride_camera_distance = 6.5f, hero.ride_pivot_height = 1.4f, hero.ride_view_pitch = -10.0f;
             logic.player_hidden = false;
         }
     }
@@ -1161,12 +1188,12 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
         if (batpod.object() >= 0) batpod.stop(), hero.stop_riding();
         return false;
     }
-    // The Bat (EnterTheBat): the view swings round behind it; Batman is inside, not drawn. (The
-    // camera's numbers are this port's: CCameraMgr's for vehicles are not read yet.)
+    // The Bat (EnterTheBat): the view swings round behind it, as Camera_17_TheBat has it; Batman
+    // is inside, not drawn.
     if (logic.riding_bat) {
         if (thebat.object() != logic.riding) {
             thebat.start(logic, logic.riding);
-            hero.ride_camera_distance = 15.0f, hero.ride_pivot_height = 3.0f, hero.ride_view_pitch = -8.0f;
+            vehicle_camera(gol, "Camera_17_TheBat", hero);
             logic.player_hidden = true;
         }
         if (opt.bat_hover && !bat_hovering_) bat_hovering_ = true, thebat.place(logic, opt.bat_hover_at);   // --bat-hover: a sitting target
@@ -1190,7 +1217,7 @@ bool Game::ride_step(const PlayerInput& in, float dt) {
         cam.yaw = player.yaw;
         return true;
     }
-    if (batpod.object() != logic.riding) batpod.start(logic, logic.riding);
+    if (batpod.object() != logic.riding) batpod.start(logic, logic.riding), vehicle_camera(gol, "Camera_16_Batpod", hero);
     batpod.update(logic, scene.collision(), opt.auto_play ? auto_drive() : in, dt);
     player.center = batpod.position() + glm::vec3(0, 0, player.radius.z);
     player.on_ground = true, player.vertical_speed = 0, player.gliding = player.plunging = player.grappling = false;

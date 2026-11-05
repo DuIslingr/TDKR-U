@@ -589,7 +589,13 @@ whichever handle the object has. It is no aeroplane, and has no gravity. `CCompo
 - **A wall** (`SmoothCollisionBehavior`): it slides along, its speed times `(cos + 2) / 3`, cos being between the old and new
   direction, the nose kicked away; moving under about 0.6 m/s, three tenths of the speed is left.
 - The HUD is `mVehicleInterface` (`bUp`, `bDown`, `bRocket`, ...: `CHUDDisplay::SetTheBatInterface`). Out of it Batman is put 3.5 m
-  above, to fall; it stays hanging where it was. The vehicle camera is not done; the HUD shows Batman's health in it, not The Bat's.
+  above, to fall; it stays hanging where it was. The HUD shows Batman's health in it, not The Bat's.
+- **Vehicle cameras** (`CCameraParamsComponent`, `Camera_17_TheBat` 40005, `Camera_16_Batpod` 40001; `ComputePositionAndLookAt`):
+  `[0]` FOV, `[1]`-`[3]` the eye's offset (right, ahead, up), `[4]`-`[6]` the look-at's, `[7]` a height added to the eye's
+  base, `[10]` the blend in ms, `[15]`/`[16]` pitch limits. The Bat: eye 16.35 m behind and 17 up, looking 3.5 m ahead and
+  2 up (24.9 m, 37 degrees down); the Batpod: 5.1 m, 11 down. Adding `[7]` to the look-at as well (the player's own
+  branch) would put The Bat 32 degrees under the view's middle, out of frame, so only the eye takes it: an inference.
+  Not ported: the sideways offsets, the blend, the FOV and pitch limits, and turning with the craft's pitch and roll.
 - **Rockets** (`onEvent` `0xB1`, `CBulletRocket`, 20 of them): only with a target (`UpdateTarget`: the nearest enemy within `[18]` 45
   degrees of the nose and the range; the original also takes some object types and destroyables), one per `[20]` 500 ms, from
   the muzzles in turn. They fly at `[24]` 100 m/s, re-aimed at the target each step, and blow at it or at `[25]` 300 m: `emp_trail`,

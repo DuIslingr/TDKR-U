@@ -1705,6 +1705,7 @@ void Combat::fire_bolt(Target& t, const glm::vec3& at) {
 }
 
 void Combat::damage_player(float amount, const glm::vec3& from) {
+    if (amount > 0) hurt_ms = 330;
     if (player_dead || player_invulnerable || protect_ > 0 || amount <= 0) return;
     if (logic_.in_mech()) amount *= 0.3f;   // the mech's armour (its health is 200 to the player's 50)
     player_health -= amount;

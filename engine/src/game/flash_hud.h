@@ -70,6 +70,7 @@ public:
         float countdown_ms = -1;         // StartCountdownTimer: what is left, -1 none
         bool countdown_red = false;      // under its red threshold
         bool touch = false;              // played by touch: the on-screen buttons show
+        bool hurt = false;               // CHUDDisplay::SetHurt: the low-health overlay (mHurtGradient)
         // CHUDDisplay::SetRocket / SetRocketLock (CMissileComponent::UpdateHud): an inbound rocket's
         // arrow on the ellipse round the screen's centre, turned its way, with its distance; and
         // the target marker on what it homes in on (rocket_lock_at), closing in frame by frame.

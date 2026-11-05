@@ -209,6 +209,19 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         button("bAttack", state.attack, state.move == M::Ground && state.attack_on);
         button("bGrapnel", "GRAPNEL", state.grapple && state.grapnel_on);
     }
+    // CHUDDisplay::SetHurt: the red gradient at the screen's edges, pulsing on its own timeline;
+    // stretched across the whole screen like the visor (x' = x * k + left).
+    if (swf::Instance* hurt = p.find("mHurtGradient")) {
+        hurt->visible = state.hurt && !state.cinematic;
+        if (hurt->visible && p.scale() > 0) {
+            const float stage = float(width_) - 2 * p.offset().x;
+            const float k = stage > 0 ? float(width_) / stage : 1.0f, left = -p.offset().x / p.scale() * 20.0f;
+            auto [base, added] = left_base_.try_emplace("mHurtGradient", hurt->matrix.tx);
+            hurt->matrix.a = k;
+            hurt->matrix.tx = base->second * k + left;
+            hurt->accept_moves = false;
+        }
+    }
     // CHUDDisplay: the counter button shows while an enemy's attack can be countered.
     p.set_visible("bCounterAttack", state.counter && !state.cinematic);
     // CHUDDisplay::AddEnemyHealthBar: the bar's indicator scaled to the health left; and a held

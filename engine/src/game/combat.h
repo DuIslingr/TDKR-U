@@ -205,6 +205,9 @@ public:
     bool set_idle_state(int npc, const std::string& state);
     bool player_invulnerable = false;  // debugging (--god)
     float player_health = 150, player_max_health = 150;
+    // PlayerComponent::HandleReceivedDamage sets CLevel +0x40 to 330 ms on every hit: the
+    // low-health overlay shows while it runs down (game.cpp, CLevel::Render2DInterface).
+    float hurt_ms = 0;
     // The difficulty (0 Easy, 1 Normal, 2 Hard; Menu_SetDifficulty): gol 4509 DifficultyLevels
     // scales the player's shield ([1]: 1.2, 1, 0.8) and the pause before it regenerates
     // ([3]: 0.8, 1, 1.2). Set before the level starts.

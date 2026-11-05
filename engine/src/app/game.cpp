@@ -662,6 +662,26 @@ void Game::draw_text(FrameParams& f, int w, int h) {
             }
         const float hud_dt = flash_hud_clock < 0 ? 0.0f : std::clamp(clock - flash_hud_clock, 0.0f, 0.25f);
         flash_hud_clock = clock;
+        // CLevel::Render2DInterface: SetHurt while PlayerComponent::HasHurtEffect (at most 30% of
+        // the health, or under half after losing a fifth since the last step) or a hit's 330 ms
+        // run; the alpha pulses 100..255 at 0.3 a ms meanwhile, and the overlay stays while it
+        // fades to 0 at that rate. Batman's health only: The Bat's has no display.
+        {
+            const float ms = hud_dt * 1000, health = combat.player_health, full = combat.player_max_health;
+            const bool hurt = health <= full * 0.3f || (old_health_ - health >= full * 0.2f && health < full * 0.5f);
+            old_health_ = health;   // (ResetOldHealth, each CLevel::Update)
+            if (!hurt && combat.hurt_ms <= 0) {
+                fs.hurt = hurt_alpha_ > 0;
+                if (fs.hurt) hurt_alpha_ = std::max(hurt_alpha_ - ms * 0.3f, 0.0f);
+                hurt_speed_ = 0.3f;
+            } else {
+                if (combat.hurt_ms > 0) combat.hurt_ms -= ms;
+                hurt_alpha_ += hurt_speed_ * ms;
+                if (hurt_alpha_ < 100) hurt_alpha_ = 100, hurt_speed_ = 0.3f;
+                else if (hurt_alpha_ > 255) hurt_alpha_ = 255, hurt_speed_ = -0.3f;
+                fs.hurt = true;
+            }
+        }
         flash_hud.update(hud_dt, fs, w, h);
         if (const int r = flash_hud.take_hack_result(); r && opt.scripts) logic.end_hack(r == 1);
         if (logic.hud_objective.serial != flash_hud_objective) {

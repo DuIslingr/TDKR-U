@@ -50,6 +50,9 @@ public:
     float nearest() const;               // how far the nearest of them is, -1 with none
     glm::vec3 nearest_position() const;  // and where (CHUDDisplay::SetRocket)
     bool locked() const;                 // it has the lock (the warning, CHUDDisplay::SetRocketLock)
+    // The nearest one's lock: 0 not yet, 1 locked on, 2 given up; -1 with none. CMissileComponent::
+    // UpdateHud marks the target (SetRocketLock) unless it is 2.
+    int nearest_lock() const;
     int fired() const { return fired_; }
     int exploded() const { return exploded_; }
     int countered() const { return countered_; }

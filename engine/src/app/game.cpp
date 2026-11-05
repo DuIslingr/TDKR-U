@@ -593,6 +593,30 @@ void Game::draw_text(FrameParams& f, int w, int h) {
                     fs.lock_at = glm::vec2((c.x / c.w * 0.5f + 0.5f) * float(w), (0.5f - c.y / c.w * 0.5f) * float(h));
                 }
             }
+            // CMissileComponent::UpdateHud: every rocket in the air sets the warning in turn (the
+            // last one updated wins); here the nearest. The arrow goes on the ellipse 0.35 of the
+            // screen round its centre, the way from the target to the rocket on screen.
+            if (const float range = missiles.nearest(); range >= 0) {
+                const glm::vec3 at = logic.riding_bat && thebat.object() >= 0 ? thebat.position() : player.center;
+                auto screen = [&](const glm::vec3& p, bool* front = nullptr) {
+                    const glm::vec4 c = f.proj * f.view * glm::vec4(p, 1);
+                    if (front) *front = c.w > 1e-3f;
+                    const glm::vec2 ndc = glm::vec2(c) / std::max(std::abs(c.w), 1e-3f);   // behind: still its side
+                    return glm::vec2((ndc.x * 0.5f + 0.5f) * float(w), (0.5f - ndc.y * 0.5f) * float(h));
+                };
+                bool front = false;
+                const glm::vec2 target = screen(at, &front), d = screen(missiles.nearest_position()) - target;
+                if (const float len = glm::length(d); len > 0) {
+                    const glm::vec2 u = d / len, axes = glm::vec2(float(w), float(h)) * 0.35f;
+                    const float r = axes.x * axes.y / glm::length(glm::vec2(axes.y * u.x, axes.x * u.y));
+                    fs.rocket = true;
+                    fs.rocket_at = glm::vec2(float(w), float(h)) * 0.5f + u * r;
+                    fs.rocket_angle = std::atan2(u.y, u.x) - glm::half_pi<float>();   // the icon points up: nose in
+                    fs.rocket_distance = range;
+                }
+                fs.rocket_lock = front && missiles.nearest_lock() != 2;
+                fs.rocket_lock_at = target;
+            }
             if (const LevelLogic::Object* b = logic.object(logic.health_bar)) fs.enemy_health = b->dead ? 0.0f : b->health / logic.health_bar_full;
             if (logic.held_use.object >= 0 && logic.held_use.total > 0) fs.progress = 1 - logic.held_use.left / logic.held_use.total;
             if (logic.countdown.on) fs.countdown_ms = logic.countdown.ms, fs.countdown_red = logic.countdown.ms < logic.countdown.red;

@@ -289,6 +289,14 @@ glm::vec3 Missiles::nearest_position() const {
     return at;
 }
 
+int Missiles::nearest_lock() const {
+    int lock = -1;
+    float best = -1;
+    for (const Missile& m : missiles_)
+        if (m.range >= 0 && (best < 0 || m.range < best)) best = m.range, lock = m.lock;
+    return lock;
+}
+
 bool Missiles::locked() const {
     return std::any_of(missiles_.begin(), missiles_.end(), [](const Missile& m) { return m.lock == 1; });
 }

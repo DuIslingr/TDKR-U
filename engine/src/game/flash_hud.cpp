@@ -134,6 +134,7 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
         }
         lock_shown_ = state.lock;
     }
+    update_rocket(state);
     // CHUDDisplay::AddButtonToScene: the QTE button over its object, from its QTEStart.
     if (swf::Instance* b = p.find("mQTEButtonInstance")) {
         b->visible = state.qte && state.visible;
@@ -224,6 +225,46 @@ void FlashHud::update(float dt, const State& state, int width, int height) {
     update_countdown(state);
     hide_touch(state);
     screen_.update(dt, width, height);
+}
+
+void FlashHud::update_rocket(const State& state) {
+    swf::Player& p = *screen_.player();
+    const bool hud = state.visible && !state.cinematic;
+    auto place = [&](swf::Instance* i, glm::vec2 px, float angle) {
+        const glm::vec2 at = (px - p.offset()) / p.scale();
+        i->matrix.set_scale_rotation(1, 1, angle);
+        i->matrix.tx = at.x * 20.0f, i->matrix.ty = at.y * 20.0f;
+        i->accept_moves = false;
+    };
+    // SetRocket: the arrow and the figures (DistanceToImpactText, "%d") where UpdateHud put them.
+    const bool shown = state.rocket && hud;
+    if (swf::Instance* dir = p.find("MissileLockOn_RocketDir")) {
+        dir->visible = shown;
+        if (shown) place(dir, state.rocket_at, state.rocket_angle);
+    }
+    if (swf::Instance* text = p.find("MissileLockOn_RocketDirText")) {
+        text->visible = shown;
+        if (shown) {
+            place(text, state.rocket_at, 0);
+            p.invoke("MissileLockOn_RocketDirText.DistanceToImpactText", "setText",
+                     {swf::Value(std::to_string(int(state.rocket_distance)))});
+        }
+    }
+    // The target marker stops on frame 60 - distance (frame 1 from 60 m out), so it closes in
+    // as the rocket does; SetRocketLock(false) plays its End (a fade) where it is.
+    swf::Instance* target = p.find("MissileLockOn_Target");
+    if (!target) return;
+    const bool lock = state.rocket && state.rocket_lock;
+    if (lock) {
+        target->visible = hud;
+        place(target, state.rocket_lock_at, 0);
+        const int frame = state.rocket_distance < 60 ? int(60 - state.rocket_distance) : 1;
+        target->goto_frame(std::clamp(frame, 1, 59) - 1, false);
+    } else if (rocket_lock_shown_) {
+        if (hud) target->goto_frame(59, true);   // "End"
+        else target->visible = false;
+    }
+    rocket_lock_shown_ = lock;
 }
 
 void FlashHud::win_screen(const std::string& title, int xp, int coins, float seconds) {

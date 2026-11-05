@@ -70,6 +70,15 @@ public:
         float countdown_ms = -1;         // StartCountdownTimer: what is left, -1 none
         bool countdown_red = false;      // under its red threshold
         bool touch = false;              // played by touch: the on-screen buttons show
+        // CHUDDisplay::SetRocket / SetRocketLock (CMissileComponent::UpdateHud): an inbound rocket's
+        // arrow on the ellipse round the screen's centre, turned its way, with its distance; and
+        // the target marker on what it homes in on (rocket_lock_at), closing in frame by frame.
+        bool rocket = false;
+        glm::vec2 rocket_at{0};          // screen pixels
+        float rocket_angle = 0;          // radians, clockwise from pointing up
+        float rocket_distance = 0;       // metres
+        bool rocket_lock = false;
+        glm::vec2 rocket_lock_at{0};
     };
     void update(float dt, const State& state, int width, int height);
     // The objective popup (objectiveMessage_popin): show with text, or hide.
@@ -127,6 +136,8 @@ private:
     void start_hack(const State::Hack& h);
     bool qte_shown_ = false;
     bool lock_shown_ = false;
+    void update_rocket(const State& state);
+    bool rocket_lock_shown_ = false;
     // CHUDDisplay::StartCountdownTimer / UpdateCountdownTimer / StopCountdownTimer:
     // countdowntimer_instance opens and closes; its figures are "mm:ss", the red ones near the end.
     void update_countdown(const State& state);

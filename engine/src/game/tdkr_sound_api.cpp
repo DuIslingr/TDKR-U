@@ -120,6 +120,16 @@ int api_play_ambience(lua_State* L) {   // PlayAmbience(preset)
     return 0;
 }
 int api_nothing(lua_State*) { return 0; }
+// SetWalkingOnWetSurface(on) / GetWalkingOnWetSurface() (CLevel +0xa51, 1 or 0): the footsteps'
+// wet variants on concrete (GothamCity's rain sets it, StockExchange's interior clears it).
+int api_set_wet_surface(lua_State* L) {
+    ctx(L).wet_surface = lua_toboolean(L, 1);
+    return 0;
+}
+int api_get_wet_surface(lua_State* L) {
+    lua_pushinteger(L, ctx(L).wet_surface ? 1 : 0);
+    return 1;
+}
 
 struct Entry {
     const char* name;
@@ -139,7 +149,8 @@ const Entry kSound[] = {
     // Reverb presets, footstep surfaces, the combat music switch, the sound switches' reset,
     // the debug sound log: not here yet.
     {"ChangeReverbPreset", api_nothing},
-    {"SetWalkingOnWetSurface", api_nothing},
+    {"SetWalkingOnWetSurface", api_set_wet_surface},
+    {"GetWalkingOnWetSurface", api_get_wet_surface},
     {"SetCombatMusicEnabled", api_nothing},
     {"ResetSoundSwitches", api_nothing},
     {"DebugSound", api_nothing},

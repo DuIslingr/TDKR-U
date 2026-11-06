@@ -380,6 +380,7 @@ void LevelLogic::start(StartMode mode) {
             }
         }
     if (mode == StartMode::New && !quests.carry_over) hotspot_flags_.clear(), hotspot_manager_ = false;
+    wet_surface = false;   // (CLevel::Init, before the chunks: level_properties' sets it in GothamCity)
     load_objects();
     load_hotspots();
     find_cameras();

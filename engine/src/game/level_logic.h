@@ -157,6 +157,7 @@ public:
     float player_speed = 0;          // metres per second over the ground, as of the last update
     int last_interaction = -1;       // the object last used (GetCurrentInteractionObjectID)
     bool weather = false;            // the weather effect (rain) is on
+    bool wet_surface = false;        // SetWalkingOnWetSurface (CLevel +0xa51, off at CLevel::Init): wet footsteps
     bool player_hidden = false;      // HideObject(0): Batman is not drawn (a cinematic stand-in plays him)
     float face_request = NAN;        // ActorLookTo(0, ...): the body's new heading (degrees), for the game
     // SetWinScreen(title, xp, wayne tech, ...): the mission's end screen, for the game to show

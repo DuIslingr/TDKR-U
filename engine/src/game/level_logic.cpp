@@ -320,6 +320,7 @@ void LevelLogic::start(StartMode mode) {
     respawn_pending = false;
     runtime_.stop_all();
     if (mode != StartMode::Section) {   // the level's scripts start afresh (CLuaScriptManager::ClearGlobals)
+        npc_weapons_.clear(), npc_weapon_scan_ = 0;   // (a new level's scene: its models went with the old)
         runtime_.reset();
         register_game_api(*this);
     }
@@ -380,6 +381,7 @@ void LevelLogic::start(StartMode mode) {
             }
         }
     if (mode == StartMode::New && !quests.carry_over) hotspot_flags_.clear(), hotspot_manager_ = false;
+    weapon_targets.clear();
     wet_surface = false;   // (CLevel::Init, before the chunks: level_properties' sets it in GothamCity)
     load_objects();
     load_hotspots();
@@ -2120,6 +2122,7 @@ void LevelLogic::update(float dt) {
     update_movers(dt);
     update_elevators(dt);
     update_links();
+    update_npc_weapons(dt);
     update_player_effects();
     update_limited(dt);
     update_cinematics(dt);

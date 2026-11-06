@@ -633,6 +633,7 @@ void Scene::pose(AnimatedInstance& a) {
         if (int(n) == a.root_lock) p.translation.x = a.root_xy.x, p.translation.y = a.root_xy.y;
         const glm::mat4 parent = m.parent[n] < 0 ? a.placement : a.world[m.parent[n]];
         a.world[n] = parent * local_matrix(p.translation, p.rotation, p.scale);
+        if (auto placed = a.node_world.find(int(n)); placed != a.node_world.end()) a.world[n] = placed->second;
     }
     float v[16];
     bool any_visibility = false;
@@ -1289,6 +1290,17 @@ void Scene::set_node_translation(size_t object, const std::string& node, const g
     int n = find_node(*a.model, node);
     if (n < 0) return;
     a.node_translation[n] = local;
+    pose(a);
+}
+
+void Scene::set_node_world(size_t object, const std::string& node, const glm::mat4* world) {
+    auto it = object_instances_.find(object);
+    if (it == object_instances_.end() || !instances_[it->second].anim) return;
+    AnimatedInstance& a = *instances_[it->second].anim;
+    const int n = find_node(*a.model, node);
+    if (n < 0) return;
+    if (world) a.node_world[n] = *world;
+    else if (!a.node_world.erase(n)) return;
     pose(a);
 }
 

@@ -231,6 +231,10 @@ public:
     // SetFallDistances(a, b, c) (PlayerComponent +0x488, +0x48c, +0x490: the falls Batman
     // lands from unhurt, hurt, dead): kept; nothing in TDKR reads them (no fall damage).
     glm::vec3 fall_distances{-1};
+    // ActorWeaponEnableTargeting(actor, target) / ActorWeaponDisableTargeting(actor)
+    // (CWeapon::SetTargeting): the actor's weapon's laser points at the target (0: Batman)
+    // until disabled. Attack_Aim sets it for the bazookas and the rifles.
+    std::unordered_map<int, int> weapon_targets;
     // CActorBaseComponent +0x180: the height the player fell from. UpdateNavNormal keeps it while
     // he is in the air and not going down (the top of a jump, the edge he walked off);
     // StartGlide / StartFly set it where the glide or the grapnel's flight began. GetFallDist is
@@ -972,6 +976,21 @@ private:
     };
     std::vector<Link> links_;
     void update_links();
+    // The actors' weapons in their hands (npc_weapons.cpp).
+    struct NpcWeapon {
+        std::string model, node;   // the equipped weapon's model, the actor's node it hangs on
+    };
+    struct HeldWeapon {
+        size_t body = size_t(-1);  // its model (-1: the actor's model has no such node)
+        std::string node;
+        float laser_base = 0;      // its laser's length as modelled (Dummy_targetend's distance; 0: none)
+        bool laser_on = false;
+    };
+    std::unordered_map<int, NpcWeapon> npc_weapon_types_;   // by actor type ("" model: none)
+    std::unordered_map<int, HeldWeapon> npc_weapons_;       // by actor id
+    float npc_weapon_scan_ = 0;
+    const NpcWeapon* npc_weapon(int type);
+    void update_npc_weapons(float dt);
     void mover_state(Mover& m, const std::string& state);
     bool fading_ = false, fade_in_ = true;
     float fade_total_ = 1, fade_left_ = 0;

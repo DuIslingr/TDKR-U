@@ -69,6 +69,7 @@ void Missiles::reset(LevelLogic& logic) {
     for (Missile& m : missiles_)
         if (m.smoke >= 0) logic.scene.particles().stop(m.smoke);
     missiles_.clear();
+    for (const auto& [id, b] : bazookas_) logic.weapon_targets.erase(id);
     bazookas_.clear();
     if (warning_ && logic.audio) logic.audio->stop("sfx_missile_warning_loop");
     warning_ = false;
@@ -199,6 +200,7 @@ void Missiles::update_bazookas(LevelLogic& logic, const CollisionWorld& world, c
                     if (logic.trace) logic.log("bazooka " + std::to_string(o->id) + " aims");
                     b.timer = (4000.0f + float(rng()() % 2000)) * 0.001f;
                     logic.actor_state(*o, "Enemy_Idle_Aim_Bazooka", true);
+                    logic.weapon_targets[o->id] = 0;   // (ActorWeaponEnableTargeting: the laser on Batman)
                 }
                 break;
             case Bazooka::Phase::Aim:
@@ -207,11 +209,13 @@ void Missiles::update_bazookas(LevelLogic& logic, const CollisionWorld& world, c
                 // The port has no awareness for these: out of the weapon's range stands in.
                 if (distance > b.range) {
                     b.phase = Bazooka::Phase::Idle;
+                    logic.weapon_targets.erase(o->id);
                     logic.actor_state(*o, "Enemy_Bazooka_Idle", true);
                 } else if (b.timer <= 0 && std::none_of(missiles_.begin(), missiles_.end(), [&](const Missile& m) { return m.owner == o->id; })) {
                     // Attack_Ranged; CanFireBullet: one of its own in the air at a time. (GameEvent 17, frame 0.)
                     b.phase = Bazooka::Phase::Shoot, b.timer = 1;
                     logic.actor_state(*o, "Enemy_Shoot_Bazooka", true);
+                    logic.weapon_targets.erase(o->id);   // (Attack_Ranged: ActorWeaponDisableTargeting)
                     launch(logic, o->id, at);
                 }
                 break;

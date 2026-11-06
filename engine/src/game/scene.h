@@ -152,6 +152,10 @@ public:
     // Move one of the object's nodes: its translation relative to its parent (game logic,
     // e.g. the HUD anchoring its parts to the screen corners).
     void set_node_translation(size_t object, const std::string& node, const glm::vec3& local);
+    // Place one of the object's nodes in the world outright, its children following (glitch's
+    // ISceneNode::setAbsoluteTransformation, e.g. a weapon's laser turned to its target);
+    // null: its animation's again.
+    void set_node_world(size_t object, const std::string& node, const glm::mat4* world);
     // World position of one of the object's nodes (by name or id), e.g. Bip01_Head.
     bool node_position(size_t object, const std::string& node, glm::vec3& out) const;
     // World transform of one of the object's nodes; the object's placement if `node` is
@@ -270,6 +274,7 @@ private:
         std::vector<int8_t> node_forced;     // per node: -1 animated, 0 hidden, 1 shown (game logic)
         std::vector<glm::quat> additive;     // per node, turned by this after its clip (a pose layer); empty: none
         std::unordered_map<int, glm::vec3> node_translation;   // per node: translation set by game logic
+        std::unordered_map<int, glm::mat4> node_world;         // per node: world transform set by game logic
         int root_lock = -1;                  // node whose horizontal translation is held (actors)
         glm::vec2 root_xy{0};
     };

@@ -326,6 +326,13 @@ int api_false(lua_State* L) {   // IsLowEndDevice: this port draws everything
     return 1;
 }
 int api_nothing(lua_State*) { return 0; }   // analytics, store prompts, editor hints
+template <bool On>
+int api_weapon_targeting(lua_State* L) {   // ActorWeaponEnableTargeting(actor, target) / ...Disable...(actor)
+    LevelLogic& c = ctx(L);
+    if (On) c.weapon_targets[int_arg(L, 1)] = int(lua_tointeger(L, 2));
+    else c.weapon_targets.erase(int_arg(L, 1));
+    return 0;
+}
 
 // SetWinScreen(title, xp, wayne tech[, name, value, value]...): the end of a mission; the XP and
 // WayneTech go to the inventory (CInventory::AddXPPoints / AddWayneTechPoints).
@@ -1837,7 +1844,8 @@ const Entry kTdkr[] = {
     {"NPCAwareAngleSet", api_nothing},
     {"SetPlayerTarget", api_nothing},
     {"NPCSetMaxConsecutiveHitsTaken", api_nothing},
-    {"ActorWeaponEnableTargeting", api_nothing},
+    {"ActorWeaponEnableTargeting", api_weapon_targeting<true>},
+    {"ActorWeaponDisableTargeting", api_weapon_targeting<false>},
     {"TurretSetActive", api_nothing},
     {"EnterBatPod", api_enter_batpod},
     {"ExitBatPod", api_exit_batpod},

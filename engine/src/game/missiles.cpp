@@ -202,7 +202,10 @@ void Missiles::update_bazookas(LevelLogic& logic, const CollisionWorld& world, c
                 }
                 break;
             case Bazooka::Phase::Aim:
-                if (!can_fire) {
+                // CNpcAIComponent::Attack_UpdateRanged: the aim script runs out, then Attack_Ranged,
+                // with no second test; only losing the target (awareness at 3 or less) drops it.
+                // The port has no awareness for these: out of the weapon's range stands in.
+                if (distance > b.range) {
                     b.phase = Bazooka::Phase::Idle;
                     logic.actor_state(*o, "Enemy_Bazooka_Idle", true);
                 } else if (b.timer <= 0 && std::none_of(missiles_.begin(), missiles_.end(), [&](const Missile& m) { return m.owner == o->id; })) {

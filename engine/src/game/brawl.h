@@ -31,6 +31,8 @@
 
 #include <glm/glm.hpp>
 
+#include "game/particles.h"
+
 namespace tdkr {
 
 class Hero;
@@ -108,8 +110,30 @@ private:
     float leap_t_ = 0, leap_len_ = 0;
     int leap_victim_ = -1;
     int combo_ = 0;
-    int batarang_target_ = -1;
-    float batarang_flight_ = -1;   // seconds until it lands
+    // The thrown batarang (CWeapon::Throw / UpdateThrow): it leaves Batman's hand (Batarang_01's
+    // dummy, Dummy_Gun_hand) as Batarang_Throw starts and flies straight at the target, re-aimed
+    // each step, from CComponentBatarang [5] (12 m/s) gaining [7] (225 m/s^2) up to 25; on
+    // arrival the hit, and its trail (Batarang_01's CTrailComponent) stops at once.
+    struct Batarang {
+        bool flying = false;
+        int target = -1;
+        glm::vec3 pos{0};
+        float speed = 0, life = 0;
+        size_t body = size_t(-1);   // batarang.bdae, spun by batarang_anim.bdae's idle
+        int trail = -1;
+        int loop = -1;              // [31]'s sound, following it
+    } batarang_;
+    // CComponentBatarang's strings (ProcessBatarangHit): the hit effects [24]-[26], or [27]-[29]
+    // when the hit kills, and the impact sounds [32]-[34], for an actor, a SurveillanceCamera and an
+    // ElectricTurret; [30] the throw's sound, [31] the one it makes in flight.
+    std::string batarang_fx_[2][3], batarang_impact_[3], batarang_start_sound_, batarang_loop_sound_;
+    float batarang_start_ = 12, batarang_accel_ = 225;
+    float batarang_begin_ = -0.1f, batarang_width_ = 0.2f;   // its trail's edge, across the flight
+    ParticleSystem::TrailParams batarang_trail_;
+    bool batarang_read_ = false;
+    void read_batarang();
+    glm::vec3 batarang_aim(int target) const;
+    void update_batarang(float dt);
     struct Pull {
         int id = -1;
         glm::vec3 from{0}, to{0};

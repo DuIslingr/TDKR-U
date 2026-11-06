@@ -7,6 +7,9 @@
 #include <cstdlib>
 #include <limits>
 
+#include <glm/gtc/matrix_transform.hpp>
+
+#include "audio/audio.h"
 #include "game/hero.h"
 #include "game/level_logic.h"
 #include "game/player.h"
@@ -57,6 +60,14 @@ void Brawl::reset() {
     fighters_.clear();
     snipers_.clear();
     action_left_ = 0, strike_target_ = -1, strike_impact_ = -1, takedown_ = false, combo_ = 0;
+    if (batarang_.flying) {
+        scene_.particles().stop_trail(batarang_.trail, true);
+        const auto& objs = scene_.level().objects;
+        if (batarang_.body < objs.size() && objs[batarang_.body].kind == "runtime" && objs[batarang_.body].name == "batarang.bdae")
+            scene_.set_object_visible(batarang_.body, false);
+    }
+    if (logic_.audio && batarang_.loop >= 0) logic_.audio->stop(batarang_.loop, 100);
+    batarang_.flying = false, batarang_.target = -1, batarang_.trail = -1, batarang_.loop = -1;
     logic_.player_action.clear(), logic_.player_action_mask = 0;
 }
 
@@ -332,7 +343,7 @@ bool Brawl::pull(int id) {
 void Brawl::grapnel_at(const glm::vec3& at) { act("Grapnel_Enemy_Shoot", 0x400000, yaw_to(at), 0.6f); }
 
 int Brawl::batarang_target(const glm::vec3& eye, const glm::vec3& forward) const {
-    if (!logic_.controls.batarang || busy() || batarang_flight_ >= 0) return -1;
+    if (!logic_.controls.batarang || busy() || batarang_.flying) return -1;
     if (auto it = logic_.weapon_ammo.find("Batarang_01"); it == logic_.weapon_ammo.end() || it->second <= 0) return -1;
     int best = -1;
     float best_score = 1e30f;
@@ -359,10 +370,102 @@ bool Brawl::throw_batarang(const glm::vec3& eye, const glm::vec3& forward) {
     const LevelLogic::Object& o = *logic_.object(t);
     --logic_.weapon_ammo["Batarang_01"];
     act("Batarang_Throw", 0x800000, yaw_to(o.position), 0.5f);
-    batarang_target_ = t;
-    batarang_flight_ = 0.25f + glm::distance(o.position, feet()) / 30.0f;
+    read_batarang();
+    Batarang& b = batarang_;
+    b.flying = true, b.target = t, b.speed = batarang_start_, b.life = 0;
+    b.pos = hero_.active() ? glm::vec3(scene_.object_matrix(hero_.object(), "Dummy_Gun_hand")[3]) : player_.eye();
+    const auto& objs = scene_.level().objects;
+    if (b.body >= objs.size() || objs[b.body].kind != "runtime" || objs[b.body].name != "batarang.bdae")
+        b.body = scene_.spawn_model("batarang.bdae", false, "batarang_anim.bdae", "idle");
+    if (b.body < scene_.level().objects.size()) scene_.set_object_visible(b.body, true);
+    b.trail = scene_.particles().start_trail(batarang_trail_);
+    if (logic_.audio) {   // CWeapon::Throw: the throw's event, and the loop that flies with it
+        Audio::Params p;
+        p.position = &b.pos;
+        if (!batarang_start_sound_.empty()) logic_.audio->play_event(batarang_start_sound_, p);
+        p.loop = 1;
+        b.loop = batarang_loop_sound_.empty() ? -1 : logic_.audio->play(batarang_loop_sound_, p);
+    }
     if (logic_.trace) logic_.log("brawl: batarang at " + std::to_string(t));
     return true;
+}
+
+void Brawl::read_batarang() {
+    if (batarang_read_) return;
+    batarang_read_ = true;
+    constexpr int kCompBatarang = 0x0f992a02, kCompTrail = 0x0116a6fa;
+    for (const auto& [type, g] : logic_.gol) {
+        if (g.name == "Batarang")   // the plain one's CComponentBatarang (GetBatarang(0))
+            if (const Value* v = resolved_template(g, logic_.gol, kCompBatarang); v && v->size() > 34) {
+                batarang_start_ = (*v)[5].as_float(), batarang_accel_ = (*v)[7].as_float();
+                for (int i = 0; i < 3; ++i)
+                    batarang_fx_[0][i] = (*v)[24 + i].s, batarang_fx_[1][i] = (*v)[27 + i].s, batarang_impact_[i] = (*v)[32 + i].s;
+                batarang_start_sound_ = (*v)[30].s, batarang_loop_sound_ = (*v)[31].s;
+            }
+        if (g.name == "Batarang_01")   // [mesh, node, opacity, length, fade ms, begin, width, hit distance]
+            if (const Value* v = resolved_template(g, logic_.gol, kCompTrail); v && v->size() > 0 && (*v)[0].size() > 0 && (*v)[0][0].size() >= 6) {
+                const Value& t = (*v)[0][0];
+                batarang_trail_.opacity = t[3].as_float(), batarang_trail_.length = t[4].as_float(), batarang_trail_.fade_ms = t[5].as_float();
+                if (t.size() >= 8) batarang_begin_ = t[6].as_float(), batarang_width_ = t[7].as_float();
+            }
+    }
+}
+
+glm::vec3 Brawl::batarang_aim(int target) const {
+    const LevelLogic::Object* o = logic_.object(target);
+    if (!o) return batarang_.pos;
+    const bool thing = !enemy(o->id) && logic_.destroyable(o->id);
+    return o->position + glm::vec3(0, 0, thing ? 0.5f : 1.2f);
+}
+
+void Brawl::update_batarang(float dt) {
+    Batarang& b = batarang_;
+    if (!b.flying) return;
+    b.life += dt;
+    const glm::vec3 to = batarang_aim(b.target) - b.pos;
+    const float dist = glm::length(to);
+    b.speed = std::min(b.speed + batarang_accel_ * dt, 25.0f);   // (CWeapon +0x6c: 25)
+    const float step = b.speed * dt;
+    const bool arrived = dist <= step || dist < 1e-3f || b.life > 3;
+    const glm::vec3 dir = dist > 1e-3f ? to / dist : glm::vec3(0, 1, 0);
+    b.pos = arrived ? b.pos + to : b.pos + dir * step;
+    if (b.body < scene_.level().objects.size()) {
+        const float yaw = std::atan2(-dir.x, dir.y), pitch = std::asin(std::clamp(dir.z, -1.0f, 1.0f));
+        glm::mat4 m = glm::translate(glm::mat4(1), b.pos);
+        m = glm::rotate(m, yaw, glm::vec3(0, 0, 1));
+        m = glm::rotate(m, pitch, glm::vec3(1, 0, 0));
+        scene_.set_object_transform(b.body, m);
+        // The trail at its Dummy_Center, across the flight, from begin to begin + width.
+        const glm::mat4 node = scene_.object_matrix(b.body, "Dummy_Center");
+        glm::vec3 side = glm::cross(dir, glm::vec3(node[2]));
+        side = glm::length(side) > 1e-4f ? glm::normalize(side) : glm::vec3(1, 0, 0);
+        const glm::vec3 c(node[3]);
+        scene_.particles().trail_edge(b.trail, c + side * batarang_begin_, c + side * (batarang_begin_ + batarang_width_));
+    }
+    if (logic_.audio && b.loop >= 0) logic_.audio->set_position(b.loop, b.pos);
+    if (!arrived) return;
+    b.flying = false;
+    scene_.particles().stop_trail(b.trail, true), b.trail = -1;
+    if (b.body < scene_.level().objects.size()) scene_.set_object_visible(b.body, false);
+    if (logic_.audio && b.loop >= 0) logic_.audio->stop(b.loop, 100), b.loop = -1;
+    // Which of the three: an actor, a SurveillanceCamera, an ElectricTurret (other things, the
+    // lights, break with their own clip and sound).
+    const LevelLogic::Object* t = logic_.object(b.target);
+    const int slot = !t ? -1 : enemy(t->id) ? 0 : t->type == "SurveillanceCamera" ? 1 : t->type == "ElectricTurret" ? 2 : -1;
+    if (t && !enemy(t->id) && logic_.destroyable(t->id)) logic_.destroy(t->id);
+    else hit(b.target, 50, "Enemy_Hurt_02_Cross");
+    if (slot >= 0) {
+        const LevelLogic::Object* after = logic_.object(b.target);
+        const bool killed = !after || after->dead || after->health <= 0;
+        if (logic_.trace) logic_.log("brawl: batarang hits " + std::to_string(b.target) + (killed ? ", down: " : ": ") + batarang_fx_[killed][slot]);
+        if (const std::string& fx = batarang_fx_[killed][slot]; !fx.empty()) scene_.particles().start(fx, glm::translate(glm::mat4(1), b.pos));
+        if (logic_.audio && !batarang_impact_[slot].empty()) {
+            Audio::Params p;
+            p.position = &b.pos;
+            logic_.audio->play_event(batarang_impact_[slot], p);
+        }
+    }
+    b.target = -1;
 }
 
 bool Brawl::can_take_down() const {
@@ -584,14 +687,7 @@ void Brawl::update(float dt) {
     }
     update_awareness(dt);
     update_snipers(dt);
-    if (batarang_flight_ >= 0) {   // the batarang lands: a heavy hit
-        batarang_flight_ -= dt;
-        if (batarang_flight_ < 0) {
-            if (LevelLogic::Object* o = logic_.object(batarang_target_); o && !enemy(o->id) && logic_.destroyable(o->id)) logic_.destroy(o->id);
-            else hit(batarang_target_, 50, "Enemy_Hurt_02_Cross");
-            batarang_target_ = -1;
-        }
-    }
+    update_batarang(dt);
     // A pulled enemy flies to Batman's feet, lies there a moment, then gets up to fight.
     if (pull_.id >= 0) {
         LevelLogic::Object* o = logic_.object(pull_.id);

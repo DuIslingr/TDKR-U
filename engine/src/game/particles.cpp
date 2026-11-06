@@ -58,7 +58,63 @@ bool ParticleSystem::alive(int handle) const {
     return std::any_of(instances_.begin(), instances_.end(), [&](const Instance& i) { return i.handle == handle; });
 }
 
-void ParticleSystem::clear() { instances_.clear(); }
+void ParticleSystem::clear() { instances_.clear(), trails_.clear(); }
+
+int ParticleSystem::start_trail(const TrailParams& params) {
+    Trail t;
+    t.handle = next_handle_++;
+    t.params = params, t.length = params.length, t.opacity = params.opacity;
+    trails_.push_back(std::move(t));
+    return trails_.back().handle;
+}
+
+void ParticleSystem::trail_edge(int handle, const glm::vec3& a, const glm::vec3& b) {
+    for (Trail& t : trails_) {
+        if (t.handle != handle || t.stopping) continue;
+        // (Trail::AddEdge: one barely moved from the last replaces it.)
+        if (!t.edges.empty() && glm::distance(t.edges.back().first, a) < 0.01f) t.edges.back() = {a, b};
+        else t.edges.emplace_back(a, b);
+        // Keep what the length shows, and one edge past it.
+        float d = 0;
+        for (size_t i = t.edges.size() - 1; i > 0; --i) {
+            d += glm::distance(t.edges[i].first, t.edges[i - 1].first);
+            if (d > t.length) {
+                t.edges.erase(t.edges.begin(), t.edges.begin() + std::ptrdiff_t(i - 1));
+                break;
+            }
+        }
+    }
+}
+
+void ParticleSystem::stop_trail(int handle, bool at_once) {
+    for (Trail& t : trails_)
+        if (t.handle == handle) t.stopping = true, t.length = at_once ? 0 : t.length;
+}
+
+void ParticleSystem::build_trails(const std::function<const GpuTexture*(const std::string&)>& texture, ParticleList& out) const {
+    for (const Trail& t : trails_) {
+        if (t.edges.size() < 2) continue;
+        const GpuTexture* tex = texture(t.params.texture);
+        if (!tex) continue;
+        // Distances back from the newest edge; u = 1 - d / length (over its end if shorter).
+        std::vector<float> dist(t.edges.size(), 0);
+        for (size_t i = t.edges.size() - 1; i > 0; --i) dist[i - 1] = dist[i] + glm::distance(t.edges[i].first, t.edges[i - 1].first);
+        const float span = std::min(t.length, dist.front());
+        if (span <= 0) continue;
+        ParticleBatch batch{tex, true, uint32_t(out.vertices.size()), 0};
+        auto vert = [&](size_t i, bool far_side) {
+            const float u = 1 - dist[i] / span;
+            const uint32_t rgba = pack_rgba(glm::vec4(1, 1, 1, u >= 0 ? t.opacity : 0.0f));
+            return ParticleVertex{far_side ? t.edges[i].second : t.edges[i].first, {std::max(u, 0.0f), far_side ? 1.0f : 0.0f}, rgba};
+        };
+        for (size_t i = 0; i + 1 < t.edges.size(); ++i) {
+            const ParticleVertex a0 = vert(i, false), b0 = vert(i, true), a1 = vert(i + 1, false), b1 = vert(i + 1, true);
+            out.vertices.insert(out.vertices.end(), {a0, b0, a1, b0, b1, a1});
+            batch.count += 6;
+        }
+        out.batches.push_back(batch);
+    }
+}
 
 size_t ParticleSystem::particle_count() const {
     size_t n = 0;
@@ -113,6 +169,13 @@ void ParticleSystem::spawn(Instance& inst, EmitterState& s) {
 }
 
 void ParticleSystem::update(float dt) {
+    // Trail::Update: a stopped trail's length and opacity run down over its fade time.
+    for (Trail& t : trails_)
+        if (t.stopping && t.params.fade_ms > 0) {
+            t.length -= dt * 1000 * t.params.length / t.params.fade_ms;
+            t.opacity = std::max(t.opacity - dt * 1000 * t.params.opacity / t.params.fade_ms, 0.0f);
+        }
+    trails_.erase(std::remove_if(trails_.begin(), trails_.end(), [](const Trail& t) { return t.stopping && t.length <= 0.5f; }), trails_.end());
     const float ms = dt * 1000.0f;
     for (Instance& inst : instances_) {
         for (EmitterState& s : inst.emitters) {
@@ -219,6 +282,7 @@ void ParticleSystem::build(const glm::vec3& eye, const std::function<const GpuTe
             if (batch.count) out.batches.push_back(batch);
         }
     }
+    build_trails(texture, out);
 }
 
 }  // namespace tdkr

@@ -38,6 +38,19 @@ public:
     // Called when an emitter with sounds starts emitting: its sounds (pick one) and where.
     std::function<void(const std::vector<std::string>&, const glm::vec3&)> on_sound;
 
+    // Trails (CTrailComponent's Trail, on trail.bdae: SimpleAdditive with Trail.TGA): a ribbon of
+    // edges laid where a node passes, each a segment across its motion. The strip shows
+    // `length` metres back from the newest edge at `opacity`, u running from 1 there to 0 at
+    // the length (or at its end, if shorter). Stopping shrinks the length and the opacity over
+    // `fade_ms`; under 0.5 m it is gone. (The original also smooths each span into 4.)
+    struct TrailParams {
+        std::string texture = "Trail.TGA";
+        float opacity = 0.65f, length = 2, fade_ms = 30;
+    };
+    int start_trail(const TrailParams& params);
+    void trail_edge(int handle, const glm::vec3& a, const glm::vec3& b);   // the newest edge
+    void stop_trail(int handle, bool at_once = false);                      // at_once: ForceStopTrail
+
 private:
     struct Particle {
         glm::vec3 pos, vel;
@@ -64,6 +77,16 @@ private:
     };
     void spawn(Instance& inst, EmitterState& e);
     float uniform(float a, float b) { return std::uniform_real_distribution<float>(std::min(a, b), std::max(a, b))(rng_); }
+
+    struct Trail {
+        int handle = 0;
+        TrailParams params;
+        std::vector<std::pair<glm::vec3, glm::vec3>> edges;   // oldest first
+        float length = 0, opacity = 0;
+        bool stopping = false;
+    };
+    std::vector<Trail> trails_;
+    void build_trails(const std::function<const GpuTexture*(const std::string&)>& texture, ParticleList& out) const;
 
     const std::unordered_map<std::string, ParticleEffect>* library_;
     std::vector<Instance> instances_;
